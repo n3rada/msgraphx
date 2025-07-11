@@ -21,6 +21,7 @@ repository = "https://github.com/n3rada/graphx"
 
 [project.scripts]
 graphx = 'graphx.console:run'
+graphx-auth = 'graphx.modules.auth:standalone'
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
