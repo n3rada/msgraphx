@@ -26,7 +26,7 @@ def run_with_arguments(args: argparse.Namespace) -> int:
     if not tokens:
         return 1
 
-    print("Access Token: ", tokens["access_token"])
+    print(tokens["access_token"])
 
     with open(".roadtools_auth", mode="w", encoding="utf-8") as file_obj:
         json.dump(
