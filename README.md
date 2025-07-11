@@ -10,6 +10,7 @@ pipx install graphx
 ## 🔐 Authentication
 
 GraphX provides a Playwright-based authenticator to acquire a Microsoft Graph access token.
+
 ```shell
 graphx auth
 ```
@@ -19,6 +20,11 @@ Options:
 - `--headless`: Run Playwright in headless mode.
 
 This print the access token on the `stdout` and generate a `.roadtools_auth` file containing the access and refresh tokens.
+
+You can choose to install directly the standalone `graphx-auth`:
+```shell
+pipx install 'graphx[auth]'
+```
 
 ## ⚔️ Exploitation Modules
 
