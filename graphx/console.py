@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 
 # Built-in imports
+import sys
 import argparse
-import os
 import json
 from pathlib import Path
 
 # External library imports
-import httpx
 from loguru import logger
+from modwrap.utils import list_modules
 
 # Local library imports
 from graphx.core import logbook
 from graphx.core.tokens import TokenManager
+
+
+MODULES = {
+    mod.name: mod
+    for mod in list_modules(Path(__file__).parent / "modules")
+    if mod.has_callable("run_with_arguments")
+}
 
 
 @logger.catch
@@ -44,8 +51,29 @@ def run() -> int:
         help="Microsoft Graph refresh token. If not provided, the tool will attempt to read it from .roadtools_auth file.",
     )
 
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        help="Subcommand to run.",
+    )
+
+    for name, wrapper in MODULES.items():
+        mod_parser = subparsers.add_parser(name, help=f"{name} module")
+
+        if wrapper.has_callable("add_arguments"):
+            wrapper.get_callable("add_arguments")(mod_parser)
+
+        mod_parser.set_defaults(func=wrapper.get_callable("run_with_arguments"))
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return 1
+
     args = parser.parse_args()
     logbook.setup_logging(log_level=args.log_level)
+
+    if hasattr(args, "func"):
+        return args.func(args)
 
     access_token = args.access_token
     refresh_token = args.refresh_token
