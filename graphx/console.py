@@ -8,6 +8,8 @@ from pathlib import Path
 # External library imports
 from loguru import logger
 from msgraph import GraphServiceClient
+from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+
 
 # Local library imports
 from graphx.core import terminal
@@ -106,6 +108,10 @@ async def run() -> int:
 
     token = TokenManager(access_token, refresh_token)
 
+    if token.is_expired:
+        logger.error("🔒 Token is expired. Please re-authenticate with: `graphx auth`.")
+        return 1
+
     if not (
         token.audience == "00000003-0000-0000-c000-000000000000"
         or token.audience.startswith("https://graph.microsoft.com")
@@ -118,7 +124,26 @@ async def run() -> int:
     # Build Graph client
     graph_client = GraphServiceClient(credentials=token)
 
-    user = await graph_client.me.get()
+    try:
+        user = await graph_client.me.get()
+        logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
+    except ODataError as e:
+        # Inspect error code
+        code = getattr(e.error, "code", "Unknown")
+        message = getattr(e.error, "message", "No message")
+
+        logger.error(
+            f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
+        )
+
+        if code == "InvalidAuthenticationToken":
+            logger.error(
+                "🔒 Token is invalid or expired. Please re-authenticate with: `graphx auth`."
+            )
+        return 1
+    except Exception as e:
+        logger.error(f"❌ Unexpected error while connecting to Graph API: {e}")
+        return 1
     logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
 
     if not args.command:
