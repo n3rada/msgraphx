@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
 
 # Built-in imports
-import sys
 import argparse
 import json
 from pathlib import Path
 
 # External library imports
 from loguru import logger
-from modwrap.utils import list_modules
+from msgraph import GraphServiceClient
 
 # Local library imports
+from graphx.core import terminal
+from graphx.core import auth
 from graphx.core import logbook
 from graphx.core.tokens import TokenManager
+from graphx.modules import storage
 
 
-MODULES = {
-    mod.name: mod
-    for mod in list_modules(Path(__file__).parent / "modules")
-    if mod.has_callable("run_with_arguments")
+COMMANDS = {
+    "auth": auth,
+    "sp": storage,
 }
 
 
 @logger.catch
-def run() -> int:
+async def run() -> int:
     parser = argparse.ArgumentParser(
         prog="graphx",
         add_help=True,
@@ -53,32 +54,39 @@ def run() -> int:
 
     subparsers = parser.add_subparsers(
         dest="command",
-        required=True,
-        help="Subcommand to run.",
+        help="Subcommand to run. Leave empty to open interactive shell.",
     )
 
-    for name, wrapper in MODULES.items():
-        mod_parser = subparsers.add_parser(name, help=f"{name} module")
+    parser.add_argument(
+        "--before",
+        type=str,
+        help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+    )
 
-        if wrapper.has_callable("add_arguments"):
-            wrapper.get_callable("add_arguments")(mod_parser)
+    parser.add_argument(
+        "--after",
+        type=str,
+        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+    )
 
-        mod_parser.set_defaults(func=wrapper.get_callable("run_with_arguments"))
-
-    if len(sys.argv) == 1:
-        parser.print_help()
-        return 1
+    for name, module in COMMANDS.items():
+        subparser = subparsers.add_parser(
+            name,
+            help=module.__doc__.strip() if module.__doc__ else f"{name} command",
+        )
+        module.add_arguments(subparser)
 
     args = parser.parse_args()
     logbook.setup_logging(log_level=args.log_level)
 
-    if hasattr(args, "func"):
-        return args.func(args)
+    if args.command == "auth":
+        return await auth.run_with_arguments(args)
 
     access_token = args.access_token
     refresh_token = args.refresh_token
 
     if not access_token:
+        logger.info("🔐 No JWT provided, checking for .roadtools_auth file.")
         tokens_path = Path(".roadtools_auth")
         if tokens_path.exists():
             logger.info("🔐 Using JWT from .roadtools_auth file.")
@@ -105,4 +113,23 @@ def run() -> int:
         logger.error(f"❌ JWT audience mismatch, got '{token.audience}'")
         return 1
 
-    return 0
+    token.start_auto_refresh()
+
+    # Build Graph client
+    graph_client = GraphServiceClient(credentials=token)
+
+    user = await graph_client.me.get()
+    logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
+
+    if not args.command:
+        logger.info("🔄 Starting interactive shell. Type 'help' for commands.")
+
+        return await terminal.start(graph_client)
+
+    module = COMMANDS[args.command]
+
+    try:
+        return await module.run_with_arguments(graph_client=graph_client, args=args)
+    except Exception as exc:
+        logger.error(f"❌ Error running command '{args.command}': {exc}")
+        return 1

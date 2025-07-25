@@ -2,6 +2,7 @@
 
 # Standard library imports
 import sys
+import asyncio
 
 # External library imports
 from loguru import logger
@@ -12,7 +13,10 @@ from graphx import console
 
 if __name__ == "__main__":
     try:
-        sys.exit(console.run())
+        sys.exit(asyncio.run(console.run()))
     except KeyboardInterrupt:
         logger.debug("🛑 User interrupted the process.")
         sys.exit(0)
+    except Exception:
+        logger.exception("❌ Unexpected exception:")
+        sys.exit(1)

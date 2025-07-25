@@ -1,12 +1,16 @@
 # Built-in imports
+import time
 import json
 import base64
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Callable, Optional
+import threading
+import asyncio
 
 # External library imports
 from loguru import logger
+import httpx
+from azure.core.credentials import AccessToken
 
 
 def parse_jwt(token: str) -> tuple[dict, dict, bytes]:
@@ -41,10 +45,10 @@ class TokenManager:
             logger.error(f"❌ Failed to parse JWT: {e}")
             raise
 
-        self._exp = self._payload.get("exp")
+        self._expires_on = self._payload.get("exp")
 
         self._tenant_id = self._payload.get("iss")
-        print(self._tenant_id)
+
         if self._tenant_id:
             self._tenant_id = self._tenant_id.strip("/").split("/").pop()
             logger.info(f"🔗 Tenant ID: {self._tenant_id}")
@@ -75,13 +79,13 @@ class TokenManager:
 
     @property
     def expiration_datetime(self) -> datetime:
-        return datetime.fromtimestamp(self._exp, tz=timezone.utc)
+        return datetime.fromtimestamp(self._expires_on, tz=timezone.utc)
 
     def is_expired(self) -> bool:
-        return datetime.now(timezone.utc).timestamp() > self._exp
+        return datetime.now(timezone.utc).timestamp() > self._expires_on
 
     def expires_in(self) -> int:
-        return max(0, int(self._exp - datetime.now(timezone.utc).timestamp()))
+        return max(0, int(self._expires_on - datetime.now(timezone.utc).timestamp()))
 
     def update_output_file(self) -> None:
         output_file = Path(".roadtools_auth")
@@ -101,36 +105,59 @@ class TokenManager:
             json.dump(data, file_obj, indent=4)
             logger.success("💾 Saved refreshed tokens to .roadtools_auth")
 
-    async def refresh_if_needed(
-        self,
-        threshold_seconds: int = 300,
-        refresh_callback: Optional[Callable[[], str]] = None,
-    ):
-        if self.expires_in() <= threshold_seconds:
-            if not refresh_callback:
-                logger.warning(
-                    "⚠️ Token is near expiration but no refresh callback provided."
-                )
-                return
+    async def refresh_access_token(self, refresh_token: str):
+        if not refresh_token:
+            logger.error("⛔ No refresh token available to refresh access token.")
+            return None, None
 
-            logger.info("♻️ Token is near expiration, refreshing...")
-            try:
-                result = await refresh_callback(self._refresh_token)
-            except Exception as e:
-                logger.exception(f"💥 Token refresh callback failed: {e}")
-                raise RuntimeError("Token refresh failed unexpectedly.") from e
+        response = httpx.post(
+            url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            data={
+                "client_id": "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
+                "scope": "openid https://graph.microsoft.com/.default offline_access",
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            headers={"Origin": "https://developer.microsoft.com"},
+            verify=False,
+        )
 
-            if not result:
-                logger.error(
-                    "❌ Failed to refresh the token — refresh callback returned None."
-                )
-                raise RuntimeError("Token refresh failed: No token returned.")
+        if response.status_code != 200:
+            logger.error(f"❌ Failed to refresh token: {response.text}.")
+            return
 
-            new_token, refresh_token = result
-            self.__init__(new_token, refresh_token)
+        new_tokens = response.json()
 
-            self.update_output_file()
-            logger.success("🔁 Token refreshed successfully.")
+        self.__init__(
+            access_token=new_tokens.get("access_token"),
+            refresh_token=new_tokens.get("refresh_token"),
+        )
+        logger.success("🔁 Access token refreshed successfully.")
+
+    def start_auto_refresh(self) -> None:
+        def refresher():
+            while True:
+                sleep_duration = (
+                    self.expires_in() - 300
+                )  # Refresh 5 minutes before expiration
+                if sleep_duration > 0:
+                    logger.debug(f"⏳ Sleeping {sleep_duration:.1f}s until refresh.")
+                    time.sleep(sleep_duration)
+
+                logger.debug("🛠️ Time to refresh token.")
+                try:
+                    asyncio.run(self.refresh_access_token(self._refresh_token))
+                    self.update_output_file()
+                except Exception as exc:
+                    logger.error(f"❌ Failed to refresh token: {exc}")
+                    break
+
+        thread = threading.Thread(target=refresher, daemon=True, name="Token Refresher")
+        thread.start()
+        logger.info("🔄 Auto token refresher thread started.")
+
+    def get_token(self, *scopes, **kwargs) -> AccessToken:
+        return AccessToken(self._access_token, self._expires_on)
 
     def __str__(self) -> str:
         return (
