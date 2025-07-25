@@ -144,7 +144,6 @@ async def run() -> int:
     except Exception as e:
         logger.error(f"❌ Unexpected error while connecting to Graph API: {e}")
         return 1
-    logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
 
     if not args.command:
         logger.info("🔄 Starting interactive shell. Type 'help' for commands.")
