@@ -2,7 +2,7 @@
 .roadtools_auth
 
 # Jupyter Notebooks
-.ipynb
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
