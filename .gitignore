@@ -1,6 +1,9 @@
 # Project-specific files
 .roadtools_auth
 
+# Jupyter Notebooks
+.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
