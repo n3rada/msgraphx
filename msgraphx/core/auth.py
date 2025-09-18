@@ -25,7 +25,8 @@ def run(prt_cookie: str, headless: bool = False) -> int:
     if not tokens:
         return 1
 
-    print(tokens["access_token"])
+    print("🔐 Authentication successful. Retrieved tokens:")
+    print(json.dumps(tokens, indent=4))
 
     with open(".roadtools_auth", mode="w", encoding="utf-8") as file_obj:
         json.dump(
