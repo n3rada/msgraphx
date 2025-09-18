@@ -12,7 +12,7 @@ If installed with `pipx`:
 
 - Windows PowerShell
 ```powershell
-& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install
+& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install chromium
 ```
 
 ## 🔐 Authentication
