@@ -26,8 +26,34 @@ COMMANDS = {
 }
 
 
+async def run_graph_commands(credentials: TokenManager) -> int:
+    # Build Graph client
+    graph_client = GraphServiceClient(credentials)
+
+    try:
+        user = await graph_client.me.get()
+        logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
+    except ODataError as e:
+        # Inspect error code
+        code = getattr(e.error, "code", "Unknown")
+        message = getattr(e.error, "message", "No message")
+
+        logger.error(
+            f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
+        )
+
+        if code == "InvalidAuthenticationToken":
+            logger.error(
+                "🔒 Token is invalid or expired. Please re-authenticate with: `msgraphx auth`."
+            )
+        return 1
+    except Exception as exc:
+        logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
+        return 1
+
+
 @logger.catch
-async def run() -> int:
+def run() -> int:
     parser = argparse.ArgumentParser(
         prog="msgraphx",
         add_help=True,
@@ -89,7 +115,7 @@ async def run() -> int:
 
     if args.command == "auth":
         # Run synchronous auth.run in a separate thread to avoid blocking
-        return await asyncio.to_thread(auth.run, args.prt_cookie, args.headless)
+        return auth.run(args.prt_cookie, args.headless)
 
     access_token = args.access_token
     refresh_token = args.refresh_token
@@ -129,40 +155,3 @@ async def run() -> int:
         return 1
 
     token.start_auto_refresh()
-
-    # Build Graph client
-    graph_client = GraphServiceClient(credentials=token)
-
-    try:
-        user = await graph_client.me.get()
-        logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
-    except ODataError as e:
-        # Inspect error code
-        code = getattr(e.error, "code", "Unknown")
-        message = getattr(e.error, "message", "No message")
-
-        logger.error(
-            f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
-        )
-
-        if code == "InvalidAuthenticationToken":
-            logger.error(
-                "🔒 Token is invalid or expired. Please re-authenticate with: `msgraphx auth`."
-            )
-        return 1
-    except Exception as exc:
-        logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
-        return 1
-
-    if not args.command:
-        logger.info("🔄 Starting interactive shell. Type 'help' for commands.")
-
-        return await terminal.start(graph_client)
-
-    module = COMMANDS[args.command]
-
-    try:
-        return await module.run_with_arguments(graph_client=graph_client, args=args)
-    except Exception as exc:
-        logger.error(f"❌ Error running command '{args.command}': {exc}")
-        return 1
