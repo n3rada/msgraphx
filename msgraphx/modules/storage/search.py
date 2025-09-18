@@ -1,15 +1,14 @@
 # Built-in imports
 import argparse
 
-
 # External library imports
 from loguru import logger
 from msgraph import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
 
 # Local library imports
-from graphx.core import search
-from graphx.utils.dates import parse_date_string
+from msgraphx.core import search
+from msgraphx.utils.dates import parse_date_string
 
 HUNT_QUERIES = {
     "scripts": (

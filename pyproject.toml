@@ -1,5 +1,5 @@
 [project]
-name = "graphx"
+name = "msgraphx"
 version = "0.1.0"
 description = "Microsoft Graph eXploitation toolkit"
 authors = [
@@ -19,11 +19,11 @@ dependencies = [
 ]
 
 [project.urls]
-repository = "https://github.com/n3rada/graphx"
+repository = "https://github.com/n3rada/msgraphx"
 
 [project.scripts]
-graphx = 'graphx.console:run'
-graphx-auth = 'graphx.core.auth:standalone'
+msgraphx = 'msgraphx.console:run'
+msgraphx-auth = 'msgraphx.core.auth:standalone'
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -12,11 +12,11 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 
 # Local library imports
-from graphx.core import terminal
-from graphx.core import auth
-from graphx.core import logbook
-from graphx.core.tokens import TokenManager
-from graphx.modules import storage
+from msgraphx.core import terminal
+from msgraphx.core import auth
+from msgraphx.core import logbook
+from msgraphx.core.tokens import TokenManager
+from msgraphx.modules import storage
 
 
 COMMANDS = {
@@ -28,7 +28,7 @@ COMMANDS = {
 @logger.catch
 async def run() -> int:
     parser = argparse.ArgumentParser(
-        prog="graphx",
+        prog="msgraphx",
         add_help=True,
         description="Microsoft Graph eXploitation toolkit.",
     )
@@ -109,7 +109,9 @@ async def run() -> int:
     token = TokenManager(access_token, refresh_token)
 
     if token.is_expired:
-        logger.error("🔒 Token is expired. Please re-authenticate with: `graphx auth`.")
+        logger.error(
+            "🔒 Token is expired. Please re-authenticate with: `msgraphx auth`."
+        )
         return 1
 
     if not (
@@ -138,11 +140,11 @@ async def run() -> int:
 
         if code == "InvalidAuthenticationToken":
             logger.error(
-                "🔒 Token is invalid or expired. Please re-authenticate with: `graphx auth`."
+                "🔒 Token is invalid or expired. Please re-authenticate with: `msgraphx auth`."
             )
         return 1
-    except Exception as e:
-        logger.error(f"❌ Unexpected error while connecting to Graph API: {e}")
+    except Exception as exc:
+        logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
         return 1
 
     if not args.command:

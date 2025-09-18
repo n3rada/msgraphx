@@ -54,22 +54,22 @@ async def search_entities(
 
     ```
     {
-    "requests": [
-        {
-        "entityTypes": ["driveItem"],
-        "query": {
-            "queryString": "filetype:pdf"
-        },
-        "sortProperties": [
+        "requests": [
             {
-            "name": "createdDateTime",
-            "isDescending": true
+            "entityTypes": ["driveItem"],
+            "query": {
+                "queryString": "filetype:pdf"
+            },
+            "sortProperties": [
+                {
+                "name": "createdDateTime",
+                "isDescending": true
+                }
+            ],
+            "from": 0,
+            "size": 20
             }
-        ],
-        "from": 0,
-        "size": 20
-        }
-    ]
+        ]
     }
     ```
 

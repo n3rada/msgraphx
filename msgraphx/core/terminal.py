@@ -11,9 +11,9 @@ from prompt_toolkit.completion import WordCompleter
 
 
 # Local library imports
-from graphx.core import auth, logbook
-from graphx.core.tokens import TokenManager
-from graphx.core import terminal
+from msgraphx.core import auth, logbook
+from msgraphx.core.tokens import TokenManager
+from msgraphx.core import terminal
 
 commands = ["me", "groups", "search", "exit", "help"]
 completer = WordCompleter(commands, ignore_case=True)
@@ -31,7 +31,7 @@ async def start(graph_client) -> int:
     while True:
         try:
             cmd_line = await session.prompt_async(
-                "graphx> ",
+                "msgraphx> ",
                 completer=completer,
             )
         except (EOFError, KeyboardInterrupt):

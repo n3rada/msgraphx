@@ -4,15 +4,15 @@ Microsoft Graph eXploitation toolkit.
 
 Install with `pipx` to keep the environment isolated:
 ```shell
-pipx install graphx
+pipx install msgraphx
 ```
 
 ## 🔐 Authentication
 
-GraphX provides a Playwright-based authenticator to acquire a Microsoft Graph access token.
+msgraphx provides a Playwright-based authenticator to acquire a Microsoft Graph access token.
 
 ```shell
-graphx auth
+msgraphx auth
 ```
 
 Options:
@@ -21,14 +21,14 @@ Options:
 
 This print the access token on the `stdout` and generate a `.roadtools_auth` file containing the access and refresh tokens.
 
-You can choose to install directly the standalone `graphx-auth`:
+You can choose to install directly the standalone `msgraphx-auth`:
 ```shell
-pipx install 'graphx[auth]'
+pipx install 'msgraphx[auth]'
 ```
 
 ## ⚔️ Exploitation Modules
 
-GraphX is built with modularity in mind. Each module is dynamically loaded and can be invoked as a subcommand.
+msgraphx is built with modularity in mind. Each module is dynamically loaded and can be invoked as a subcommand.
 
 
 ## Graph Explorer 101

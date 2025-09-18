@@ -8,7 +8,7 @@ import asyncio
 from loguru import logger
 
 # Local library imports
-from graphx import console
+from msgraphx import console
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from loguru import logger
 from msgraph import GraphServiceClient
 
 # Local library imports
-from graphx.modules.storage import search
+from msgraphx.modules.storage import search
 
 
 def add_arguments(parser: argparse.ArgumentParser):

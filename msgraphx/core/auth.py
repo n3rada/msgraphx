@@ -60,7 +60,7 @@ def add_arguments(parser: argparse.ArgumentParser):
 
 def standalone() -> int:
     parser = argparse.ArgumentParser(
-        prog="graphx-auth",
+        prog="msgraphx-auth",
         add_help=True,
         description="Microsoft Graph Explorer authentication module.",
     )
