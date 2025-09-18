@@ -7,6 +7,14 @@ Install with `pipx` to keep the environment isolated:
 pipx install "msgraphx@git+https://github.com/n3rada/msgraphx.git"
 ```
 
+### Playwright
+If installed with `pipx`:
+
+- Windows PowerShell
+```powershell
+& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install
+```
+
 ## 🔐 Authentication
 
 msgraphx provides a Playwright-based authenticator to acquire a Microsoft Graph access token.
