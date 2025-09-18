@@ -3,6 +3,7 @@
 # Built-in imports
 import argparse
 import json
+import asyncio
 from pathlib import Path
 
 # External library imports
@@ -54,9 +55,21 @@ async def run() -> int:
         help="Microsoft Graph refresh token. If not provided, the tool will attempt to read it from .roadtools_auth file.",
     )
 
-    subparsers = parser.add_subparsers(
-        dest="command",
-        help="Subcommand to run. Leave empty to open interactive shell.",
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
+
+    # Authentication subcommand
+    auth_parser = subparsers.add_parser("auth", help="Authentication operations")
+    auth_parser.add_argument(
+        "--prt-cookie",
+        type=str,
+        default=None,
+        help="X-Ms-RefreshTokenCredential PRT cookie",
+    )
+    auth_parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Run the browser in headless mode (default: False)",
     )
 
     parser.add_argument(
@@ -71,18 +84,12 @@ async def run() -> int:
         help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
     )
 
-    for name, module in COMMANDS.items():
-        subparser = subparsers.add_parser(
-            name,
-            help=module.__doc__.strip() if module.__doc__ else f"{name} command",
-        )
-        module.add_arguments(subparser)
-
     args = parser.parse_args()
     logbook.setup_logging(log_level=args.log_level)
 
     if args.command == "auth":
-        return await auth.run_with_arguments(args)
+        # Run synchronous auth.run in a separate thread to avoid blocking
+        return await asyncio.to_thread(auth.run, args.prt_cookie, args.headless)
 
     access_token = args.access_token
     refresh_token = args.refresh_token

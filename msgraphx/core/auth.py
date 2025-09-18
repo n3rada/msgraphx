@@ -1,5 +1,4 @@
 # Built-in imports
-import asyncio
 import argparse
 import json
 import secrets
@@ -11,7 +10,7 @@ import pkce
 import httpx
 from loguru import logger
 
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 
 
 GRAPH_EXPLORER_APP_ID = "de8bc8b5-d9f9-48b1-a8ad-b748da725064"
@@ -20,8 +19,8 @@ REDIRECT_URI = "https://developer.microsoft.com/en-us/graph/graph-explorer"
 SCOPE = "openid https://graph.microsoft.com/.default offline_access"
 
 
-async def run_with_arguments(args: argparse.Namespace) -> int:
-    tokens = await get_tokens(prt_cookie=args.prt_cookie, headless=args.headless)
+def run(prt_cookie: str, headless: bool = False) -> int:
+    tokens = get_tokens(prt_cookie=prt_cookie, headless=headless)
 
     if not tokens:
         return 1
@@ -43,41 +42,10 @@ async def run_with_arguments(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_arguments(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        "--prt-cookie",
-        type=str,
-        default=None,
-        help="X-Ms-RefreshTokenCredential PRT cookie",
-    )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        default=False,
-        help="Run the browser in headless mode (default: False)",
-    )
-
-
-def standalone() -> int:
-    parser = argparse.ArgumentParser(
-        prog="msgraphx-auth",
-        add_help=True,
-        description="Microsoft Graph Explorer authentication module.",
-    )
-
-    add_arguments(parser)
-    args = parser.parse_args()
-    try:
-        return asyncio.run(run_with_arguments(args))
-    except KeyboardInterrupt:
-        logger.warning("🛑 Interrupted by user.")
-        return 0
-
-
 # Core function to get tokens using Playwright
 
 
-async def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
+def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
     response_dict = {"refresh_token": None, "access_token": None, "expires_in": None}
     code_verifier, code_challenge = pkce.generate_pkce_pair()
     state = secrets.token_urlsafe(32)
@@ -94,14 +62,14 @@ async def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
 
     auth_url = f"https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{urlencode(params)}"
 
-    logger.info("🔐 Starting authentication process using Playwright (async)")
+    logger.info("🔐 Starting authentication process using Playwright")
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless, args=["--no-sandbox"])
-        context = await browser.new_context()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless, args=["--no-sandbox"])
+        context = browser.new_context()
 
         if prt_cookie:
-            await context.add_cookies(
+            context.add_cookies(
                 [
                     {
                         "name": "x-ms-RefreshTokenCredential",
@@ -114,16 +82,16 @@ async def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
                 ]
             )
 
-        page = await context.new_page()
+        page = context.new_page()
         logger.info(f"🔗 Opening auth URL: {auth_url}")
 
-        await page.goto(auth_url)
-        await page.wait_for_load_state("load")
+        page.goto(auth_url)
+        page.wait_for_load_state("load")
 
         logger.info("🔍 Waiting for authentication to complete")
 
         try:
-            await page.wait_for_url(REDIRECT_URI + "*", timeout=2 * 60 * 1000)
+            page.wait_for_url(REDIRECT_URI + "*", timeout=2 * 60 * 1000)
         except TimeoutError:
             logger.error("⏱️ Timeout waiting for auth redirect.")
             return None
@@ -134,8 +102,8 @@ async def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
             final_url = page.url
             logger.success("🔄 Redirection received.")
         finally:
-            await context.close()
-            await browser.close()
+            context.close()
+            browser.close()
             logger.info("🖥️ Browser closed.")
 
     code = parse_qs(urlparse(final_url).query).get("code", [None])[0]
@@ -146,8 +114,8 @@ async def get_tokens(prt_cookie: str = None, headless: bool = False) -> dict:
 
     logger.info("🔑 Exchanging authorization code for tokens")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
+    with httpx.Client() as client:
+        response = client.post(
             "https://login.microsoftonline.com/common/oauth2/v2.0/token",
             data={
                 "client_id": GRAPH_EXPLORER_APP_ID,
