@@ -1,3 +1,8 @@
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
 [project]
 name = "msgraphx"
 version = "0.1.0"
@@ -25,6 +30,3 @@ repository = "https://github.com/n3rada/msgraphx"
 msgraphx = 'msgraphx.console:run'
 msgraphx-auth = 'msgraphx.core.auth:standalone'
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
