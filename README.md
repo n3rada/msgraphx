@@ -21,6 +21,20 @@ Options:
 
 This print the access token on the `stdout` and generate a `.roadtools_auth` file containing the access and refresh tokens.
 
+### Playwright
+
+Ensure chromium playwright browser is available before running the `auth` command:
+```shell
+playwright install chromium
+```
+
+If installed with `pipx`:
+
+- Windows PowerShell
+```powershell
+& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install chromium
+```
+
 ## ⚔️ Exploitation Modules
 
 msgraphx is built with modularity in mind. Each module is dynamically loaded and can be invoked as a subcommand.
