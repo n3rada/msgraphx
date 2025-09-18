@@ -28,5 +28,4 @@ repository = "https://github.com/n3rada/msgraphx"
 
 [project.scripts]
 msgraphx = 'msgraphx.console:run'
-msgraphx-auth = 'msgraphx.core.auth:standalone'
 

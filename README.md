@@ -4,7 +4,7 @@ Microsoft Graph eXploitation toolkit.
 
 Install with `pipx` to keep the environment isolated:
 ```shell
-pipx install msgraphx
+pipx install "msgraphx@git+https://github.com/n3rada/msgraphx.git"
 ```
 
 ## 🔐 Authentication
@@ -20,11 +20,6 @@ Options:
 - `--headless`: Run Playwright in headless mode.
 
 This print the access token on the `stdout` and generate a `.roadtools_auth` file containing the access and refresh tokens.
-
-You can choose to install directly the standalone `msgraphx-auth`:
-```shell
-pipx install 'msgraphx[auth]'
-```
 
 ## ⚔️ Exploitation Modules
 
