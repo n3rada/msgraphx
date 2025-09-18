@@ -35,6 +35,11 @@ If installed with `pipx`:
 & "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install chromium
 ```
 
+When working in enterprise environments with TLS inspection/control systems like Zscaler, Forcepoint, or similar proxy solutions, you may encounter certificate validation errors when Node.js applications try to make HTTPS requests. Set the environment variable to disable strict TLS certificate validation:
+```powershell
+set NODE_TLS_REJECT_UNAUTHORIZED=0
+```
+
 ## ⚔️ Exploitation Modules
 
 msgraphx is built with modularity in mind. Each module is dynamically loaded and can be invoked as a subcommand.
