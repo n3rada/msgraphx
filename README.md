@@ -7,14 +7,6 @@ Install with `pipx` to keep the environment isolated:
 pipx install "msgraphx@git+https://github.com/n3rada/msgraphx.git"
 ```
 
-### Playwright
-If installed with `pipx`:
-
-- Windows PowerShell
-```powershell
-& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install chromium
-```
-
 ## 🔐 Authentication
 
 msgraphx provides a Playwright-based authenticator to acquire a Microsoft Graph access token.
@@ -28,6 +20,20 @@ Options:
 - `--headless`: Run Playwright in headless mode.
 
 This print the access token on the `stdout` and generate a `.roadtools_auth` file containing the access and refresh tokens.
+
+### Playwright
+
+Ensure chromium playwright browser is available before running the `auth` command:
+```shell
+playwright install chromium
+```
+
+If installed with `pipx`:
+
+- Windows PowerShell
+```powershell
+& "$env:USERPROFILE\pipx\venvs\msgraphx\Scripts\playwright.exe" install chromium
+```
 
 ## ⚔️ Exploitation Modules
 
