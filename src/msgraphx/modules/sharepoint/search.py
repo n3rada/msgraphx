@@ -30,6 +30,15 @@ HUNT_QUERIES = {
         "filetype:kdbx OR filetype:cfg OR filetype:yaml OR "
         "filetype:yml OR filetype:secret OR filetype:vault OR filetype:pfx"
     ),
+    "ssh": (
+        "filetype:pub OR filetype:pem OR "
+        "filename:id_rsa OR filename:id_ecdsa OR filename:id_ed25519 OR filename:id_dsa OR "
+        "filename:authorized_keys OR filename:known_hosts OR filename:.ssh OR "
+        '"BEGIN RSA PRIVATE KEY" OR "BEGIN OPENSSH PRIVATE KEY" OR '
+        '"BEGIN DSA PRIVATE KEY" OR "BEGIN EC PRIVATE KEY" OR "BEGIN PRIVATE KEY" OR '
+        '"BEGIN ENCRYPTED PRIVATE KEY" OR '
+        '"ssh-rsa" OR "ssh-ed25519" OR "ecdsa-sha2"'
+    ),
     "office": (
         "filetype:doc OR filetype:docx OR filetype:rtf OR filetype:odt OR "
         "filetype:xls OR filetype:xlsx OR filetype:csv OR filetype:ods OR "
