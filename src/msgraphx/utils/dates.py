@@ -27,12 +27,15 @@ def parse_date_string(s: str) -> str:
             "y": timedelta(days=value * 365),  # Approximate year as 365 days
         }[unit]
 
-        return (now - delta).isoformat() + "Z"
+        result_dt = now - delta
+        # Format as ISO 8601 with Z suffix (UTC), without microseconds
+        return result_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Absolute date handling
     try:
         dt = datetime.strptime(s, "%Y-%m-%d")
-        return dt.isoformat() + "Z"
+        # Assume UTC for date-only inputs
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except ValueError as exc:
         raise ValueError(
             f"Invalid format: '{s}'. Expected YYYY-MM-DD or duration like 5h, 2d, 1w, 2y."

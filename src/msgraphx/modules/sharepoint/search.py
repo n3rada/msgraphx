@@ -269,6 +269,9 @@ async def run_with_arguments(
         entity_types=[EntityType.DriveItem],
         options=search_options,
     ):
+
+        logger.trace(drive_item.__dict__)
+
         # Process each DriveItem
         logger.info(
             f"📄 {drive_item.name} (Created by: {drive_item.created_by.user.display_name})"
@@ -278,7 +281,17 @@ async def run_with_arguments(
         # Download file if --save is specified
         if save_dir:
             try:
-                # Get file content stream
+                # Sanitize filename to avoid path traversal
+                safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
+                file_path = save_dir / safe_filename
+
+                # Check if file already exists - skip download if it does
+                if file_path.exists():
+                    logger.debug(f"⏭️  Skipping (already exists): {file_path.name}")
+                    downloaded += 1  # Count as downloaded
+                    continue
+
+                # Get file content stream only if file doesn't exist
                 file_stream = (
                     await context.graph_client.drives.by_drive_id(
                         drive_item.parent_reference.drive_id
@@ -288,25 +301,11 @@ async def run_with_arguments(
                 )
 
                 if file_stream:
-                    # Sanitize filename to avoid path traversal
-                    safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
-                    file_path = save_dir / safe_filename
-
-                    # Check if file already exists
-                    if file_path.exists():
-                        # Append number to filename
-                        base = file_path.stem
-                        ext = file_path.suffix
-                        counter = 1
-                        while file_path.exists():
-                            file_path = save_dir / f"{base}_{counter}{ext}"
-                            counter += 1
-
                     # Write file
                     with open(file_path, "wb") as f:
                         f.write(file_stream)
 
-                    logger.success(f"✅ Saved: {file_path.name}")
+                    logger.debug(f"✅ Saved: {file_path.name}")
                     downloaded += 1
                 else:
                     logger.warning(f"⚠️ Empty file: {drive_item.name}")
