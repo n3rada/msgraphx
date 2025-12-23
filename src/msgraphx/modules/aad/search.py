@@ -452,8 +452,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
     parser.add_argument(
-        "-o",
-        "--output",
+        "--json-output",
         type=str,
         default=None,
         help="Output directory for JSON results. Defaults to current directory. Results saved as: {output}/{tenant_id}/{type}_{query}_{timestamp}.json",
