@@ -108,8 +108,6 @@ async def run_with_arguments(
                     f"Created: {group.created_date_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
                 )
 
-            logger.info("")  # Blank line between groups
-
         logger.info(f"Total: {len(groups)} groups")
     else:
         logger.info("📭 No groups found")
