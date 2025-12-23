@@ -39,6 +39,17 @@ HUNT_QUERIES = {
         '"BEGIN ENCRYPTED PRIVATE KEY" OR '
         '"ssh-rsa" OR "ssh-ed25519" OR "ecdsa-sha2"'
     ),
+    "mssql": (
+        "filetype:mdf OR filetype:ldf OR filetype:sql OR filetype:udl OR "
+        '"Data Source=" OR "Server=" OR "Initial Catalog=" OR "Database=" OR '
+        '"User ID=" OR "User Id=" OR "uid=" OR "Password=" OR "pwd=" OR '
+        '"Integrated Security=" OR "Trusted_Connection=" OR '
+        '"connection string" OR "ConnectionString" OR "SqlConnection" OR '
+        '"DRIVER={SQL Server}" OR "Provider=SQLOLEDB" OR "Provider=SQLNCLI" OR '
+        '"AttachDbFilename=" OR "1433" OR '
+        "filename:web.config OR filename:appsettings.json OR filename:app.config OR "
+        "filename:database.yml OR filename:.env"
+    ),
     "office": (
         "filetype:doc OR filetype:docx OR filetype:rtf OR filetype:odt OR "
         "filetype:xls OR filetype:xlsx OR filetype:csv OR filetype:ods OR "
