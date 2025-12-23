@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# msrgraphx/cli.py
 
 # Built-in imports
 import argparse
@@ -6,7 +6,6 @@ import importlib
 import json
 import os
 import pkgutil
-import sys
 import time
 from pathlib import Path
 
@@ -23,12 +22,16 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 # Local library imports
 from . import __version__
-from .modules import sharepoint
+from .core.context import GraphContext
+from .modules import sharepoint, aad, me
 from .utils import logbook, tokens
 
 
 def load_subcommands_from_module(
-    parent_parser: argparse.ArgumentParser, module_package, module_name: str
+    parent_parser: argparse.ArgumentParser,
+    module_package,
+    module_name: str,
+    global_parent: argparse.ArgumentParser,
 ):
     """
     Dynamically load and register subcommands from a module package.
@@ -41,10 +44,11 @@ def load_subcommands_from_module(
         parent_parser: The parent ArgumentParser to add subparsers to
         module_package: The package module to scan for subcommands
         module_name: The name to use for the main subcommand (e.g., 'sp', 'sharepoint')
+        global_parent: Optional parent parser with global options to inherit
 
     Example:
         >>> sp_parser = subparsers.add_parser('sharepoint', aliases=['sp'])
-        >>> load_subcommands_from_module(sp_parser, sharepoint, 'sharepoint')
+        >>> load_subcommands_from_module(sp_parser, sharepoint, 'sharepoint', parent_parser)
     """
     subparsers = parent_parser.add_subparsers(
         dest=f"{module_name}_command", help=f"{module_name} subcommand"
@@ -72,9 +76,10 @@ def load_subcommands_from_module(
         ):
             continue
 
-        # Create subparser for this command
+        # Create subparser for this command, inheriting global options if available
+        parents = [global_parent] if global_parent else []
         cmd_parser = subparsers.add_parser(
-            short_name, help=f"{short_name.capitalize()} commands"
+            short_name, help=f"{short_name.capitalize()} commands", parents=parents
         )
         module.add_arguments(cmd_parser)
         # Store the module reference for later execution
@@ -82,11 +87,34 @@ def load_subcommands_from_module(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Create parent parser with global options that all subcommands inherit
+    parent_parser = argparse.ArgumentParser(add_help=False)
+
+    parent_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging (shortcut for --log-level DEBUG).",
+    )
+
+    parent_parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Enable TRACE logging (shortcut for --log-level TRACE).",
+    )
+
+    parent_parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default=None,
+        help="Set the logging level explicitly.",
+    )
 
     parser = argparse.ArgumentParser(
         prog="msgraphx",
         add_help=True,
         description="Microsoft Graph eXploitation toolkit.",
+        parents=[parent_parser],
     )
 
     parser.add_argument(
@@ -168,11 +196,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
 
-    # SharePoint subcommand
+    # SharePoint subcommand (inherits parent_parser for global options)
     sp_parser = subparsers.add_parser(
-        "sharepoint", aliases=["sp"], help="SharePoint commands"
+        "sharepoint",
+        aliases=["sp"],
+        help="SharePoint commands",
+        parents=[parent_parser],
     )
-    load_subcommands_from_module(sp_parser, sharepoint, "sp")
+    load_subcommands_from_module(sp_parser, sharepoint, "sp", parent_parser)
+
+    # Azure AD subcommand (inherits parent_parser for global options)
+    aad_parser = subparsers.add_parser(
+        "aad",
+        aliases=["ad"],
+        help="Azure Active Directory commands",
+        parents=[parent_parser],
+    )
+    load_subcommands_from_module(aad_parser, aad, "aad", parent_parser)
+
+    # Me subcommand (inherits parent_parser for global options)
+    me_parser = subparsers.add_parser(
+        "me",
+        help="Current user information",
+        parents=[parent_parser],
+    )
+    me.add_arguments(me_parser)
 
     parser.add_argument(
         "--before",
@@ -184,30 +232,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--after",
         type=str,
         help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
-    )
-
-    advanced_group = parser.add_argument_group(
-        "Advanced Options", "Additional advanced or debugging options."
-    )
-
-    advanced_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging (shortcut for --log-level DEBUG).",
-    )
-
-    advanced_group.add_argument(
-        "--trace",
-        action="store_true",
-        help="Enable TRACE logging (shortcut for --log-level TRACE).",
-    )
-
-    advanced_group.add_argument(
-        "--log-level",
-        type=str,
-        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=None,
-        help="Set the logging level explicitly.",
     )
 
     return parser
@@ -270,22 +294,45 @@ async def main() -> int:
 
     logger.info(f"🌍 Public IP: {public_ip} (⏱️ RTT: {rtt:.2f}s)")
 
-    # Load Azure AD credentials from CLI args or environment variables
-    tenant_id = args.tenant_id or os.environ.get("TENANT_ID")
-    client_id = args.client_id or os.environ.get("CLIENT_ID")
-    client_secret = args.client_secret or os.environ.get("CLIENT_SECRET")
-    drive_id = args.drive_id or os.environ.get("DRIVE_ID")
-
-    # Check for authentication method conflicts
-    has_token_auth = args.access_token or os.environ.get("ACCESS_TOKEN")
-    has_client_creds = tenant_id and client_id and client_secret
-
-    if has_token_auth and has_client_creds:
+    # Check for explicit authentication method conflicts (command-line args only)
+    if args.access_token and args.tenant_id:
         logger.error(
             "❌ Cannot use both token-based authentication (--access-token) and "
             "client credentials (--tenant-id, --client-id, --client-secret) simultaneously."
         )
         return 1
+
+    # Determine authentication method with priority: explicit args > env vars
+    # Token auth takes precedence over client credentials if both are in environment
+    has_explicit_token = args.access_token is not None
+    has_explicit_client_creds = args.tenant_id is not None
+    has_env_token = os.environ.get("ACCESS_TOKEN") is not None
+    has_env_client_creds = (
+        os.environ.get("TENANT_ID")
+        and os.environ.get("CLIENT_ID")
+        and os.environ.get("CLIENT_SECRET")
+    )
+
+    # Prioritize: explicit token > explicit client creds > env token > env client creds
+    use_token_auth = has_explicit_token or (
+        has_env_token and not has_explicit_client_creds
+    )
+    use_client_creds = not use_token_auth and (
+        has_explicit_client_creds or has_env_client_creds
+    )
+
+    # Load credentials based on chosen method
+    tenant_id = None
+    client_id = None
+    client_secret = None
+
+    if use_client_creds:
+        tenant_id = args.tenant_id or os.environ.get("TENANT_ID")
+        client_id = args.client_id or os.environ.get("CLIENT_ID")
+        client_secret = args.client_secret or os.environ.get("CLIENT_SECRET")
+
+    # Always load drive_id regardless of auth method
+    drive_id = args.drive_id or os.environ.get("DRIVE_ID")
 
     # Store in args for modules to access
     args.tenant_id = tenant_id
@@ -305,7 +352,7 @@ async def main() -> int:
     graph_client = None
     is_app_only = False  # Track if using application-only permissions
 
-    if has_client_creds:
+    if use_client_creds and tenant_id and client_id and client_secret:
         # Use client credentials flow - always app-only
         logger.info("🔑 Using client credentials authentication")
         is_app_only = True
@@ -369,9 +416,9 @@ async def main() -> int:
             return 1
 
         # Check if token has application permissions (roles) or delegated permissions (scp)
-        token_claims = token.claims
-        has_roles = "roles" in token_claims and token_claims["roles"]
-        has_scp = "scp" in token_claims and token_claims["scp"]
+        token_payload = token.payload
+        has_roles = "roles" in token_payload and token_payload["roles"]
+        has_scp = "scp" in token_payload and token_payload["scp"]
 
         if has_roles and not has_scp:
             is_app_only = True
@@ -388,6 +435,7 @@ async def main() -> int:
     args.is_app_only = is_app_only
 
     # Verify connection - only check /me endpoint for delegated auth
+    cached_user = None
     if is_app_only:
         # For app-only permissions, we can't use /me endpoint (no signed-in user)
         # But we can verify by getting the service principal info
@@ -420,6 +468,8 @@ async def main() -> int:
         try:
             user = await graph_client.me.get()
             logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
+            # Cache user object for reuse by modules
+            cached_user = user
         except ODataError as e:
             # Inspect error code
             code = getattr(e.error, "code", "Unknown")
@@ -438,6 +488,14 @@ async def main() -> int:
             logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
             return 1
 
+    # Create context object with runtime state
+    context = GraphContext(
+        graph_client=graph_client,
+        is_app_only=is_app_only,
+        region=args.region,
+        cached_user=cached_user,
+    )
+
     # Handle subcommands
     if args.command in ("sharepoint", "sp"):
         if not (
@@ -449,7 +507,22 @@ async def main() -> int:
                 "Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')"
             )
             return 1
-        return await args.sp_module.run_with_arguments(graph_client, args)
+        return await args.sp_module.run_with_arguments(context, args)
+
+    if args.command in ("aad", "ad"):
+        if not (
+            hasattr(args, "aad_module")
+            and hasattr(args, "aad_command")
+            and args.aad_command
+        ):
+            logger.error(
+                "Please specify an Azure AD subcommand (e.g., 'msgraphx aad search admin')"
+            )
+            return 1
+        return await args.aad_module.run_with_arguments(context, args)
+
+    if args.command == "me":
+        return await me.run_with_arguments(context, args)
 
     # If no subcommand provided but we authenticated successfully, just show info and exit
     if not args.command:
@@ -457,16 +530,5 @@ async def main() -> int:
             "✅ Authentication successful. Use a subcommand to perform actions."
         )
         return 0
-
-    # Add more module handlers here in future
-    # if args.command in ("other_module", "om"):
-    #     if not (
-    #         hasattr(args, "om_module")
-    #         and hasattr(args, "om_command")
-    #         and args.om_command
-    #     ):
-    #         logger.error("Please specify a subcommand")
-    #         return 1
-    #     return await args.om_module.run_with_arguments(graph_client, args)
 
     return 0

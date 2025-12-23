@@ -1,3 +1,5 @@
+# msgraphx/utils/tokens.py
+
 # Built-in imports
 import time
 import json
@@ -89,6 +91,10 @@ class TokenManager:
         return max(0, int(self._expires_on - datetime.now(timezone.utc).timestamp()))
 
     def update_output_file(self) -> None:
+        if not self._refresh_token:
+            logger.debug("⏭️ Skipping file update - no refresh token available")
+            return
+
         output_file = Path(".roadtools_auth")
         output_file.unlink(missing_ok=True)
 
@@ -108,8 +114,10 @@ class TokenManager:
 
     async def refresh_access_token(self, refresh_token: str):
         if not refresh_token:
-            logger.error("⛔ No refresh token available to refresh access token.")
-            return None, None
+            logger.warning(
+                "⚠️ No refresh token available - token refresh disabled. Re-authenticate when token expires."
+            )
+            return False
 
         response = httpx.post(
             url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
@@ -125,7 +133,7 @@ class TokenManager:
 
         if response.status_code != 200:
             logger.error(f"❌ Failed to refresh token: {response.text}.")
-            return
+            return False
 
         new_tokens = response.json()
 
@@ -134,8 +142,15 @@ class TokenManager:
             refresh_token=new_tokens.get("refresh_token"),
         )
         logger.success("🔁 Access token refreshed successfully.")
+        return True
 
     def start_auto_refresh(self) -> None:
+        if not self._refresh_token:
+            logger.info(
+                "ℹ️ Auto-refresh disabled - no refresh token available. You'll need to re-authenticate when the token expires."
+            )
+            return
+
         def refresher():
             while True:
                 sleep_duration = (
@@ -147,8 +162,14 @@ class TokenManager:
 
                 logger.debug("🛠️ Time to refresh token.")
                 try:
-                    asyncio.run(self.refresh_access_token(self._refresh_token))
-                    self.update_output_file()
+                    success = asyncio.run(
+                        self.refresh_access_token(self._refresh_token)
+                    )
+                    if success:
+                        self.update_output_file()
+                    else:
+                        logger.error("❌ Token refresh failed, stopping auto-refresh.")
+                        break
                 except Exception as exc:
                     logger.error(f"❌ Failed to refresh token: {exc}")
                     break

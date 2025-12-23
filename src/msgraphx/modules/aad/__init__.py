@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 # Local library imports
-from . import search, download
+from . import search
 
 
 if TYPE_CHECKING:
@@ -17,14 +17,9 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     search_parser = subparsers.add_parser(
-        "search", help="Search for files inside both SharePoint and OneDrive."
+        "search", help="Search Azure AD for groups, users, devices, and more"
     )
     search.add_arguments(search_parser)
-
-    download_parser = subparsers.add_parser(
-        "download", aliases=["dump"], help="Download all files from a drive"
-    )
-    download.add_arguments(download_parser)
 
 
 async def run_with_arguments(
@@ -32,7 +27,5 @@ async def run_with_arguments(
 ) -> int:
     if args.subcommand == "search":
         return await search.run_with_arguments(context, args)
-    elif args.subcommand in ("download", "dump"):
-        return await download.run_with_arguments(context, args)
 
     return 1

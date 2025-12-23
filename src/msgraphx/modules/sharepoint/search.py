@@ -1,3 +1,5 @@
+# msgraphx/modules/sharepoint/search.py
+
 # Built-in imports
 from typing import TYPE_CHECKING
 import argparse
@@ -8,13 +10,13 @@ from msgraph import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
 
 # Local library imports
-from msgraphx.core import search
+from msgraphx.core import graph_search
 from msgraphx.utils.dates import parse_date_string
 
 
 if TYPE_CHECKING:
     import argparse
-    from msgraph import GraphServiceClient
+    from msgraphx.core.context import GraphContext
 
 HUNT_QUERIES = {
     "scripts": (
@@ -50,6 +52,58 @@ HUNT_QUERIES = {
 }
 
 
+async def get_user_sharepoint_groups(
+    graph_client: "GraphServiceClient", visibility: str = None
+) -> list:
+    """
+    Get current user's Microsoft 365 groups (which have SharePoint sites).
+
+    Args:
+        graph_client: Authenticated Graph client
+        visibility: Optional filter - 'Private' or 'Public'
+
+    Returns:
+        List of group objects with SharePoint sites
+    """
+    logger.info("📋 Fetching user's Microsoft 365 groups...")
+
+    try:
+        # Build filter for M365 groups
+        filters = ["groupTypes/any(c:c eq 'Unified')"]
+        if visibility:
+            filters.append(f"visibility eq '{visibility}'")
+
+        # Use direct query without explicit builder import
+        result = await graph_client.me.transitive_member_of.graph_group.get()
+
+        if result and result.value:
+            # Apply client-side filters
+            sp_groups = result.value
+
+            # Filter by visibility if specified
+            if visibility:
+                sp_groups = [g for g in sp_groups if g.visibility == visibility]
+
+            # Filter for groups with Team/SharePoint
+            sp_groups = [
+                g
+                for g in result.value
+                if g.resource_provisioning_options
+                and "Team" in g.resource_provisioning_options
+            ]
+            logger.success(
+                f"✅ Found {len(sp_groups)} Microsoft 365 groups with SharePoint sites"
+            )
+            return sp_groups
+
+        logger.info("📭 No Microsoft 365 groups found")
+        return []
+
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch user groups: {e}")
+        return []
+
+
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
         "query",
@@ -78,10 +132,45 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         help="Shortcut to set --query for specific file types (scripts, credentials, office, backups)",
     )
 
+    parser.add_argument(
+        "--my-groups",
+        action="store_true",
+        help="Search only in current user's Microsoft 365 groups (SharePoint sites).",
+    )
+
+    parser.add_argument(
+        "--list-groups",
+        action="store_true",
+        help="List current user's Microsoft 365 groups and exit (no search).",
+    )
+
+    parser.add_argument(
+        "--visibility",
+        type=str,
+        choices=["Private", "Public"],
+        default=None,
+        help="Filter groups by visibility (use with --my-groups or --list-groups).",
+    )
+
 
 async def run_with_arguments(
-    graph_client: "GraphServiceClient", args: "argparse.Namespace"
+    context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
+
+    # Handle --list-groups command
+    if args.list_groups:
+        groups = await get_user_sharepoint_groups(context.graph_client, args.visibility)
+
+        if groups:
+            logger.info("📊 Your Microsoft 365 Groups with SharePoint:")
+            for group in groups:
+                visibility = f"🔒 {group.visibility}" if group.visibility else ""
+                logger.success(f"  👥 {group.displayName} {visibility}")
+                if group.mail:
+                    logger.info(f"     Email: {group.mail}")
+                logger.info(f"     ID: {group.id}")
+
+        return 0
 
     search_query = args.query
 
@@ -121,12 +210,32 @@ async def run_with_arguments(
     # Region is required for application permissions, optional for delegated
     region = args.region if getattr(args, "is_app_only", False) else None
 
+    # Handle --my-groups: search only in user's groups
+    group_ids = None
+    if args.my_groups:
+        groups = await get_user_sharepoint_groups(context.graph_client, args.visibility)
+        if not groups:
+            logger.warning(
+                "⚠️ No Microsoft 365 groups found, no results will be returned"
+            )
+            return 0
+
+        group_ids = [g.id for g in groups]
+        logger.info(f"🔒 Scoping search to {len(group_ids)} user groups")
+
     # Get drive_id if provided to scope search
     drive_id = getattr(args, "drive_id", None)
     if drive_id:
         logger.info(f"🔒 Scoping search to Drive ID: {drive_id}")
 
-    search_options = search.SearchOptions(
+    # Build search query with group filter if needed
+    if group_ids:
+        # Add filter to search only in these groups' drives
+        group_filter = " OR ".join([f"GroupId:{gid}" for gid in group_ids])
+        search_query = f"({search_query}) AND ({group_filter})"
+        logger.debug(f"📝 Modified query: {search_query}")
+
+    search_options = graph_search.SearchOptions(
         query_string=search_query,
         sort_by="createdDateTime",
         descending=True,
@@ -135,8 +244,9 @@ async def run_with_arguments(
         drive_id=drive_id,
     )
 
-    async for drive_item in search.search_entities(
-        graph_client,
+    count = 0
+    async for drive_item in graph_search.search_entities(
+        context.graph_client,
         entity_types=[EntityType.DriveItem],
         options=search_options,
     ):
@@ -144,5 +254,7 @@ async def run_with_arguments(
         logger.info(
             f"📄 {drive_item.name} (Created by: {drive_item.created_by.user.display_name})"
         )
+        count += 1
 
+    logger.info(f"📊 Total files found: {count}")
     return 0

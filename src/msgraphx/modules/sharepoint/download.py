@@ -9,10 +9,13 @@ import asyncio
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 
+# Local library imports
+from msgraphx.utils.pagination import collect_all
+
 
 if TYPE_CHECKING:
     import argparse
-    from msgraph import GraphServiceClient
+    from msgraphx.core.context import GraphContext
 
 
 async def download_drive_item(
@@ -48,14 +51,14 @@ async def download_drive_item(
         logger.debug(f"📁 Entering folder: {current_path}")
 
         try:
-            # Get children of this folder
-            children = (
-                await graph_client.drives.by_drive_id(drive_id)
+            # Get all children of this folder (with pagination)
+            children = await collect_all(
+                graph_client.drives.by_drive_id(drive_id)
                 .items.by_drive_item_id(item.id)
-                .children.get()
+                .children
             )
 
-            if children and children.value:
+            if children:
                 # Download all children concurrently
                 tasks = [
                     download_drive_item(
@@ -67,7 +70,7 @@ async def download_drive_item(
                         semaphore,
                         skip_existing,
                     )
-                    for child in children.value
+                    for child in children
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -200,14 +203,14 @@ async def download_drive(
         drive_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"📂 Files will be saved to: {drive_folder}")
 
-        # Start from root - use items with "root" as the item ID
-        root_children = (
-            await graph_client.drives.by_drive_id(drive_id)
+        # Start from root - use items with "root" as the item ID (with pagination)
+        root_children = await collect_all(
+            graph_client.drives.by_drive_id(drive_id)
             .items.by_drive_item_id("root")
-            .children.get()
+            .children
         )
 
-        if not root_children or not root_children.value:
+        if not root_children:
             logger.info("📭 Drive is empty")
             return 0
 
@@ -221,7 +224,7 @@ async def download_drive(
             download_drive_item(
                 graph_client, drive_id, item, drive_folder, "", semaphore, skip_existing
             )
-            for item in root_children.value
+            for item in root_children
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -285,7 +288,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 
 async def run_with_arguments(
-    graph_client: "GraphServiceClient", args: "argparse.Namespace"
+    context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
 
     # Get drive_id from args
@@ -306,7 +309,7 @@ async def run_with_arguments(
 
     # Download the drive
     downloaded_count = await download_drive(
-        graph_client, drive_id, output_dir, max_concurrent, skip_existing
+        context.graph_client, drive_id, output_dir, max_concurrent, skip_existing
     )
 
     return 0 if downloaded_count > 0 else 1
