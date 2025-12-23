@@ -39,12 +39,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         help="Filter groups by visibility.",
     )
 
-    parser.add_argument(
-        "--with-sharepoint",
-        action="store_true",
-        help="Only show groups with SharePoint sites.",
-    )
-
 
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
@@ -56,15 +50,6 @@ async def run_with_arguments(
     # Apply filters
     if args.visibility:
         groups = [g for g in groups if g.visibility == args.visibility]
-
-    if args.with_sharepoint:
-        groups = [
-            g
-            for g in groups
-            if g.additional_data
-            and g.additional_data.get("resourceProvisioningOptions")
-            and "Team" in g.additional_data.get("resourceProvisioningOptions", [])
-        ]
 
     if groups:
         # Sort by creation date (newest first)
@@ -94,15 +79,6 @@ async def run_with_arguments(
 
             if group.visibility:
                 logger.info(f"Visibility: {group.visibility}")
-
-            # Check if group has SharePoint/Teams
-            has_sharepoint = (
-                group.additional_data
-                and group.additional_data.get("resourceProvisioningOptions")
-                and "Team"
-                in group.additional_data.get("resourceProvisioningOptions", [])
-            )
-            logger.info(f"Has SharePoint: {has_sharepoint}")
 
             # Show creation date if available
             if group.created_date_time:
