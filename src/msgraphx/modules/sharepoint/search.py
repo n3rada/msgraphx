@@ -1,8 +1,9 @@
 # msgraphx/modules/sharepoint/search.py
 
 # Built-in imports
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
-import argparse
 
 # External library imports
 from loguru import logger
@@ -244,7 +245,17 @@ async def run_with_arguments(
         drive_id=drive_id,
     )
 
+    # Create save directory if specified
+    save_dir = None
+    if args.save:
+        save_dir = Path(args.save)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"💾 Files will be saved to: {save_dir.absolute()}")
+
     count = 0
+    downloaded = 0
+    failed = 0
+
     async for drive_item in graph_search.search_entities(
         context.graph_client,
         entity_types=[EntityType.DriveItem],
@@ -256,5 +267,50 @@ async def run_with_arguments(
         )
         count += 1
 
+        # Download file if --save is specified
+        if save_dir:
+            try:
+                # Get file content stream
+                file_stream = (
+                    await context.graph_client.drives.by_drive_id(
+                        drive_item.parent_reference.drive_id
+                    )
+                    .items.by_drive_item_id(drive_item.id)
+                    .content.get()
+                )
+
+                if file_stream:
+                    # Sanitize filename to avoid path traversal
+                    safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
+                    file_path = save_dir / safe_filename
+
+                    # Check if file already exists
+                    if file_path.exists():
+                        # Append number to filename
+                        base = file_path.stem
+                        ext = file_path.suffix
+                        counter = 1
+                        while file_path.exists():
+                            file_path = save_dir / f"{base}_{counter}{ext}"
+                            counter += 1
+
+                    # Write file
+                    with open(file_path, "wb") as f:
+                        f.write(file_stream)
+
+                    logger.success(f"✅ Saved: {file_path.name}")
+                    downloaded += 1
+                else:
+                    logger.warning(f"⚠️ Empty file: {drive_item.name}")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to download {drive_item.name}: {e}")
+                failed += 1
+
     logger.info(f"📊 Total files found: {count}")
+    if save_dir:
+        logger.info(f"💾 Downloaded: {downloaded}")
+        if failed > 0:
+            logger.warning(f"⚠️ Failed: {failed}")
+
     return 0

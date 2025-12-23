@@ -110,6 +110,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Set the logging level explicitly.",
     )
 
+    parent_parser.add_argument(
+        "--before",
+        type=str,
+        help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+    )
+
+    parent_parser.add_argument(
+        "--after",
+        type=str,
+        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+    )
+
+    parent_parser.add_argument(
+        "--save",
+        "--output",
+        "-o",
+        type=str,
+        metavar="PATH",
+        help="Directory path to save downloaded files. Creates the directory if it doesn't exist.",
+    )
+
     parser = argparse.ArgumentParser(
         prog="msgraphx",
         add_help=True,
@@ -221,18 +242,6 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     me.add_arguments(me_parser)
-
-    parser.add_argument(
-        "--before",
-        type=str,
-        help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
-    )
-
-    parser.add_argument(
-        "--after",
-        type=str,
-        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
-    )
 
     return parser
 

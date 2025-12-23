@@ -246,6 +246,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
         "-o",
         "--output",
+        "--save",
         type=str,
         default=Path().cwd(),
         help="Output directory for downloaded files. Defaults to the current working directory.",
