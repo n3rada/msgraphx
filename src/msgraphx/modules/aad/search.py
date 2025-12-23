@@ -4,7 +4,7 @@
 from typing import TYPE_CHECKING
 import json
 from pathlib import Path
-from datetime import datetime
+import datetime
 
 # External library imports
 from loguru import logger
@@ -19,7 +19,7 @@ from msgraph.generated.applications.applications_request_builder import (
 )
 
 # Local library imports
-from msgraphx.utils.pagination import collect_all
+from ...utils import pagination
 
 
 if TYPE_CHECKING:
@@ -96,7 +96,7 @@ def save_results_to_json(
     tenant_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate filename with timestamp
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_query = "".join(c if c.isalnum() else "_" for c in query)
     filename = f"{search_type}_{safe_query}_{timestamp}.json"
     filepath = tenant_dir / filename
@@ -109,7 +109,7 @@ def save_results_to_json(
         "tenant_id": tenant_id,
         "search_type": search_type,
         "query": query,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "count": len(results),
         "results": serialized_results,
     }
@@ -140,7 +140,7 @@ async def search_groups(
         # For contains search, get all groups and filter client-side
         if contains:
             logger.debug("🔎 Using client-side 'contains' filter (fetching all groups)")
-            all_results = await collect_all(graph_client.groups, None)
+            all_results = await pagination.collect_all(graph_client.groups, None)
             # Filter client-side
             all_results = [
                 g
@@ -159,7 +159,9 @@ async def search_groups(
                     query_parameters=query_params
                 )
             )
-            all_results = await collect_all(graph_client.groups, request_config)
+            all_results = await pagination.collect_all(
+                graph_client.groups, request_config
+            )
 
         # Filter for synced groups if requested
         if show_synced_only:
@@ -322,7 +324,9 @@ async def search_service_principals(
         )
 
         # Collect all pages of results
-        all_results = await collect_all(graph_client.service_principals, request_config)
+        all_results = await pagination.collect_all(
+            graph_client.service_principals, request_config
+        )
 
         if all_results:
             for sp in all_results:
@@ -372,7 +376,9 @@ async def search_applications(
         )
 
         # Collect all pages of results
-        all_results = await collect_all(graph_client.applications, request_config)
+        all_results = await pagination.collect_all(
+            graph_client.applications, request_config
+        )
 
         if all_results:
             for app in all_results:
