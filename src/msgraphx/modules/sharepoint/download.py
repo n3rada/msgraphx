@@ -244,15 +244,6 @@ async def download_drive(
 
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
-        "-o",
-        "--output",
-        "--save",
-        type=str,
-        default=Path().cwd(),
-        help="Output directory for downloaded files. Defaults to the current working directory.",
-    )
-
-    parser.add_argument(
         "-c",
         "--concurrency",
         type=int,
@@ -299,8 +290,8 @@ async def run_with_arguments(
         logger.error("❌ Drive ID is required for download. Use --drive-id to specify.")
         return 1
 
-    # Parse output directory
-    output_dir = Path(args.output).resolve()
+    # Parse output directory from global --save/--output/-o argument
+    output_dir = Path(args.save or Path().cwd()).resolve()
 
     # Get concurrency setting
     max_concurrent = getattr(args, "concurrency", 20)
