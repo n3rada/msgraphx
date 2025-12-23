@@ -493,8 +493,8 @@ async def run_with_arguments(
 
     # Get tenant ID and output settings
     tenant_id = getattr(args, "tenant_id", None)
-    save_json = args.output is not None
-    output_dir = Path(args.output) if args.output else Path.cwd()
+    save_json = args.json_output is not None
+    output_dir = Path(args.json_output) if args.json_output else Path.cwd()
 
     if save_json and not tenant_id:
         logger.warning("⚠️ Tenant ID not available, using 'unknown' for directory name")
