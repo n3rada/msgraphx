@@ -18,7 +18,7 @@ dependencies = [
     "loguru (>=0.7.3,<0.8.0)",
     "httpx[socks] (>=0.28.1,<0.29.0)",
     "pkce (>=1.0.3,<2.0.0)",
-    "msgraph-sdk (>=1.37.0,<2.0.0)",
+    "msgraph-sdk (>=1.51.0,<2.0.0)",
     "prompt-toolkit (>=3.0.51,<4.0.0)"
 ]
 
