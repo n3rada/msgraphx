@@ -489,9 +489,12 @@ async def main() -> int:
             )
 
             if code == "InvalidAuthenticationToken":
-                logger.error(
-                    "🔒 Token is invalid or expired. Please re-authenticate with: `msgraphx auth`."
-                )
+                logger.error("🔒 Token is invalid or expired. Please re-authenticate.")
+            return 1
+        except TimeoutError:
+            logger.error(
+                "❌ Connection timeout while verifying credentials. Check your network connection."
+            )
             return 1
         except Exception as exc:
             logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
