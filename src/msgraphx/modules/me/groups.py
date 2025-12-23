@@ -75,6 +75,26 @@ async def run_with_arguments(
         )
 
         for group in groups:
+            logger.success(f"{group.display_name}")
+
+            if group.description:
+                logger.info(f"Description: {group.description}")
+
+            logger.info(f"ID: {group.id}")
+
+            if group.mail:
+                logger.info(f"Email: {group.mail}")
+
+            if group.security_identifier:
+                logger.info(f"Security Identifier: {group.security_identifier}")
+
+            # Show boolean properties
+            logger.info(f"Security Enabled: {group.security_enabled}")
+            logger.info(f"Mail Enabled: {group.mail_enabled}")
+
+            if group.visibility:
+                logger.info(f"Visibility: {group.visibility}")
+
             # Check if group has SharePoint/Teams
             has_sharepoint = (
                 group.additional_data
@@ -82,25 +102,7 @@ async def run_with_arguments(
                 and "Team"
                 in group.additional_data.get("resourceProvisioningOptions", [])
             )
-
-            sp_indicator = "📁 SharePoint" if has_sharepoint else ""
-            visibility_indicator = f"🔒 {group.visibility}" if group.visibility else ""
-            security_indicator = "🔐 Security" if group.security_enabled else ""
-
-            # Build indicator string
-            indicators = " ".join(
-                filter(None, [visibility_indicator, security_indicator, sp_indicator])
-            )
-
-            logger.success(f"{group.display_name} {indicators}")
-
-            if group.description:
-                logger.info(f"Description: {group.description}")
-            if group.mail:
-                logger.info(f"Email: {group.mail}")
-            logger.info(f"ID: {group.id}")
-            if group.security_identifier:
-                logger.info(f"Security Identifier: {group.security_identifier}")
+            logger.info(f"Has SharePoint: {has_sharepoint}")
 
             # Show creation date if available
             if group.created_date_time:
