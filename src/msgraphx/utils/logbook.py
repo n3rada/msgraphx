@@ -1,4 +1,4 @@
-# msgraphx/core/utils/logbook.py
+# msgraphx/utils/logbook.py
 
 """Logbook module for logging capabilities using Loguru.
 
