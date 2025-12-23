@@ -250,7 +250,6 @@ async def run_with_arguments(
     if args.save:
         save_dir = Path(args.save)
         save_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"💾 Files will be saved to: {save_dir.absolute()}")
 
     count = 0
     downloaded = 0
@@ -307,10 +306,14 @@ async def run_with_arguments(
                 logger.error(f"❌ Failed to download {drive_item.name}: {e}")
                 failed += 1
 
-    logger.info(f"📊 Total files found: {count}")
-    if save_dir:
-        logger.info(f"💾 Downloaded: {downloaded}")
-        if failed > 0:
-            logger.warning(f"⚠️ Failed: {failed}")
+    if count > 0:
+
+        logger.info(f"📊 Total files found: {count}")
+        if save_dir:
+            logger.info(
+                f"💾 {downloaded} items have been saved to: {save_dir.absolute()}"
+            )
+            if failed > 0:
+                logger.warning(f"⚠️ Failed: {failed}")
 
     return 0

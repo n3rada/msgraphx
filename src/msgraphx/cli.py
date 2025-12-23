@@ -113,13 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
     parent_parser.add_argument(
         "--before",
         type=str,
-        help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+        help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y).",
     )
 
     parent_parser.add_argument(
         "--after",
         type=str,
-        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w).",
+        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y).",
     )
 
     parent_parser.add_argument(
