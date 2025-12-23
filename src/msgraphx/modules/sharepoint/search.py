@@ -1,6 +1,7 @@
 # msgraphx/modules/sharepoint/search.py
 
 # Built-in imports
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -295,9 +296,10 @@ async def run_with_arguments(
                 # Sanitize filename to avoid path traversal
                 safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
                 file_path = save_dir / safe_filename
+                info_path = save_dir / f"{safe_filename}_info.json"
 
                 # Check if file already exists - skip download if it does
-                if file_path.exists():
+                if file_path.exists() and info_path.exists():
                     logger.debug(f"⏭️  Skipping (already exists): {file_path.name}")
                     downloaded += 1  # Count as downloaded
                     continue
@@ -315,6 +317,126 @@ async def run_with_arguments(
                     # Write file
                     with open(file_path, "wb") as f:
                         f.write(file_stream)
+
+                    # Save metadata as JSON
+                    metadata = {
+                        "id": drive_item.id,
+                        "name": drive_item.name,
+                        "size": drive_item.size,
+                        "created_datetime": (
+                            drive_item.created_date_time.isoformat()
+                            if drive_item.created_date_time
+                            else None
+                        ),
+                        "last_modified_datetime": (
+                            drive_item.last_modified_date_time.isoformat()
+                            if drive_item.last_modified_date_time
+                            else None
+                        ),
+                        "web_url": drive_item.web_url,
+                        "created_by": (
+                            {
+                                "user": {
+                                    "display_name": (
+                                        drive_item.created_by.user.display_name
+                                        if drive_item.created_by
+                                        and drive_item.created_by.user
+                                        else None
+                                    ),
+                                    "email": (
+                                        drive_item.created_by.user.email
+                                        if drive_item.created_by
+                                        and drive_item.created_by.user
+                                        else None
+                                    ),
+                                    "id": (
+                                        drive_item.created_by.user.id
+                                        if drive_item.created_by
+                                        and drive_item.created_by.user
+                                        else None
+                                    ),
+                                }
+                            }
+                            if drive_item.created_by
+                            else None
+                        ),
+                        "last_modified_by": (
+                            {
+                                "user": {
+                                    "display_name": (
+                                        drive_item.last_modified_by.user.display_name
+                                        if drive_item.last_modified_by
+                                        and drive_item.last_modified_by.user
+                                        else None
+                                    ),
+                                    "email": (
+                                        drive_item.last_modified_by.user.email
+                                        if drive_item.last_modified_by
+                                        and drive_item.last_modified_by.user
+                                        else None
+                                    ),
+                                    "id": (
+                                        drive_item.last_modified_by.user.id
+                                        if drive_item.last_modified_by
+                                        and drive_item.last_modified_by.user
+                                        else None
+                                    ),
+                                }
+                            }
+                            if drive_item.last_modified_by
+                            else None
+                        ),
+                        "parent_reference": (
+                            {
+                                "drive_id": (
+                                    drive_item.parent_reference.drive_id
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                                "drive_type": (
+                                    drive_item.parent_reference.drive_type
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                                "id": (
+                                    drive_item.parent_reference.id
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                                "name": (
+                                    drive_item.parent_reference.name
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                                "path": (
+                                    drive_item.parent_reference.path
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                                "site_id": (
+                                    drive_item.parent_reference.site_id
+                                    if drive_item.parent_reference
+                                    else None
+                                ),
+                            }
+                            if drive_item.parent_reference
+                            else None
+                        ),
+                        "file": (
+                            {
+                                "mime_type": (
+                                    drive_item.file.mime_type
+                                    if drive_item.file
+                                    else None
+                                ),
+                            }
+                            if drive_item.file
+                            else None
+                        ),
+                    }
+
+                    with open(info_path, "w", encoding="utf-8") as f:
+                        json.dump(metadata, f, indent=2, ensure_ascii=False)
 
                     logger.debug(f"✅ Saved: {file_path.name}")
                     downloaded += 1
