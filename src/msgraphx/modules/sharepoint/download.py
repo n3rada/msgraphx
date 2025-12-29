@@ -51,7 +51,7 @@ async def download_drive_item(
     if item.folder:
         # It's a folder - recurse into it
         logger.debug(f"📁 Entering folder: {current_path}")
-
+        try:
             # Get all children of this folder (with pagination)
             children = await collect_all(
                 graph_client.drives.by_drive_id(drive_id)
