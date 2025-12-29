@@ -11,9 +11,9 @@ from msgraph import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
 
 # Local library imports
-from msgraphx.core import graph_search
-from msgraphx.utils.errors import handle_graph_errors
-from msgraphx.utils.dates import parse_date_string
+from ...core import graph_search
+from ...utils.errors import handle_graph_errors
+from ...utils.dates import parse_date_string
 
 
 if TYPE_CHECKING:
