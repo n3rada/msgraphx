@@ -41,15 +41,16 @@ HUNT_QUERIES = {
         '"ssh-rsa" OR "ssh-ed25519" OR "ecdsa-sha2"'
     ),
     "mssql": (
-        "filetype:mdf OR filetype:ldf OR filetype:sql OR filetype:udl OR "
-        '"Data Source=" OR "Server=" OR "Initial Catalog=" OR "Database=" OR '
-        '"User ID=" OR "User Id=" OR "uid=" OR "Password=" OR "pwd=" OR '
-        '"Integrated Security=" OR "Trusted_Connection=" OR '
-        '"connection string" OR "ConnectionString" OR "SqlConnection" OR '
-        '"DRIVER={SQL Server}" OR "Provider=SQLOLEDB" OR "Provider=SQLNCLI" OR '
-        '"AttachDbFilename=" OR "1433" OR '
-        "filename:web.config OR filename:appsettings.json OR filename:app.config OR "
-        "filename:database.yml OR filename:.env"
+        # High-confidence filetypes and artifacts
+        "(filetype:mdf OR filetype:ldf OR filetype:udl OR filetype:sql) OR "
+        # Typical connection string patterns that together indicate a DB config
+        '("Data Source=" AND "Initial Catalog=") OR '
+        '("connection string" AND ("User ID=" OR "Uid=" OR "Password=")) OR '
+        # Config files that commonly contain connection strings
+        '(filename:web.config AND "connectionStrings") OR '
+        '(filename:appsettings.json AND "ConnectionStrings") OR '
+        # SQL files that include DDL/DML keywords (more specific than just "sql")
+        '(filetype:sql AND ("CREATE TABLE" OR "INSERT INTO" OR "ALTER TABLE"))'
     ),
     "office": (
         "filetype:doc OR filetype:docx OR filetype:rtf OR filetype:odt OR "
