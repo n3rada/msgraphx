@@ -122,7 +122,7 @@ def save_results_to_json(
     return filepath
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def search_groups(
     graph_client: "GraphServiceClient",
     query: str,
@@ -199,7 +199,7 @@ async def search_groups(
     return count
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def search_users(
     graph_client: "GraphServiceClient",
     query: str,
@@ -249,7 +249,7 @@ async def search_users(
     return count
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def search_devices(
     graph_client: "GraphServiceClient",
     query: str,
@@ -305,7 +305,7 @@ async def search_devices(
     return count
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def search_service_principals(
     graph_client: "GraphServiceClient",
     query: str,
@@ -356,7 +356,7 @@ async def search_service_principals(
     return count
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def search_applications(
     graph_client: "GraphServiceClient",
     query: str,

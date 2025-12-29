@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from msgraphx.core.context import GraphContext
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def download_drive_item(
     graph_client: "GraphServiceClient",
     drive_id: str,
@@ -104,7 +104,7 @@ async def download_drive_item(
     return downloaded_count
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def _download_file(
     graph_client: "GraphServiceClient",
     drive_id: str,

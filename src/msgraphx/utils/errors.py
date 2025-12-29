@@ -123,4 +123,4 @@ def handle_graph_errors(func: Callable) -> Callable:
 
 
 # Backwards compatibility alias
-handle_graph_auth_errors = handle_graph_errors
+handle_graph_errors = handle_graph_errors

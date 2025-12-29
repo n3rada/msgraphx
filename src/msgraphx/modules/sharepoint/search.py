@@ -74,7 +74,7 @@ HUNT_QUERIES = {
 }
 
 
-@handle_graph_auth_errors
+@handle_graph_errors
 async def get_user_sharepoint_groups(
     graph_client: "GraphServiceClient", visibility: str = None
 ) -> list:
