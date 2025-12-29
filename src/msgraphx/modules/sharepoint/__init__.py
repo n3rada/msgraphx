@@ -6,6 +6,7 @@ from loguru import logger
 
 # Local library imports
 from . import search, download
+from msgraphx.utils.errors import handle_graph_errors
 
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     download.add_arguments(download_parser)
 
 
+@handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

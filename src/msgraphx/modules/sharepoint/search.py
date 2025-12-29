@@ -12,6 +12,7 @@ from msgraph.generated.models.entity_type import EntityType
 
 # Local library imports
 from msgraphx.core import graph_search
+from msgraphx.utils.errors import handle_graph_errors
 from msgraphx.utils.dates import parse_date_string
 
 
@@ -73,6 +74,7 @@ HUNT_QUERIES = {
 }
 
 
+@handle_graph_auth_errors
 async def get_user_sharepoint_groups(
     graph_client: "GraphServiceClient", visibility: str = None
 ) -> list:
@@ -174,6 +176,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
+@handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

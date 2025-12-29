@@ -20,6 +20,7 @@ from msgraph.generated.applications.applications_request_builder import (
 
 # Local library imports
 from ...utils import pagination
+from ...utils.errors import handle_graph_errors
 
 
 if TYPE_CHECKING:
@@ -121,6 +122,7 @@ def save_results_to_json(
     return filepath
 
 
+@handle_graph_auth_errors
 async def search_groups(
     graph_client: "GraphServiceClient",
     query: str,
@@ -197,6 +199,7 @@ async def search_groups(
     return count
 
 
+@handle_graph_auth_errors
 async def search_users(
     graph_client: "GraphServiceClient",
     query: str,
@@ -246,6 +249,7 @@ async def search_users(
     return count
 
 
+@handle_graph_auth_errors
 async def search_devices(
     graph_client: "GraphServiceClient",
     query: str,
@@ -301,6 +305,7 @@ async def search_devices(
     return count
 
 
+@handle_graph_auth_errors
 async def search_service_principals(
     graph_client: "GraphServiceClient",
     query: str,
@@ -351,6 +356,7 @@ async def search_service_principals(
     return count
 
 
+@handle_graph_auth_errors
 async def search_applications(
     graph_client: "GraphServiceClient",
     query: str,
@@ -459,6 +465,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
+@handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

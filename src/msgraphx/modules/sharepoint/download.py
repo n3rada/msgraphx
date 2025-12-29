@@ -11,6 +11,7 @@ from msgraph.generated.models.drive_item import DriveItem
 
 # Local library imports
 from msgraphx.utils.pagination import collect_all
+from msgraphx.utils.errors import handle_graph_errors
 
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from msgraphx.core.context import GraphContext
 
 
+@handle_graph_auth_errors
 async def download_drive_item(
     graph_client: "GraphServiceClient",
     drive_id: str,
@@ -50,7 +52,6 @@ async def download_drive_item(
         # It's a folder - recurse into it
         logger.debug(f"📁 Entering folder: {current_path}")
 
-        try:
             # Get all children of this folder (with pagination)
             children = await collect_all(
                 graph_client.drives.by_drive_id(drive_id)
@@ -103,6 +104,7 @@ async def download_drive_item(
     return downloaded_count
 
 
+@handle_graph_auth_errors
 async def _download_file(
     graph_client: "GraphServiceClient",
     drive_id: str,
@@ -282,6 +284,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
+    # decorated at package level; ensure auth errors propagate
 
     # Get drive_id from args
     drive_id = getattr(args, "drive_id", None)

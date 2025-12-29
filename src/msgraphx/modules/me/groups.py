@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 
 # External library imports
 from loguru import logger
+from msgraphx.utils.errors import handle_graph_errors
 
 if TYPE_CHECKING:
     import argparse
     from msgraphx.core.context import GraphContext
 
 
+@handle_graph_errors
 async def fetch_user_groups(context: "GraphContext") -> list:
     """
     Fetch all groups the current user is a member of (transitive).

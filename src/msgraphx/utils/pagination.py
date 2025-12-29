@@ -3,6 +3,7 @@
 # Built-in imports
 from typing import TypeVar, AsyncIterator, Any, Protocol
 from loguru import logger
+from .errors import handle_graph_auth_errors
 
 T = TypeVar("T")
 
@@ -67,6 +68,7 @@ class GraphPaginator:
         """Return self as async iterator."""
         return self
 
+    @handle_graph_auth_errors
     async def __anext__(self) -> T:
         """Get next item from paginated results."""
         # First iteration - get initial page
