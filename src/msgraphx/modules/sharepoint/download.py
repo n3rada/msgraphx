@@ -10,8 +10,8 @@ from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 
 # Local library imports
-from msgraphx.utils.pagination import collect_all
-from msgraphx.utils.errors import handle_graph_errors
+from ...utils.pagination import collect_all
+from ...utils.errors import handle_graph_errors
 
 
 if TYPE_CHECKING:
