@@ -1,10 +1,14 @@
 # msgraphx/utils/errors.py
 
+# Built-in imports
 import sys
-from loguru import logger
 import functools
 import asyncio
 from typing import Callable, Any
+
+
+# External library imports
+from loguru import logger
 
 
 class AuthenticationError(RuntimeError):
