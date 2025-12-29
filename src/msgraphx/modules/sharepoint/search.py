@@ -22,10 +22,10 @@ if TYPE_CHECKING:
 
 HUNT_QUERIES = {
     "scripts": (
-        # Require a known script filetype plus a high-confidence script marker
+        # Match either a known script filetype OR a high-confidence script marker
         "((filetype:ps1 OR filetype:sh OR filetype:bat OR filetype:cmd OR "
         "filetype:py OR filetype:rb OR filetype:pl OR filetype:ts) "
-        'AND ("#!" OR "#!/" OR "param(" OR "function " OR "Import-Module"))'
+        'OR ("#!" OR "#!/" OR "param(" OR "function " OR "Import-Module"))'
     ),
     "credentials": (
         # High-confidence secret containers OR config-like files that include secret markers
