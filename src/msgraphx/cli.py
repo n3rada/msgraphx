@@ -510,6 +510,7 @@ async def main() -> int:
 
     # Handle subcommands
     if args.command in ("sharepoint", "sp"):
+
         if not (
             hasattr(args, "sp_module")
             and hasattr(args, "sp_command")
@@ -519,6 +520,7 @@ async def main() -> int:
                 "Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')"
             )
             return 1
+
         return await args.sp_module.run_with_arguments(context, args)
 
     if args.command in ("aad", "ad"):
