@@ -22,54 +22,59 @@ if TYPE_CHECKING:
 
 HUNT_QUERIES = {
     "scripts": (
-        "filetype:ps1 OR filetype:sh OR filetype:bat OR filetype:cmd OR "
-        "filetype:py OR filetype:rb OR filetype:pl OR filetype:java OR "
-        "filetype:ts OR filetype:cs OR filetype:cpp OR filetype:vbs"
+        # Require a known script filetype plus a high-confidence script marker
+        "((filetype:ps1 OR filetype:sh OR filetype:bat OR filetype:cmd OR "
+        "filetype:py OR filetype:rb OR filetype:pl OR filetype:ts) "
+        'AND ("#!" OR "#!/" OR "param(" OR "function " OR "Import-Module"))'
     ),
     "credentials": (
-        "filetype:key OR filetype:pem OR filetype:crt OR filetype:cer OR filetype:env OR "
-        "filetype:kdbx OR filetype:cfg OR filetype:yaml OR "
-        "filetype:yml OR filetype:secret OR filetype:vault OR filetype:pfx"
+        # High-confidence secret containers OR config-like files that include secret markers
+        "((filetype:key OR filetype:pem OR filetype:crt OR filetype:cer OR filetype:kdbx "
+        "OR filetype:pfx) "
+        "OR ((filetype:env OR filetype:cfg OR filetype:yaml OR filetype:yml OR filetype:secret) "
+        'AND ("password" OR "passwd" OR "secret" OR "api_key" OR "access_key" OR "client_secret")))'
     ),
     "ssh": (
-        "filetype:pub OR filetype:pem OR "
-        "filename:id_rsa OR filename:id_ecdsa OR filename:id_ed25519 OR filename:id_dsa OR "
-        "filename:authorized_keys OR filename:known_hosts OR filename:.ssh OR "
-        '"BEGIN RSA PRIVATE KEY" OR "BEGIN OPENSSH PRIVATE KEY" OR '
-        '"BEGIN DSA PRIVATE KEY" OR "BEGIN EC PRIVATE KEY" OR "BEGIN PRIVATE KEY" OR '
-        '"BEGIN ENCRYPTED PRIVATE KEY" OR '
-        '"ssh-rsa" OR "ssh-ed25519" OR "ecdsa-sha2"'
+        # Filename patterns for private keys or explicit key block headers
+        "(filetype:pub OR filetype:pem OR filename:id_rsa OR filename:id_ecdsa OR "
+        "filename:id_ed25519 OR filename:id_dsa OR filename:authorized_keys OR "
+        'filename:known_hosts OR filename:.ssh OR "BEGIN RSA PRIVATE KEY" OR '
+        '"BEGIN OPENSSH PRIVATE KEY" OR "BEGIN DSA PRIVATE KEY" OR '
+        '"BEGIN EC PRIVATE KEY" OR "BEGIN PRIVATE KEY" OR "ssh-rsa" OR '
+        '"ssh-ed25519" OR "ecdsa-sha2")'
     ),
     "mssql": (
-        # High-confidence filetypes and artifacts
-        "(filetype:mdf OR filetype:ldf OR filetype:udl OR filetype:sql) OR "
-        # Typical connection string patterns that together indicate a DB config
-        '("Data Source=" AND "Initial Catalog=") OR '
-        '("connection string" AND ("User ID=" OR "Uid=" OR "Password=")) OR '
-        # Config files that commonly contain connection strings
-        '(filename:web.config AND "connectionStrings") OR '
-        '(filename:appsettings.json AND "ConnectionStrings") OR '
-        # SQL files that include DDL/DML keywords (more specific than just "sql")
-        '(filetype:sql AND ("CREATE TABLE" OR "INSERT INTO" OR "ALTER TABLE"))'
+        # Keep focused connection-string and DDL checks to avoid broad matches
+        "( (filetype:mdf OR filetype:ldf OR filetype:udl OR filetype:sql) "
+        'OR ("Data Source=" AND "Initial Catalog=") '
+        'OR ("connection string" AND ("User ID=" OR "Uid=" OR "Password=")) '
+        'OR (filename:web.config AND "connectionStrings") '
+        'OR (filename:appsettings.json AND "ConnectionStrings") '
+        'OR (filetype:sql AND ("CREATE TABLE" OR "INSERT INTO" OR "ALTER TABLE")) )'
     ),
     "office": (
+        # Office document filetypes only (keep as explicit filetypes)
         "filetype:doc OR filetype:docx OR filetype:rtf OR filetype:odt OR "
         "filetype:xls OR filetype:xlsx OR filetype:csv OR filetype:ods OR "
         "filetype:ppt OR filetype:pptx OR filetype:pdf OR filetype:msg OR filetype:eml"
     ),
     "backups": (
-        "filetype:bak OR filetype:zip OR filetype:rar OR filetype:7z OR "
-        "filetype:gz OR filetype:tar OR filetype:tgz OR filetype:tar.gz OR "
-        "filetype:db OR filetype:sqlite OR filetype:mdb OR filetype:accdb OR "
-        "filetype:vhd OR filetype:vmdk OR filetype:ova OR filetype:old"
+        # Prefer explicit backup extensions or compressed files that also mention backup/dump
+        "(filetype:bak OR filetype:vhd OR filetype:vmdk OR filetype:ova) "
+        "OR ((filetype:zip OR filetype:rar OR filetype:7z OR filetype:gz OR filetype:tar) "
+        'AND ("backup" OR "dump" OR "dbbackup" OR "backup_")) '
+        'OR (filetype:sql AND "backup")'
     ),
     "configs": (
-        "filetype:conf OR filetype:config OR filetype:ini OR "
-        "filetype:yaml OR filetype:yml OR filetype:psd1 OR filetype:reg"
+        # Configuration files that explicitly contain credential/config markers
+        "((filetype:conf OR filetype:ini OR filetype:psd1 OR filetype:reg) "
+        "OR filename:appsettings.json OR filename:web.config OR filename:settings.json) "
+        'AND ("connection" OR "password" OR "secret" OR "token" OR "credentials")'
     ),
     "infra": (
-        "filetype:dockerfile OR filetype:compose OR filetype:tf OR "
-        "filetype:terraform"
+        # Common infra-as-code filetypes; require provider/resource keywords for TF/YAML when possible
+        "(filetype:dockerfile OR filename:Dockerfile OR filetype:compose OR "
+        '(filetype:tf OR filename:terraform) AND ("resource" OR "provider" OR "module"))'
     ),
     "network": ("filetype:pcap OR filetype:cap OR filetype:har"),
 }
