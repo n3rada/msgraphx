@@ -5,8 +5,8 @@ import argparse
 
 # Local library imports
 from . import search, download
-from msgraphx.core.context import GraphContext
-from msgraphx.utils.errors import handle_graph_errors
+from ...core.context import GraphContext
+from ...utils.errors import handle_graph_errors
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):

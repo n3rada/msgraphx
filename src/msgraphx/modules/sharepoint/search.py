@@ -16,9 +16,9 @@ from rich.table import Table
 
 # Local library imports
 from ...core import graph_search
-from ...utils.errors import handle_graph_errors
+from ...core.context import GraphContext
 from ...utils.dates import parse_date_string
-from msgraphx.core.context import GraphContext
+from ...utils.errors import handle_graph_errors
 
 HUNT_QUERIES = {
     "scripts": (

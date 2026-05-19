@@ -6,6 +6,7 @@
 # Built-in imports
 from __future__ import annotations
 
+import argparse
 import json
 from collections import Counter
 from pathlib import Path
@@ -20,12 +21,10 @@ from rich.console import Console
 from rich.table import Table
 
 # Local library imports
-from ...utils.errors import handle_graph_errors
+from ...core.context import GraphContext
 from ...utils.dates import parse_date_string
+from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
-
-import argparse
-from msgraphx.core.context import GraphContext
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):

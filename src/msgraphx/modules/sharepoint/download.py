@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import asyncio
+from pathlib import Path
 
 # External library imports
 from loguru import logger
@@ -14,7 +14,7 @@ from msgraph.generated.models.drive_item import DriveItem
 # Local library imports
 from ...utils.pagination import collect_all
 from ...utils.errors import handle_graph_errors
-from msgraphx.core.context import GraphContext
+from ...core.context import GraphContext
 
 
 @handle_graph_errors

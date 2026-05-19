@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 from pathlib import Path
-import datetime
 
 # External library imports
 from loguru import logger
@@ -21,9 +21,9 @@ from msgraph.generated.applications.applications_request_builder import (
 )
 
 # Local library imports
+from ...core.context import GraphContext
 from ...utils import pagination
 from ...utils.errors import handle_graph_errors
-from msgraphx.core.context import GraphContext
 
 # Preset hunt queries for common privileged groups
 HUNT_GROUPS = {

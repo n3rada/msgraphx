@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 
 # External library imports
 from loguru import logger
-from msgraphx.core.context import GraphContext
-from msgraphx.utils.errors import handle_graph_errors
+
+# Local library imports
+from ...core.context import GraphContext
+from ...utils.errors import handle_graph_errors
 
 
 @handle_graph_errors
