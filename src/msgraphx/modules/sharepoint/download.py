@@ -11,8 +11,6 @@ from pathlib import Path
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.graph_service_client import GraphServiceClient
-from rich.console import Console
-
 # Local library imports
 from ...utils.cache import load_search_results, parse_indices
 from ...utils.pagination import collect_all
@@ -338,7 +336,6 @@ async def _download_from_cache(
     output_dir = Path(args.save if args.save else ".").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    console = Console()
     downloaded = 0
     failed = 0
 
@@ -352,6 +349,16 @@ async def _download_from_cache(
             logger.warning(f"Missing drive/item ID for: {name}")
             failed += 1
             continue
+
+        author = item.get("author", "?")
+        created = item.get("created", "")
+        size_bytes = item.get("size") or 0
+        if size_bytes >= 1_048_576:
+            size_str = f"{size_bytes / 1_048_576:.1f} MB"
+        elif size_bytes >= 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes} B"
 
         try:
             safe_filename = name.replace("/", "_").replace("..", "_")
@@ -371,7 +378,7 @@ async def _download_from_cache(
             if file_stream:
                 with open(file_path, "wb") as f:
                     f.write(file_stream)
-                console.print(f"  [green]>[/green] {file_path}")
+                logger.info(f"{name}  {author}  {size_str}  {created}")
                 downloaded += 1
             else:
                 logger.warning(f"Empty content: {name}")

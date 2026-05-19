@@ -312,20 +312,6 @@ async def run_with_arguments(
             logger.trace(drive_item.__dict__)
 
             count += 1
-            # Cache item reference for later download by index
-            cached_items.append(
-                {
-                    "drive_id": (
-                        drive_item.parent_reference.drive_id
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "item_id": drive_item.id,
-                    "name": drive_item.name,
-                    "size": drive_item.size,
-                    "web_url": drive_item.web_url,
-                }
-            )
             author = (
                 drive_item.created_by.user.display_name
                 if drive_item.created_by and drive_item.created_by.user
@@ -342,6 +328,22 @@ async def run_with_arguments(
                 drive_item.created_date_time.strftime("%Y-%m-%d")
                 if drive_item.created_date_time
                 else ""
+            )
+            # Cache item reference for later download by index
+            cached_items.append(
+                {
+                    "drive_id": (
+                        drive_item.parent_reference.drive_id
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    "item_id": drive_item.id,
+                    "name": drive_item.name,
+                    "size": drive_item.size,
+                    "web_url": drive_item.web_url,
+                    "author": author,
+                    "created": created,
+                }
             )
 
             if not save_dir:
