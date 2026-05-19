@@ -46,7 +46,36 @@ pip install 'git+https://github.com/n3rada/msgraphx.git'
 
 ## ⚔️ Modules
 
-### SharePoint
+### 📧 Outlook
+
+#### Contacts (connection graph)
+
+Analyse your sent mail to build a ranked list of who you communicate with most:
+
+```shell
+msgraphx outlook contacts
+# or
+msgraphx mail contacts
+```
+
+Limit to the last 90 days and show top 50:
+```shell
+msgraphx mail contacts --after 90d --top 50
+```
+
+Include CC recipients in the count:
+```shell
+msgraphx mail contacts --include-cc
+```
+
+Save the full ranked list as JSON:
+```shell
+msgraphx mail contacts --after 1y --save /tmp/contacts.json
+```
+
+### 🏢 SharePoint
+
+### 🏢 SharePoint
 
 #### Search
 

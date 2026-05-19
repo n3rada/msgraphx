@@ -23,7 +23,7 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import sharepoint, aad, me
+from .modules import sharepoint, aad, me, outlook
 from .utils import logbook, tokens
 
 
@@ -242,6 +242,15 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     me.add_arguments(me_parser)
+
+    # Outlook subcommand (inherits parent_parser for global options)
+    outlook_parser = subparsers.add_parser(
+        "outlook",
+        aliases=["mail"],
+        help="Outlook / mail commands",
+        parents=[parent_parser],
+    )
+    load_subcommands_from_module(outlook_parser, outlook, "outlook", parent_parser)
 
     return parser
 
@@ -537,6 +546,18 @@ async def main() -> int:
 
     if args.command == "me":
         return await me.run_with_arguments(context, args)
+
+    if args.command in ("outlook", "mail"):
+        if not (
+            hasattr(args, "outlook_module")
+            and hasattr(args, "outlook_command")
+            and args.outlook_command
+        ):
+            logger.error(
+                "Please specify an Outlook subcommand (e.g., 'msgraphx outlook contacts')"
+            )
+            return 1
+        return await args.outlook_module.run_with_arguments(context, args)
 
     # If no subcommand provided but we authenticated successfully, just show info and exit
     if not args.command:
