@@ -98,6 +98,9 @@ msgraphx sp search "password"
 
 ## ⚔️ Modules
 
+> [!NOTE]
+> All modules default to the **last year** (`--after 1y`). Pass `--all` to remove the time bound, or `--after`/`--before` to set a custom range. These are global flags available to every subcommand.
+
 ### 📧 Outlook
 
 #### Contacts (connection graph)
@@ -108,8 +111,6 @@ Build a full communication graph from your mailbox. By default analyses both sen
 - 📤 **Sent → CC** — who you copy most
 - 📥 **Received → as To** — who emails you directly most
 - 📥 **Received → as CC** — who copies you most
-
-Defaults to the last year:
 
 ```shell
 msgraphx outlook contacts
@@ -135,25 +136,56 @@ msgraphx mail contacts --after 90d --top 50
 
 Save the full ranked list as JSON:
 ```shell
-msgraphx mail contacts --after 1y --save /tmp/contacts.json
+msgraphx mail contacts --save /tmp/contacts.json
 ```
 
 ### 🏢 SharePoint
 
 #### Search
 
-You can search for anything such as `password`:
+Search for anything across SharePoint. Defaults to the last year:
+
 ```shell
 msgraphx sp search "password"
 ```
 
-You can specify the filetype using `--filetype` or `-f`:
+Filter by filetype:
 ```shell
 msgraphx sp search --filetype pdf
 msgraphx sp search -f docx "confidential"
 ```
 
-You can use predefined hunt queries for credentials from last 365 days (1 year):
+Use predefined hunt queries:
 ```shell
-msgraphx sp search --hunt credentials --after 365d --save "/tmp/"
+msgraphx sp search --hunt credentials
+msgraphx sp search --hunt ssh --all
+msgraphx sp search --hunt office --after 90d
+```
+
+Search only within your own Microsoft 365 groups:
+```shell
+msgraphx sp search "password" --my-groups
+```
+
+Save all results to disk:
+```shell
+msgraphx sp search --hunt credentials --save /tmp/loot/
+```
+
+#### Download
+
+Download all files from a SharePoint drive:
+
+```shell
+msgraphx --drive-id <drive-id> sp download --save /tmp/loot/
+```
+
+Resume interrupted downloads (default behaviour, skips files already present with matching size):
+```shell
+msgraphx --drive-id <drive-id> sp download --save /tmp/loot/
+```
+
+Force re-download everything:
+```shell
+msgraphx --drive-id <drive-id> sp download --no-resume --save /tmp/loot/
 ```
