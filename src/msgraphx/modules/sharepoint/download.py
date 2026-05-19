@@ -10,6 +10,7 @@ from pathlib import Path
 # External library imports
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
+from msgraph.graph_service_client import GraphServiceClient
 
 # Local library imports
 from ...utils.pagination import collect_all
@@ -19,12 +20,12 @@ from ...core.context import GraphContext
 
 @handle_graph_errors
 async def download_drive_item(
-    graph_client: "GraphServiceClient",
+    graph_client: GraphServiceClient,
     drive_id: str,
     item: DriveItem,
     output_dir: Path,
     base_path: str = "",
-    semaphore: asyncio.Semaphore = None,
+    semaphore: asyncio.Semaphore | None = None,
     skip_existing: bool = True,
 ) -> int:
     """
@@ -74,9 +75,9 @@ async def download_drive_item(
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 for result in results:
-                    if isinstance(result, Exception):
+                    if isinstance(result, BaseException):
                         logger.error(f"❌ Error in folder {current_path}: {result}")
-                    else:
+                    elif isinstance(result, int):
                         downloaded_count += result
 
         except Exception as e:
@@ -104,7 +105,7 @@ async def download_drive_item(
 
 @handle_graph_errors
 async def _download_file(
-    graph_client: "GraphServiceClient",
+    graph_client: GraphServiceClient,
     drive_id: str,
     item: DriveItem,
     output_dir: Path,
@@ -166,7 +167,7 @@ async def _download_file(
 
 
 async def download_drive(
-    graph_client: "GraphServiceClient",
+    graph_client: GraphServiceClient,
     drive_id: str,
     output_dir: Path,
     max_concurrent: int = 20,
@@ -229,9 +230,9 @@ async def download_drive(
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error(f"❌ Error during download: {result}")
-            else:
+            elif isinstance(result, int):
                 total_downloaded += result
 
         logger.success(f"🎉 Download complete! Total files: {total_downloaded}")
@@ -280,7 +281,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
     # decorated at package level; ensure auth errors propagate
 
