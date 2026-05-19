@@ -13,7 +13,6 @@ from msgraphx.utils.cache import (
     save_results,
 )
 
-
 # --- parse_indices ---
 
 
@@ -81,8 +80,30 @@ def test_load_empty_returns_empty_list(xdg_data_home):
 
 
 def test_save_overwrites_previous(xdg_data_home):
-    save_results([{"drive_id": "a", "item_id": "1", "name": "old.txt", "size": 0, "web_url": None}], key="sharepoint")
-    save_results([{"drive_id": "b", "item_id": "2", "name": "new.txt", "size": 100, "web_url": None}], key="sharepoint")
+    save_results(
+        [
+            {
+                "drive_id": "a",
+                "item_id": "1",
+                "name": "old.txt",
+                "size": 0,
+                "web_url": None,
+            }
+        ],
+        key="sharepoint",
+    )
+    save_results(
+        [
+            {
+                "drive_id": "b",
+                "item_id": "2",
+                "name": "new.txt",
+                "size": 100,
+                "web_url": None,
+            }
+        ],
+        key="sharepoint",
+    )
 
     loaded = load_results(key="sharepoint")
     assert len(loaded) == 1
@@ -101,7 +122,18 @@ def test_cache_file_permissions(xdg_data_home):
     import os
     import stat
 
-    save_results([{"drive_id": "x", "item_id": "y", "name": "f.txt", "size": 0, "web_url": None}], key="sharepoint")
+    save_results(
+        [
+            {
+                "drive_id": "x",
+                "item_id": "y",
+                "name": "f.txt",
+                "size": 0,
+                "web_url": None,
+            }
+        ],
+        key="sharepoint",
+    )
 
     cache_file = _get_data_dir() / "last_sharepoint.json"
     if os.name != "nt":
