@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from msgraph import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
+from rich.console import Console
+from rich.table import Table
 
 # Local library imports
 from ...core import graph_search
@@ -192,13 +194,19 @@ async def run_with_arguments(
         groups = await get_user_sharepoint_groups(context.graph_client, args.visibility)
 
         if groups:
-            logger.info("📊 Your Microsoft 365 Groups with SharePoint:")
-            for group in groups:
-                visibility = f"🔒 {group.visibility}" if group.visibility else ""
-                logger.success(f"  👥 {group.displayName} {visibility}")
-                if group.mail:
-                    logger.info(f"     Email: {group.mail}")
-                logger.info(f"     ID: {group.id}")
+            table = Table(
+                title=f"👥 Your Microsoft 365 Groups ({len(groups)})",
+                show_header=True,
+                header_style="bold",
+            )
+            table.add_column("#", justify="right", style="dim")
+            table.add_column("Group")
+            table.add_column("Email")
+            table.add_column("Visibility")
+            for idx, group in enumerate(groups, 1):
+                vis = f"🔒 {group.visibility}" if group.visibility else ""
+                table.add_row(str(idx), group.display_name, group.mail or "", vis)
+            Console().print(table)
 
         return 0
 
@@ -283,6 +291,7 @@ async def run_with_arguments(
     count = 0
     downloaded = 0
     failed = 0
+    rows: list[tuple[str, str, str, str]] = []
 
     async for drive_item in graph_search.search_entities(
         context.graph_client,
@@ -292,11 +301,25 @@ async def run_with_arguments(
 
         logger.trace(drive_item.__dict__)
 
-        # Process each DriveItem
-        logger.info(
-            f"📄 {drive_item.name} (Created by: {drive_item.created_by.user.display_name})"
-        )
         count += 1
+        author = (
+            drive_item.created_by.user.display_name
+            if drive_item.created_by and drive_item.created_by.user
+            else "?"
+        )
+        size_bytes = drive_item.size or 0
+        if size_bytes >= 1_048_576:
+            size_str = f"{size_bytes / 1_048_576:.1f} MB"
+        elif size_bytes >= 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes} B"
+        created = (
+            drive_item.created_date_time.strftime("%Y-%m-%d")
+            if drive_item.created_date_time
+            else ""
+        )
+        rows.append((drive_item.name, author, size_str, created))
 
         # Download file if --save is specified
         if save_dir:
@@ -456,8 +479,21 @@ async def run_with_arguments(
                 failed += 1
 
     if count > 0:
+        if not save_dir:
+            table = Table(
+                title=f"📄 Search results ({count:,} files)",
+                show_header=True,
+                header_style="bold",
+            )
+            table.add_column("#", justify="right", style="dim")
+            table.add_column("File")
+            table.add_column("Author")
+            table.add_column("Size", justify="right")
+            table.add_column("Created", justify="right")
+            for idx, (name, author, size_str, created) in enumerate(rows, 1):
+                table.add_row(str(idx), name, author, size_str, created)
+            Console().print(table)
 
-        logger.info(f"📊 Total files found: {count}")
         if save_dir:
             logger.info(
                 f"💾 {downloaded} items have been saved to: {save_dir.absolute()}"
