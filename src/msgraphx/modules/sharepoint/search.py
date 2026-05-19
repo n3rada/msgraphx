@@ -329,20 +329,114 @@ async def run_with_arguments(
                 if drive_item.created_date_time
                 else ""
             )
-            # Cache item reference for later download by index
+            # Cache full DriveItem metadata for later download by index
             cached_items.append(
                 {
+                    # Identifiers (top-level for download.py)
                     "drive_id": (
                         drive_item.parent_reference.drive_id
                         if drive_item.parent_reference
                         else None
                     ),
                     "item_id": drive_item.id,
+                    # Core
                     "name": drive_item.name,
                     "size": drive_item.size,
                     "web_url": drive_item.web_url,
-                    "author": author,
+                    "e_tag": drive_item.e_tag,
+                    "c_tag": drive_item.c_tag,
+                    "description": drive_item.description,
+                    # Dates (ISO strings)
+                    "created_datetime": (
+                        drive_item.created_date_time.isoformat()
+                        if drive_item.created_date_time
+                        else None
+                    ),
+                    "last_modified_datetime": (
+                        drive_item.last_modified_date_time.isoformat()
+                        if drive_item.last_modified_date_time
+                        else None
+                    ),
+                    # Formatted dates (for display)
                     "created": created,
+                    "last_modified": (
+                        drive_item.last_modified_date_time.strftime("%Y-%m-%d")
+                        if drive_item.last_modified_date_time
+                        else None
+                    ),
+                    # Created by
+                    "author": author,
+                    "created_by_email": (
+                        drive_item.created_by.user.email
+                        if drive_item.created_by and drive_item.created_by.user
+                        else None
+                    ),
+                    "created_by_id": (
+                        drive_item.created_by.user.id
+                        if drive_item.created_by and drive_item.created_by.user
+                        else None
+                    ),
+                    # Last modified by
+                    "last_modified_by": (
+                        drive_item.last_modified_by.user.display_name
+                        if drive_item.last_modified_by
+                        and drive_item.last_modified_by.user
+                        else None
+                    ),
+                    "last_modified_by_email": (
+                        drive_item.last_modified_by.user.email
+                        if drive_item.last_modified_by
+                        and drive_item.last_modified_by.user
+                        else None
+                    ),
+                    "last_modified_by_id": (
+                        drive_item.last_modified_by.user.id
+                        if drive_item.last_modified_by
+                        and drive_item.last_modified_by.user
+                        else None
+                    ),
+                    # Parent reference
+                    "parent_id": (
+                        drive_item.parent_reference.id
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    "parent_name": (
+                        drive_item.parent_reference.name
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    "parent_path": (
+                        drive_item.parent_reference.path
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    "site_id": (
+                        drive_item.parent_reference.site_id
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    "drive_type": (
+                        drive_item.parent_reference.drive_type
+                        if drive_item.parent_reference
+                        else None
+                    ),
+                    # File / folder
+                    "mime_type": (
+                        drive_item.file.mime_type if drive_item.file else None
+                    ),
+                    "is_folder": drive_item.folder is not None,
+                    "child_count": (
+                        drive_item.folder.child_count if drive_item.folder else None
+                    ),
+                    # Pre-authenticated direct download URL (present in search results)
+                    "download_url": (
+                        drive_item.additional_data.get(
+                            "@microsoft.graph.downloadUrl"
+                        )
+                        if drive_item.additional_data
+                        else None
+                    ),
                 }
             )
 

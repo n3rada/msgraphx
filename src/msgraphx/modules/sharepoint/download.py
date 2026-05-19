@@ -11,6 +11,7 @@ from pathlib import Path
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.graph_service_client import GraphServiceClient
+
 # Local library imports
 from ...utils.cache import load_search_results, parse_indices
 from ...utils.pagination import collect_all
@@ -287,9 +288,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
-async def run_with_arguments(
-    context: GraphContext, args: argparse.Namespace
-) -> int:
+async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
 
     # If indices provided, download from cached search results
     if args.indices:
@@ -299,7 +298,9 @@ async def run_with_arguments(
     drive_id = getattr(args, "drive_id", None)
 
     if not drive_id:
-        logger.error("Provide indices from last search (e.g., '1,3') or --drive-id for full drive dump.")
+        logger.error(
+            "Provide indices from last search (e.g., '1,3') or --drive-id for full drive dump."
+        )
         return 1
 
     # Parse output directory from global --save/--output/-o argument
@@ -319,9 +320,7 @@ async def run_with_arguments(
     return 0 if downloaded_count > 0 else 1
 
 
-async def _download_from_cache(
-    context: GraphContext, args: argparse.Namespace
-) -> int:
+async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
     """Download specific items from the last cached search results."""
     cached = load_search_results()
     if not cached:
@@ -330,7 +329,9 @@ async def _download_from_cache(
 
     indices = parse_indices(args.indices, len(cached))
     if not indices:
-        logger.error(f"Invalid indices: {args.indices} (cached results: 1-{len(cached)})")
+        logger.error(
+            f"Invalid indices: {args.indices} (cached results: 1-{len(cached)})"
+        )
         return 1
 
     output_dir = Path(args.save if args.save else ".").resolve()
