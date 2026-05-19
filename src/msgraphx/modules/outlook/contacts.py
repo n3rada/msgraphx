@@ -22,6 +22,7 @@ from rich.table import Table
 # Local library imports
 from ...utils.errors import handle_graph_errors
 from ...utils.dates import parse_date_string
+from ...utils.pagination import GraphPaginator
 
 import argparse
 from msgraphx.core.context import GraphContext
@@ -109,38 +110,26 @@ async def run_with_arguments(
         logger.info("📨 Fetching sent messages...")
         total = 0
 
-        result = await context.graph_client.me.mail_folders.by_mail_folder_id(
+        sent_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
             "SentItems"
-        ).messages.get(request_configuration=request_config)
+        ).messages
 
-        while result:
-            for msg in result.value or []:
-                total += 1
+        async for msg in GraphPaginator(sent_builder, request_config):
+            total += 1
 
-                for r in msg.to_recipients or []:
-                    if r.email_address and r.email_address.address:
-                        addr = r.email_address.address.lower()
-                        to_counter[addr] += 1
-                        if r.email_address.name:
-                            names[addr] = r.email_address.name
+            for r in msg.to_recipients or []:
+                if r.email_address and r.email_address.address:
+                    addr = r.email_address.address.lower()
+                    to_counter[addr] += 1
+                    if r.email_address.name:
+                        names[addr] = r.email_address.name
 
-                for r in msg.cc_recipients or []:
-                    if r.email_address and r.email_address.address:
-                        addr = r.email_address.address.lower()
-                        cc_counter[addr] += 1
-                        if r.email_address.name:
-                            names[addr] = r.email_address.name
-
-            if result.odata_next_link:
-                result = (
-                    await context.graph_client.me.mail_folders.by_mail_folder_id(
-                        "SentItems"
-                    )
-                    .messages.with_url(result.odata_next_link)
-                    .get()
-                )
-            else:
-                break
+            for r in msg.cc_recipients or []:
+                if r.email_address and r.email_address.address:
+                    addr = r.email_address.address.lower()
+                    cc_counter[addr] += 1
+                    if r.email_address.name:
+                        names[addr] = r.email_address.name
 
         logger.info(f"📊 Analysed {total:,} sent messages")
     top_n = args.top if args.top > 0 else None
@@ -210,24 +199,16 @@ async def run_with_arguments(
             cfg = RequestConfiguration(query_parameters=qp)
             counter: Counter[str] = Counter()
             names_local: dict[str, str] = {}
-            page = await context.graph_client.me.messages.get(request_configuration=cfg)
-            while page:
-                for msg in page.value or []:
-                    if (
-                        msg.from_
-                        and msg.from_.email_address
-                        and msg.from_.email_address.address
-                    ):
-                        sender = msg.from_.email_address.address.lower()
-                        counter[sender] += 1
-                        if msg.from_.email_address.name:
-                            names_local[sender] = msg.from_.email_address.name
-                if page.odata_next_link:
-                    page = await context.graph_client.me.messages.with_url(
-                        page.odata_next_link
-                    ).get()
-                else:
-                    break
+            async for msg in GraphPaginator(context.graph_client.me.messages, cfg):
+                if (
+                    msg.from_
+                    and msg.from_.email_address
+                    and msg.from_.email_address.address
+                ):
+                    sender = msg.from_.email_address.address.lower()
+                    counter[sender] += 1
+                    if msg.from_.email_address.name:
+                        names_local[sender] = msg.from_.email_address.name
             return counter, names_local
 
         logger.info("📬 Fetching received messages...")
