@@ -1,10 +1,47 @@
+# 🔭 msgraphx
+
 Microsoft Graph eXploitation toolkit.
 
-## Installation
+## 📦 Installation
 
-Install with `pipx` to keep the environment isolated:
-```shell
-pipx install "msgraphx@git+https://github.com/n3rada/msgraphx.git"
+Prefer using [`uv`](https://docs.astral.sh/uv/), a fast Python package manager that installs tools in isolated environments. Alternatively, [`pipx`](https://pypa.github.io/pipx/) or `pip` work as well.
+
+### With [uv](https://docs.astral.sh/uv/) (recommended)
+
+[`uv tool install`](https://docs.astral.sh/uv/guides/tools/#installing-tools) persistently installs the tool and adds it to your `PATH`, similar to `pipx`:
+
+**From GitHub (latest):**
+
+```bash
+uv tool install git+https://github.com/n3rada/msgraphx.git
+```
+
+After installation, `msgraphx` is available directly:
+
+```bash
+msgraphx --help
+```
+
+To upgrade later:
+
+```bash
+uv tool upgrade msgraphx
+```
+
+> [!TIP]
+> You can also run `msgraphx` **without installing** it using [`uvx`](https://docs.astral.sh/uv/guides/tools/#running-tools), which creates a temporary isolated environment on the fly:
+> ```bash
+> uvx --from git+https://github.com/n3rada/msgraphx.git msgraphx --help
+> ```
+
+### With pipx or pip
+
+```bash
+pipx install 'git+https://github.com/n3rada/msgraphx.git'
+```
+
+```bash
+pip install 'git+https://github.com/n3rada/msgraphx.git'
 ```
 
 ## ⚔️ Modules
