@@ -20,6 +20,7 @@ dependencies = [
     "msgraph-sdk>=1.57.0",
     "pkce>=1.0.3",
     "prompt-toolkit>=3.0.52",
+    "rich>=15.0.0",
 ]
 
 [project.urls]

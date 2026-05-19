@@ -22,6 +22,7 @@ class SearchOptions:
     page_size: int = 500
     region: Optional[str] = None  # Required for application permissions
     drive_id: Optional[str] = None  # Scope search to specific drive
+    max_pages: Optional[int] = None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
 
 
 async def search_entities(
@@ -119,11 +120,12 @@ async def search_entities(
                 body=QueryPostRequestBody(requests=[search_request])
             )
 
-            hits = (
-                (result.value[0].hits_containers[0].hits or [])
+            hits_container = (
+                result.value[0].hits_containers[0]
                 if result.value[0].hits_containers
-                else []
+                else None
             )
+            hits = hits_container.hits or [] if hits_container else []
 
             if not hits:
                 logger.info("📭 No hits found.")
@@ -131,6 +133,14 @@ async def search_entities(
 
             for hit in hits:
                 yield hit.resource
+
+            # Stop if the server signals no further pages
+            if not (hits_container and hits_container.more_results_available):
+                break
+
+            # Respect caller-imposed page cap (e.g. Exchange caps from+size≤1000)
+            if options.max_pages is not None and page + 1 >= options.max_pages:
+                break
 
             page += 1
 

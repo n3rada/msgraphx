@@ -6,7 +6,7 @@ Microsoft Graph eXploitation toolkit.
 
 Prefer using [`uv`](https://docs.astral.sh/uv/), a fast Python package manager that installs tools in isolated environments. Alternatively, [`pipx`](https://pypa.github.io/pipx/) or `pip` work as well.
 
-### With [uv](https://docs.astral.sh/uv/) (recommended)
+### With [uv](https://docs.astral.sh/uv/)
 
 [`uv tool install`](https://docs.astral.sh/uv/guides/tools/#installing-tools) persistently installs the tool and adds it to your `PATH`, similar to `pipx`:
 
@@ -44,13 +44,72 @@ pipx install 'git+https://github.com/n3rada/msgraphx.git'
 pip install 'git+https://github.com/n3rada/msgraphx.git'
 ```
 
+## 🔑 Authentication
+
+`msgraphx` supports two authentication modes.
+
+### Delegated (user context)
+
+Required for any module that acts on behalf of a user (e.g., Outlook, SharePoint search as yourself).
+
+The easiest way to get a valid token is [msauth-browser](https://github.com/n3rada/msauth-browser), which drives a real Chromium browser through the full OAuth PKCE flow and handles MFA, Conditional Access, and CAPTCHAs transparently:
+
+```bash
+# authenticate as Graph Explorer and save tokens in .roadtools_auth
+msauth-browser --save roadtools
+```
+
+Then run `msgraphx` from the same directory - it will pick up `.roadtools_auth` automatically:
+
+```bash
+msgraphx outlook contacts
+```
+
+Alternatively, pass the token directly or via environment variable:
+
+```bash
+# via flag
+msgraphx --access-token <JWT> outlook contacts
+
+# via env var
+export ACCESS_TOKEN=<JWT>
+msgraphx outlook contacts
+```
+
+### Application (app-only)
+
+For app-only flows (service principals with client credentials):
+
+```bash
+msgraphx --tenant-id <tid> --client-id <cid> --client-secret <secret> sp search "password"
+```
+
+Or via environment variables:
+
+```bash
+export TENANT_ID=<tid>
+export CLIENT_ID=<cid>
+export CLIENT_SECRET=<secret>
+msgraphx sp search "password"
+```
+
+> [!NOTE]
+> App-only tokens cannot use the `/me` endpoint. Modules that require a user context (Outlook) only work with delegated auth.
+
 ## ⚔️ Modules
 
 ### 📧 Outlook
 
 #### Contacts (connection graph)
 
-Analyse your sent mail to build a ranked list of who you communicate with most:
+Build a full communication graph from your mailbox. By default analyses both sent and received mail across four ranked tables:
+
+- 📤 **Sent → To** — who you direct-email most
+- 📤 **Sent → CC** — who you copy most
+- 📥 **Received → as To** — who emails you directly most
+- 📥 **Received → as CC** — who copies you most
+
+Defaults to the last year:
 
 ```shell
 msgraphx outlook contacts
@@ -58,22 +117,26 @@ msgraphx outlook contacts
 msgraphx mail contacts
 ```
 
+Restrict to sent or received only:
+```shell
+msgraphx mail contacts --only sent
+msgraphx mail contacts --only received
+```
+
+Fetch everything with no time bound:
+```shell
+msgraphx mail contacts --all
+```
+
 Limit to the last 90 days and show top 50:
 ```shell
 msgraphx mail contacts --after 90d --top 50
-```
-
-Include CC recipients in the count:
-```shell
-msgraphx mail contacts --include-cc
 ```
 
 Save the full ranked list as JSON:
 ```shell
 msgraphx mail contacts --after 1y --save /tmp/contacts.json
 ```
-
-### 🏢 SharePoint
 
 ### 🏢 SharePoint
 

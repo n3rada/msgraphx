@@ -1,7 +1,6 @@
 # Project specific
 *.ccache
-*.exe
-*.bat
+*.roadtools_auth
 
 # IDE
 .vscode/

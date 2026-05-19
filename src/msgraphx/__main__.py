@@ -13,7 +13,7 @@ from .utils.errors import AuthenticationError
 
 if __name__ == "__main__":
     try:
-        sys.exit(asyncio.run(cli.main()))
+        sys.exit(asyncio.run(cli._main()))
     except KeyboardInterrupt:
         logger.debug("🛑 User interrupted the process.")
         sys.exit(130)
