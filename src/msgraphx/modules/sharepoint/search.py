@@ -18,7 +18,7 @@ from rich.table import Table
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils.cache import load_search_results, parse_indices, save_search_results
+from ...utils.cache import save_search_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 
@@ -183,23 +183,11 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         help="Filter groups by visibility (use with --my-groups or --list-groups).",
     )
 
-    parser.add_argument(
-        "--get",
-        type=str,
-        default=None,
-        metavar="N",
-        help="Download items by index from the last search (e.g., 1, 1,3, 2-5).",
-    )
-
 
 @handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
-
-    # Handle --get: download specific items from cached results
-    if args.get:
-        return await _download_from_cache(context, args)
 
     # Handle --list-groups command
     if args.list_groups:
@@ -530,68 +518,3 @@ async def run_with_arguments(
             logger.warning(f"⚠️ Failed: {failed}")
 
     return 0
-
-
-async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
-    """Download specific items from the last cached search results."""
-    cached = load_search_results()
-    if not cached:
-        logger.error("No cached search results. Run a search first.")
-        return 1
-
-    indices = parse_indices(args.get, len(cached))
-    if not indices:
-        logger.error(f"Invalid indices: {args.get} (cached results: 1-{len(cached)})")
-        return 1
-
-    output_dir = Path(args.save if args.save else ".").resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    console = Console()
-    downloaded = 0
-    failed = 0
-
-    for idx in indices:
-        item = cached[idx]
-        name = item["name"]
-        drive_id = item["drive_id"]
-        item_id = item["item_id"]
-
-        if not drive_id or not item_id:
-            logger.warning(f"⚠️ Missing drive/item ID for: {name}")
-            failed += 1
-            continue
-
-        try:
-            safe_filename = name.replace("/", "_").replace("..", "_")
-            file_path = output_dir / safe_filename
-
-            if file_path.exists():
-                logger.debug(f"⏭️  Already exists: {safe_filename}")
-                downloaded += 1
-                continue
-
-            file_stream = (
-                await context.graph_client.drives.by_drive_id(drive_id)
-                .items.by_drive_item_id(item_id)
-                .content.get()
-            )
-
-            if file_stream:
-                with open(file_path, "wb") as f:
-                    f.write(file_stream)
-                console.print(f"  ✅ {safe_filename}")
-                downloaded += 1
-            else:
-                logger.warning(f"⚠️ Empty content: {name}")
-                failed += 1
-
-        except Exception as exc:
-            logger.error(f"❌ Failed to download {name}: {exc}")
-            failed += 1
-
-    logger.info(f"💾 {downloaded} file(s) downloaded to: {output_dir}")
-    if failed:
-        logger.warning(f"⚠️ Failed: {failed}")
-
-    return 0 if downloaded > 0 else 1

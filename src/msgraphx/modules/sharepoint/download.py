@@ -11,8 +11,10 @@ from pathlib import Path
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.graph_service_client import GraphServiceClient
+from rich.console import Console
 
 # Local library imports
+from ...utils.cache import load_search_results, parse_indices
 from ...utils.pagination import collect_all
 from ...utils.errors import handle_graph_errors
 from ...core.context import GraphContext
@@ -245,6 +247,13 @@ async def download_drive(
 
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
+        "indices",
+        nargs="?",
+        default=None,
+        help="Download items by index from the last search (e.g., 1, '1,3', '2-5').",
+    )
+
+    parser.add_argument(
         "-c",
         "--concurrency",
         type=int,
@@ -283,13 +292,16 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 async def run_with_arguments(
     context: GraphContext, args: argparse.Namespace
 ) -> int:
-    # decorated at package level; ensure auth errors propagate
 
-    # Get drive_id from args
+    # If indices provided, download from cached search results
+    if args.indices:
+        return await _download_from_cache(context, args)
+
+    # Otherwise, full drive download requires --drive-id
     drive_id = getattr(args, "drive_id", None)
 
     if not drive_id:
-        logger.error("❌ Drive ID is required for download. Use --drive-id to specify.")
+        logger.error("Provide indices from last search (e.g., '1,3') or --drive-id for full drive dump.")
         return 1
 
     # Parse output directory from global --save/--output/-o argument
@@ -307,3 +319,70 @@ async def run_with_arguments(
     )
 
     return 0 if downloaded_count > 0 else 1
+
+
+async def _download_from_cache(
+    context: GraphContext, args: argparse.Namespace
+) -> int:
+    """Download specific items from the last cached search results."""
+    cached = load_search_results()
+    if not cached:
+        logger.error("No cached search results. Run a search first.")
+        return 1
+
+    indices = parse_indices(args.indices, len(cached))
+    if not indices:
+        logger.error(f"Invalid indices: {args.indices} (cached results: 1-{len(cached)})")
+        return 1
+
+    output_dir = Path(args.save if args.save else ".").resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    console = Console()
+    downloaded = 0
+    failed = 0
+
+    for idx in indices:
+        item = cached[idx]
+        name = item["name"]
+        drive_id = item["drive_id"]
+        item_id = item["item_id"]
+
+        if not drive_id or not item_id:
+            logger.warning(f"Missing drive/item ID for: {name}")
+            failed += 1
+            continue
+
+        try:
+            safe_filename = name.replace("/", "_").replace("..", "_")
+            file_path = output_dir / safe_filename
+
+            if file_path.exists():
+                logger.debug(f"Already exists: {safe_filename}")
+                downloaded += 1
+                continue
+
+            file_stream = (
+                await context.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(item_id)
+                .content.get()
+            )
+
+            if file_stream:
+                with open(file_path, "wb") as f:
+                    f.write(file_stream)
+                console.print(f"  [green]>[/green] {safe_filename}")
+                downloaded += 1
+            else:
+                logger.warning(f"Empty content: {name}")
+                failed += 1
+
+        except Exception as exc:
+            logger.error(f"Failed to download {name}: {exc}")
+            failed += 1
+
+    logger.info(f"Downloaded {downloaded} file(s) to: {output_dir}")
+    if failed:
+        logger.warning(f"Failed: {failed}")
+
+    return 0 if downloaded > 0 else 1
