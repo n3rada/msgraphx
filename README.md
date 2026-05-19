@@ -140,6 +140,37 @@ Save the full ranked list as JSON:
 msgraphx mail contacts --save /tmp/contacts.json
 ```
 
+#### Search
+
+Search your mailbox using KQL. Streams up to 1 000 results (Exchange API cap):
+
+```shell
+msgraphx outlook search "password"
+msgraphx outlook search --from alice@corp.com
+msgraphx outlook search --subject "VPN" --has-attachments
+msgraphx outlook search "credentials" --after 90d
+```
+
+Results are cached locally (`~/.local/share/msgraphx/last_mail.json`).
+
+#### Download
+
+Download specific emails as `.eml` files from the last search:
+
+```shell
+# First, search
+msgraphx outlook search "password"
+#    1.  RE: VPN config  alice@corp.com  2025-03-12
+#    2.  FW: passwords   bob@corp.com    2025-01-08
+
+# Then, download by index
+msgraphx outlook download 1
+msgraphx outlook download 1,2
+msgraphx outlook download 1-5 --save /tmp/loot/
+```
+
+`.eml` files open natively in Thunderbird, Outlook, and most mail clients.
+
 ### 🏢 SharePoint
 
 #### Search
@@ -190,7 +221,7 @@ msgraphx sp download 1,3
 msgraphx sp download 1-3
 ```
 
-Each search caches results locally (`~/.local/share/msgraphx/last_search.json`). A new search always replaces the previous cache.
+Each search caches results locally (`~/.local/share/msgraphx/last_sharepoint.json`). A new search always replaces the previous cache.
 
 Download to a specific directory:
 ```shell
