@@ -1,6 +1,6 @@
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.11.8,<0.12"]
+build-backend = "uv_build"
 
 
 [project]
@@ -12,18 +12,20 @@ authors = [
 ]
 license = {text = "GPL-3.0-or-later"}
 readme = "README.md"
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.12,<4.0"
 
 dependencies = [
-    "loguru (>=0.7.3,<0.8.0)",
-    "httpx[socks] (>=0.28.1,<0.29.0)",
-    "pkce (>=1.0.3,<2.0.0)",
-    "msgraph-sdk (>=1.51.0,<2.0.0)",
-    "prompt-toolkit (>=3.0.51,<4.0.0)"
+    "httpx[socks]>=0.28.1",
+    "loguru>=0.7.3",
+    "msgraph-sdk>=1.57.0",
+    "pkce>=1.0.3",
+    "prompt-toolkit>=3.0.52",
 ]
 
 [project.urls]
-repository = "https://github.com/n3rada/msgraphx"
+repository  = "https://github.com/n3rada/msgraphx"
+homepage = "https://github.com/n3rada/msgraphx"
+documentation = "https://github.com/n3rada/msgraphx/blob/main/README.md"
 
 [project.scripts]
 msgraphx = 'msgraphx.cli:main'
