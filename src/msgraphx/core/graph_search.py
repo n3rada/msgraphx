@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 # External library imports
 from loguru import logger
-from msgraph import GraphServiceClient
+from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.search_request import SearchRequest
 from msgraph.generated.models.search_query import SearchQuery
 from msgraph.generated.models.sort_property import SortProperty

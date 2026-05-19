@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from msgraph import GraphServiceClient
+from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.user import User
 
 

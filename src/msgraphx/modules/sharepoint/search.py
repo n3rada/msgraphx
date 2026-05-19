@@ -9,7 +9,7 @@ from pathlib import Path
 
 # External library imports
 from loguru import logger
-from msgraph import GraphServiceClient
+from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
 from rich.console import Console
 from rich.live import Live

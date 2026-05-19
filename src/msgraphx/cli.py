@@ -14,7 +14,7 @@ import httpx
 from azure.identity.aio import ClientSecretCredential
 from loguru import logger
 
-from msgraph import GraphServiceClient
+from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.service_principals.service_principals_request_builder import (
     ServicePrincipalsRequestBuilder,
 )
