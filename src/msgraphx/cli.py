@@ -119,7 +119,14 @@ def build_parser() -> argparse.ArgumentParser:
     parent_parser.add_argument(
         "--after",
         type=str,
-        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y).",
+        help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y). Defaults to 1y.",
+    )
+
+    parent_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="fetch_all",
+        help="Fetch all items with no time bound (overrides the default --after 1y).",
     )
 
     parent_parser.add_argument(
@@ -259,6 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _configure_logging(args) -> None:
     if args.log_level:
         level = args.log_level
@@ -278,7 +286,14 @@ def _apply_proxy(proxy: str | None) -> int:
     if not proxy.startswith(("http://", "https://")):
         logger.error("Invalid proxy format.")
         return 1
-    for key in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"):
+    for key in (
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ):
         os.environ[key] = proxy
     logger.info(f"🌐 Proxy set to {proxy}")
     return 0
@@ -320,11 +335,15 @@ def _load_token(args) -> tuple[str | None, str | None]:
         data = json.loads(tokens_path.read_bytes())
         return data.get("accessToken"), data.get("refreshToken")
     except json.JSONDecodeError:
-        logger.error("❌ Failed to decode .roadtools_auth file. Ensure it contains valid JSON.")
+        logger.error(
+            "❌ Failed to decode .roadtools_auth file. Ensure it contains valid JSON."
+        )
         return None, None
 
 
-def _build_app_client(tenant_id: str, client_id: str, client_secret: str) -> "GraphServiceClient | None":
+def _build_app_client(
+    tenant_id: str, client_id: str, client_secret: str
+) -> "GraphServiceClient | None":
     try:
         credentials = ClientSecretCredential(
             tenant_id=tenant_id,
@@ -359,17 +378,24 @@ async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
         )
         return None, False, 1
 
-    has_env_creds = all(os.environ.get(k) for k in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET"))
-    use_creds = (
-        args.tenant_id is not None
-        or (has_env_creds and args.access_token is None and not os.environ.get("ACCESS_TOKEN"))
+    has_env_creds = all(
+        os.environ.get(k) for k in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET")
+    )
+    use_creds = args.tenant_id is not None or (
+        has_env_creds
+        and args.access_token is None
+        and not os.environ.get("ACCESS_TOKEN")
     )
 
     if use_creds:
         tenant_id = args.tenant_id or os.environ.get("TENANT_ID")
         client_id = args.client_id or os.environ.get("CLIENT_ID")
         client_secret = args.client_secret or os.environ.get("CLIENT_SECRET")
-        args.tenant_id, args.client_id, args.client_secret = tenant_id, client_id, client_secret
+        args.tenant_id, args.client_id, args.client_secret = (
+            tenant_id,
+            client_id,
+            client_secret,
+        )
 
         if tenant_id:
             logger.info(f"🏢 Tenant ID: {tenant_id}")
@@ -402,7 +428,9 @@ async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
     return GraphServiceClient(token), is_app_only, 0
 
 
-async def _verify_connection(graph_client, is_app_only: bool, client_id: str | None, region: str):
+async def _verify_connection(
+    graph_client, is_app_only: bool, client_id: str | None, region: str
+):
     """Verify the Graph connection. Returns (cached_user, exit_code)."""
     if is_app_only:
         logger.info("✅ Connected to Microsoft Graph with application permissions.")
@@ -418,7 +446,9 @@ async def _verify_connection(graph_client, is_app_only: bool, client_id: str | N
     except ODataError as exc:
         code = getattr(exc.error, "code", "Unknown")
         message = getattr(exc.error, "message", "No message")
-        logger.error(f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}")
+        logger.error(
+            f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
+        )
         if code == "InvalidAuthenticationToken":
             logger.error("🔒 Token is invalid or expired. Please re-authenticate.")
         return None, 1
@@ -438,7 +468,9 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
             query_parameters=query_params
         )
-        sps = await graph_client.service_principals.get(request_configuration=request_config)
+        sps = await graph_client.service_principals.get(
+            request_configuration=request_config
+        )
         if sps and sps.value:
             logger.info(f"🤖 Application: {sps.value[0].display_name}")
     except Exception:
@@ -451,13 +483,17 @@ async def _dispatch(args, context) -> int:
 
     if command in ("sharepoint", "sp"):
         if not getattr(args, "sp_command", None):
-            logger.error("Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')")
+            logger.error(
+                "Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')"
+            )
             return 1
         return await args.sp_module.run_with_arguments(context, args)
 
     if command in ("aad", "ad"):
         if not getattr(args, "aad_command", None):
-            logger.error("Please specify an Azure AD subcommand (e.g., 'msgraphx aad search admin')")
+            logger.error(
+                "Please specify an Azure AD subcommand (e.g., 'msgraphx aad search admin')"
+            )
             return 1
         return await args.aad_module.run_with_arguments(context, args)
 
@@ -466,7 +502,9 @@ async def _dispatch(args, context) -> int:
 
     if command in ("outlook", "mail"):
         if not getattr(args, "outlook_command", None):
-            logger.error("Please specify an Outlook subcommand (e.g., 'msgraphx outlook contacts')")
+            logger.error(
+                "Please specify an Outlook subcommand (e.g., 'msgraphx outlook contacts')"
+            )
             return 1
         return await args.outlook_module.run_with_arguments(context, args)
 
@@ -477,6 +515,7 @@ async def _dispatch(args, context) -> int:
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
+
 
 @logger.catch
 async def _main() -> int:
@@ -493,6 +532,13 @@ async def _main() -> int:
         return 1
 
     logger.info(f"🌍 Public IP: {public_ip} (⏱️ RTT: {rtt:.2f}s)")
+
+    # Default --after to 1y unless --all or an explicit --after was provided
+    if not getattr(args, "fetch_all", False) and not args.after:
+        args.after = "1y"
+        logger.info(
+            "📅 No time bound specified, defaulting to last year. Use --all to fetch everything."
+        )
 
     args.drive_id = getattr(args, "drive_id", None) or os.environ.get("DRIVE_ID")
     if args.drive_id:
@@ -524,4 +570,3 @@ def main() -> None:
     import asyncio
 
     raise SystemExit(asyncio.run(_main()))
-

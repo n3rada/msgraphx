@@ -39,13 +39,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
     parser.add_argument(
-        "--all",
-        action="store_true",
-        dest="fetch_all",
-        help="Fetch all sent messages with no time bound (overrides --after default of 1y).",
-    )
-
-    parser.add_argument(
         "--only",
         choices=["sent", "received"],
         default=None,
@@ -65,17 +58,9 @@ async def run_with_arguments(
     # Build OData $filter for date range
     odata_filters: list[str] = []
 
-    # Default to last year unless the user explicitly asked for everything
-    after = args.after
-    if not after and not args.fetch_all:
-        after = "1y"
-        logger.info(
-            "📅 No time bound specified, defaulting to last year. Use --all to fetch everything."
-        )
-
-    if after:
+    if args.after:
         try:
-            iso = parse_date_string(after)
+            iso = parse_date_string(args.after)
             odata_filters.append(f"sentDateTime ge {iso}")
         except ValueError as e:
             logger.error(str(e))
@@ -181,8 +166,10 @@ async def run_with_arguments(
 
         # KQL date bounds for $search (date portion only)
         kql_date_parts: list[str] = []
-        if after:
-            kql_date_parts.append(f"received>={parse_date_string(after).split('T')[0]}")
+        if args.after:
+            kql_date_parts.append(
+                f"received>={parse_date_string(args.after).split('T')[0]}"
+            )
         if args.before:
             kql_date_parts.append(
                 f"received<={parse_date_string(args.before).split('T')[0]}"
