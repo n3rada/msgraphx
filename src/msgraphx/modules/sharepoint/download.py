@@ -13,7 +13,7 @@ from msgraph.generated.models.drive_item import DriveItem
 from msgraph.graph_service_client import GraphServiceClient
 
 # Local library imports
-from ...utils.cache import load_search_results, parse_indices
+from ...utils.cache import load_results, parse_indices
 from ...utils.pagination import collect_all
 from ...utils.errors import handle_graph_errors
 from ...core.context import GraphContext
@@ -322,7 +322,7 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
 async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
     """Download specific items from the last cached search results."""
-    cached = load_search_results()
+    cached = load_results(key="sharepoint")
     if not cached:
         logger.error("No cached search results. Run a search first.")
         return 1

@@ -8,9 +8,9 @@ import pytest
 
 from msgraphx.utils.cache import (
     _get_data_dir,
-    load_search_results,
+    load_results,
     parse_indices,
-    save_search_results,
+    save_results,
 )
 
 
@@ -70,40 +70,40 @@ def test_save_and_load(xdg_data_home):
         },
     ]
 
-    save_search_results(items)
-    loaded = load_search_results()
+    save_results(items, key="sharepoint")
+    loaded = load_results(key="sharepoint")
 
     assert loaded == items
 
 
 def test_load_empty_returns_empty_list(xdg_data_home):
-    assert load_search_results() == []
+    assert load_results(key="sharepoint") == []
 
 
 def test_save_overwrites_previous(xdg_data_home):
-    save_search_results([{"drive_id": "a", "item_id": "1", "name": "old.txt", "size": 0, "web_url": None}])
-    save_search_results([{"drive_id": "b", "item_id": "2", "name": "new.txt", "size": 100, "web_url": None}])
+    save_results([{"drive_id": "a", "item_id": "1", "name": "old.txt", "size": 0, "web_url": None}], key="sharepoint")
+    save_results([{"drive_id": "b", "item_id": "2", "name": "new.txt", "size": 100, "web_url": None}], key="sharepoint")
 
-    loaded = load_search_results()
+    loaded = load_results(key="sharepoint")
     assert len(loaded) == 1
     assert loaded[0]["name"] == "new.txt"
 
 
 def test_load_corrupt_file_returns_empty(xdg_data_home):
-    cache_file = _get_data_dir() / "last_search.json"
+    cache_file = _get_data_dir() / "last_sharepoint.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text("not valid json {{{", encoding="utf-8")
 
-    assert load_search_results() == []
+    assert load_results(key="sharepoint") == []
 
 
 def test_cache_file_permissions(xdg_data_home):
     import os
     import stat
 
-    save_search_results([{"drive_id": "x", "item_id": "y", "name": "f.txt", "size": 0, "web_url": None}])
+    save_results([{"drive_id": "x", "item_id": "y", "name": "f.txt", "size": 0, "web_url": None}], key="sharepoint")
 
-    cache_file = _get_data_dir() / "last_search.json"
+    cache_file = _get_data_dir() / "last_sharepoint.json"
     if os.name != "nt":
         mode = stat.S_IMODE(cache_file.stat().st_mode)
         assert mode == 0o600

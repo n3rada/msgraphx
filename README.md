@@ -96,6 +96,7 @@ msgraphx sp search "password"
 > [!NOTE]
 > App-only tokens cannot use the `/me` endpoint. Modules that require a user context (Outlook) only work with delegated auth.
 
+
 ## ⚔️ Modules
 
 > [!NOTE]
@@ -211,3 +212,11 @@ Force re-download everything:
 ```shell
 msgraphx --drive-id <drive-id> sp download --no-resume --save /tmp/loot/
 ```
+
+
+## 🔬 Graph Explorer
+
+[Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) is Microsoft's interactive API sandbox. It lets you run live queries against the Graph API, inspect raw responses, and generate ready-to-paste **Python SDK code snippets** for any request via the *Code snippets* tab.
+
+Use it to prototype a query before implementing it as a module, or to understand exactly what fields a response contains.
+

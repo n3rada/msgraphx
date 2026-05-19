@@ -4,6 +4,10 @@
 
 Stores the most recent search results so users can download specific
 items by index without re-querying the API.
+
+Each search domain writes its own cache file:
+  last_sharepoint.json  — sp search results
+  last_mail.json        — outlook search results
 """
 
 from __future__ import annotations
@@ -32,43 +36,34 @@ def _get_data_dir() -> Path:
     return base / APP_NAME
 
 
-def save_search_results(items: list[dict[str, str | int | None]]) -> None:
-    """Cache the latest search results, overwriting any previous cache.
-
-    Each item dict should contain at minimum:
-        - drive_id: str
-        - item_id: str
-        - name: str
-        - size: int | None
-        - web_url: str | None
-    """
+def save_results(items: list[dict], key: str) -> None:
+    """Cache the latest results for *key*, overwriting any previous cache."""
     data_dir = _get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    cache_file = data_dir / "last_search.json"
+    cache_file = data_dir / f"last_{key}.json"
     try:
         cache_file.write_text(json.dumps(items, indent=2), encoding="utf-8")
         if os.name != "nt":
             os.chmod(cache_file, 0o600)
-        logger.debug(f"Cached {len(items)} search result(s) to {cache_file}")
+        logger.debug(f"Cached {len(items)} result(s) to {cache_file}")
     except OSError as exc:
-        logger.warning(f"Failed to cache search results: {exc}")
+        logger.warning(f"Failed to cache results: {exc}")
 
 
-def load_search_results() -> list[dict[str, str | int | None]]:
-    """Load the cached search results.
+def load_results(key: str) -> list[dict]:
+    """Load cached results for *key*.
 
-    Returns:
-        List of cached item dicts, or empty list if no cache exists.
+    Returns an empty list if no cache exists or the file is corrupt.
     """
-    cache_file = _get_data_dir() / "last_search.json"
+    cache_file = _get_data_dir() / f"last_{key}.json"
     if not cache_file.is_file():
         return []
 
     try:
         return json.loads(cache_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning(f"Failed to load search cache: {exc}")
+        logger.warning(f"Failed to load cache: {exc}")
         return []
 
 

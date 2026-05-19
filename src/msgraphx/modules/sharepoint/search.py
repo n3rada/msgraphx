@@ -18,7 +18,7 @@ from rich.table import Table
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils.cache import save_search_results
+from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 
@@ -606,7 +606,7 @@ async def run_with_arguments(
             logger.info(f"Interrupted — {count} result(s) cached.")
     finally:
         if cached_items:
-            save_search_results(cached_items)
+            save_results(cached_items, key="sharepoint")
 
     if count == 0:
         logger.info("📭 No results found.")
