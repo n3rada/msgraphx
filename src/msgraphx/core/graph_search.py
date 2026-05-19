@@ -156,5 +156,7 @@ async def search_entities(
             page += 1
 
         except Exception as exc:
+            from ..utils.errors import raise_if_forbidden
+            raise_if_forbidden(exc)
             logger.error(f"❌ Error during search: {exc}")
             break

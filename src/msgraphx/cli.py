@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 from azure.identity.aio import ClientSecretCredential
 from loguru import logger
+from rich.console import Console
 
 from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.service_principals.service_principals_request_builder import (
@@ -25,6 +26,7 @@ from . import __version__
 from .core.context import GraphContext
 from .modules import aad, me, outlook, sharepoint, teams
 from .utils import logbook, tokens
+from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 
 def load_subcommands_from_module(
@@ -323,31 +325,36 @@ def _check_public_ip() -> tuple[str | None, float]:
     return None, 0.0
 
 
-def _load_token(args) -> tuple[str | None, str | None]:
-    """Resolve access/refresh tokens from args → env → .roadtools_auth."""
+def _load_token(args) -> tuple[str | None, str | None, str]:
+    """Resolve access/refresh tokens from args → env → .roadtools_auth.
+
+    Returns (access_token, refresh_token, source) where source is one of
+    "arg", "env", or "file" — used to persist refreshed tokens back to the
+    same origin.
+    """
     if args.access_token:
-        return args.access_token, args.refresh_token
+        return args.access_token, args.refresh_token, "arg"
 
     env_token = os.environ.get("ACCESS_TOKEN")
     if env_token:
         logger.info("🔐 Using JWT from environment variable ACCESS_TOKEN.")
-        return env_token, os.environ.get("REFRESH_TOKEN")
+        return env_token, os.environ.get("REFRESH_TOKEN"), "env"
 
     logger.info("🔐 No JWT provided, checking for .roadtools_auth file.")
     tokens_path = Path(".roadtools_auth")
     if not tokens_path.exists():
         logger.error("🔐 No JWT provided and .roadtools_auth file not found.")
-        return None, None
+        return None, None, "file"
 
     logger.info("🔐 Using JWT from .roadtools_auth file.")
     try:
         data = json.loads(tokens_path.read_bytes())
-        return data.get("accessToken"), data.get("refreshToken")
+        return data.get("accessToken"), data.get("refreshToken"), "file"
     except json.JSONDecodeError:
         logger.error(
             "❌ Failed to decode .roadtools_auth file. Ensure it contains valid JSON."
         )
-        return None, None
+        return None, None, "file"
 
 
 def _build_app_client(
@@ -415,11 +422,11 @@ async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
         client = _build_app_client(tenant_id, client_id, client_secret)
         return (client, True, 0) if client else (None, True, 1)
 
-    access_token, refresh_token = _load_token(args)
+    access_token, refresh_token, token_source = _load_token(args)
     if not access_token:
         return None, False, 1
 
-    token = tokens.TokenManager(access_token, refresh_token)
+    token = tokens.TokenManager(access_token, refresh_token, source=token_source)
 
     if token.is_expired:
         logger.error("🔒 Token is expired.")
@@ -433,6 +440,13 @@ async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
         return None, False, 1
 
     is_app_only = _classify_token(token)
+
+    if token.app_id:
+        logger.info(f"📱 Token app: {token.app_id}")
+    if not is_app_only and token.scope:
+        scope_list = token.scope.split()
+        logger.info(f"🔑 Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
+
     token.start_auto_refresh()
     return GraphServiceClient(token), is_app_only, 0
 
@@ -450,7 +464,9 @@ async def _verify_connection(
 
     try:
         user = await graph_client.me.get()
-        logger.info(f"🔗 Connected to Microsoft Graph as: {user.display_name}")
+        logger.info(
+            f"🔗 Authenticated as: {user.display_name} ({user.user_principal_name})"
+        )
         return user, 0
     except ODataError as exc:
         code = getattr(exc.error, "code", "Unknown")
@@ -486,6 +502,25 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         pass
 
 
+async def _call_module(coro) -> int:
+    """Run a module coroutine, catching and formatting Graph API errors centrally."""
+    try:
+        return await coro
+    except ForbiddenGraphError as exc:
+        console = Console(stderr=True)
+        console.print("\n[bold red]🚫 Access denied — 403 Forbidden[/bold red]")
+        if exc.required:
+            console.print(f"  [bold]Required:[/bold]  {exc.required}")
+        if exc.granted:
+            console.print(f"  [bold]Granted:[/bold]   {exc.granted}")
+        if not exc.required and exc.raw_message:
+            console.print(f"  {exc.raw_message}")
+        return 1
+    except AuthenticationError:
+        # Already logged by the decorator
+        return 1
+
+
 async def _dispatch(args, context) -> int:
     """Route to the appropriate subcommand handler."""
     command = args.command
@@ -496,7 +531,7 @@ async def _dispatch(args, context) -> int:
                 "Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')"
             )
             return 1
-        return await args.sp_module.run_with_arguments(context, args)
+        return await _call_module(args.sp_module.run_with_arguments(context, args))
 
     if command in ("aad", "ad"):
         if not getattr(args, "aad_command", None):
@@ -504,10 +539,10 @@ async def _dispatch(args, context) -> int:
                 "Please specify an Azure AD subcommand (e.g., 'msgraphx aad search admin')"
             )
             return 1
-        return await args.aad_module.run_with_arguments(context, args)
+        return await _call_module(args.aad_module.run_with_arguments(context, args))
 
     if command == "me":
-        return await me.run_with_arguments(context, args)
+        return await _call_module(me.run_with_arguments(context, args))
 
     if command in ("outlook", "mail"):
         if not getattr(args, "outlook_command", None):
@@ -515,7 +550,15 @@ async def _dispatch(args, context) -> int:
                 "Please specify an Outlook subcommand (e.g., 'msgraphx outlook contacts')"
             )
             return 1
-        return await args.outlook_module.run_with_arguments(context, args)
+        return await _call_module(args.outlook_module.run_with_arguments(context, args))
+
+    if command in ("teams", "ms-teams"):
+        if not getattr(args, "teams_command", None):
+            logger.error(
+                "Please specify a Teams subcommand (e.g., 'msgraphx teams contacts')"
+            )
+            return 1
+        return await _call_module(args.teams_module.run_with_arguments(context, args))
 
     logger.info("✅ Authentication successful. Use a subcommand to perform actions.")
     return 0

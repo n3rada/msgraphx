@@ -1,6 +1,6 @@
 # 🔭 msgraphx
 
-Microsoft Graph eXploitation toolkit.
+Microsoft Graph eXploitation toolkit. ~~Ab~~using the Microsoft Graph SDK to search and harvest SharePoint files, Outlook mail, Teams messages and lot of M365 things.
 
 ## 📦 Installation
 
@@ -169,7 +169,7 @@ msgraphx outlook download 1,2
 msgraphx outlook download 1-5 --save /tmp/loot/
 ```
 
-`.eml` files open natively in Thunderbird, Outlook, and most mail clients.
+`.eml` files open natively in most mail clients.
 
 ### 🏢 SharePoint
 

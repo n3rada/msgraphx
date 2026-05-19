@@ -152,8 +152,8 @@ async def _send_dm(
     logger.debug(f"Chat ID: {chat_id}")
 
     outgoing = ChatMessage(body=message_body)
-    result = await (
-        context.graph_client.chats.by_chat_id(chat_id).messages.post(outgoing)
+    result = await context.graph_client.chats.by_chat_id(chat_id).messages.post(
+        outgoing
     )
 
     if result:

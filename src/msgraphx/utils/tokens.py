@@ -32,9 +32,13 @@ def parse_jwt(token: str) -> tuple[dict, dict, bytes]:
 
 
 class TokenManager:
-    def __init__(self, access_token: str, refresh_token: str = None):
+    # Recognised source values: "file" | "env" | "arg"
+    def __init__(
+        self, access_token: str, refresh_token: str = None, source: str = "file"
+    ):
         self._access_token = access_token
         self._refresh_token = refresh_token
+        self._source = source
 
         if self._refresh_token is not None:
             logger.info(
@@ -62,6 +66,10 @@ class TokenManager:
     @property
     def audience(self) -> str:
         return self._payload.get("aud", "")
+
+    @property
+    def app_id(self) -> str:
+        return self._payload.get("appid", "")
 
     @property
     def scope(self) -> str:
@@ -92,9 +100,20 @@ class TokenManager:
 
     def update_output_file(self) -> None:
         if not self._refresh_token:
-            logger.debug("⏭️ Skipping file update - no refresh token available")
+            logger.debug("⏭️ Skipping token persistence - no refresh token available")
             return
 
+        if self._source in ("env", "arg"):
+            import os as _os
+
+            _os.environ["ACCESS_TOKEN"] = self._access_token
+            _os.environ["REFRESH_TOKEN"] = self._refresh_token
+            logger.success(
+                "💾 Updated ACCESS_TOKEN / REFRESH_TOKEN env vars with refreshed tokens"
+            )
+            return
+
+        # source == "file" — write back to .roadtools_auth
         output_file = Path(".roadtools_auth")
         output_file.unlink(missing_ok=True)
 
@@ -136,10 +155,12 @@ class TokenManager:
             return False
 
         new_tokens = response.json()
+        source = self._source  # preserve source across re-init
 
         self.__init__(
             access_token=new_tokens.get("access_token"),
             refresh_token=new_tokens.get("refresh_token"),
+            source=source,
         )
         logger.success("🔁 Access token refreshed successfully.")
         return True

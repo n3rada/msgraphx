@@ -139,6 +139,7 @@ async def run_with_arguments(
                 raw = msg.body.content or ""
                 if msg.body.content_type and str(msg.body.content_type) == "html":
                     import re
+
                     body = re.sub(r"<[^>]+>", " ", raw).strip()
                     body = re.sub(r"\s{2,}", " ", body)
                 else:
