@@ -456,7 +456,7 @@ async def _verify_connection(
 ):
     """Verify the Graph connection. Returns (cached_user, exit_code)."""
     if is_app_only:
-        logger.info("✅ Connected to Microsoft Graph with application permissions.")
+        logger.info("✅ Authenticated with application permissions.")
         logger.info(f"🌍 Region: {region}")
         if client_id:
             await _log_service_principal(graph_client, client_id)
