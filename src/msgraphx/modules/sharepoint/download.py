@@ -371,7 +371,7 @@ async def _download_from_cache(
             if file_stream:
                 with open(file_path, "wb") as f:
                     f.write(file_stream)
-                console.print(f"  [green]>[/green] {safe_filename}")
+                console.print(f"  [green]>[/green] {file_path}")
                 downloaded += 1
             else:
                 logger.warning(f"Empty content: {name}")
