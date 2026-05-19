@@ -12,6 +12,7 @@ from loguru import logger
 from msgraph import GraphServiceClient
 from msgraph.generated.models.entity_type import EntityType
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
 
 # Local library imports
@@ -289,214 +290,213 @@ async def run_with_arguments(
     count = 0
     downloaded = 0
     failed = 0
-    rows: list[tuple[str, str, str, str]] = []
 
-    async for drive_item in graph_search.search_entities(
-        context.graph_client,
-        entity_types=[EntityType.DriveItem],
-        options=search_options,
-    ):
+    table = Table(
+        title="📄 Search results",
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("File")
+    table.add_column("Author")
+    table.add_column("Size", justify="right")
+    table.add_column("Created", justify="right")
 
-        logger.trace(drive_item.__dict__)
+    console = Console()
 
-        count += 1
-        author = (
-            drive_item.created_by.user.display_name
-            if drive_item.created_by and drive_item.created_by.user
-            else "?"
-        )
-        size_bytes = drive_item.size or 0
-        if size_bytes >= 1_048_576:
-            size_str = f"{size_bytes / 1_048_576:.1f} MB"
-        elif size_bytes >= 1024:
-            size_str = f"{size_bytes / 1024:.1f} KB"
-        else:
-            size_str = f"{size_bytes} B"
-        created = (
-            drive_item.created_date_time.strftime("%Y-%m-%d")
-            if drive_item.created_date_time
-            else ""
-        )
-        rows.append((drive_item.name, author, size_str, created))
+    with Live(table, console=console, refresh_per_second=4, vertical_overflow="visible") as live:
+        async for drive_item in graph_search.search_entities(
+            context.graph_client,
+            entity_types=[EntityType.DriveItem],
+            options=search_options,
+        ):
+            logger.trace(drive_item.__dict__)
 
-        # Download file if --save is specified
-        if save_dir:
-            try:
-                # Sanitize filename to avoid path traversal
-                safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
-                file_path = save_dir / safe_filename
-                info_path = save_dir / f"{safe_filename}_info.json"
+            count += 1
+            author = (
+                drive_item.created_by.user.display_name
+                if drive_item.created_by and drive_item.created_by.user
+                else "?"
+            )
+            size_bytes = drive_item.size or 0
+            if size_bytes >= 1_048_576:
+                size_str = f"{size_bytes / 1_048_576:.1f} MB"
+            elif size_bytes >= 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes} B"
+            created = (
+                drive_item.created_date_time.strftime("%Y-%m-%d")
+                if drive_item.created_date_time
+                else ""
+            )
 
-                # Check if file already exists - skip download if it does
-                if file_path.exists() and info_path.exists():
-                    logger.debug(f"⏭️  Skipping (already exists): {file_path.name}")
-                    downloaded += 1  # Count as downloaded
-                    continue
+            if not save_dir:
+                table.add_row(str(count), drive_item.name, author, size_str, created)
+                live.update(table)
 
-                # Get file content stream only if file doesn't exist
-                file_stream = (
-                    await context.graph_client.drives.by_drive_id(
-                        drive_item.parent_reference.drive_id
+            # Download file if --save is specified
+            if save_dir:
+                try:
+                    # Sanitize filename to avoid path traversal
+                    safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
+                    file_path = save_dir / safe_filename
+                    info_path = save_dir / f"{safe_filename}_info.json"
+
+                    # Check if file already exists - skip download if it does
+                    if file_path.exists() and info_path.exists():
+                        logger.debug(f"⏭️  Skipping (already exists): {file_path.name}")
+                        downloaded += 1
+                        continue
+
+                    # Get file content stream only if file doesn't exist
+                    file_stream = (
+                        await context.graph_client.drives.by_drive_id(
+                            drive_item.parent_reference.drive_id
+                        )
+                        .items.by_drive_item_id(drive_item.id)
+                        .content.get()
                     )
-                    .items.by_drive_item_id(drive_item.id)
-                    .content.get()
-                )
 
-                if file_stream:
-                    # Write file
-                    with open(file_path, "wb") as f:
-                        f.write(file_stream)
+                    if file_stream:
+                        with open(file_path, "wb") as f:
+                            f.write(file_stream)
 
-                    # Save metadata as JSON
-                    metadata = {
-                        "id": drive_item.id,
-                        "name": drive_item.name,
-                        "size": drive_item.size,
-                        "created_datetime": (
-                            drive_item.created_date_time.isoformat()
-                            if drive_item.created_date_time
-                            else None
-                        ),
-                        "last_modified_datetime": (
-                            drive_item.last_modified_date_time.isoformat()
-                            if drive_item.last_modified_date_time
-                            else None
-                        ),
-                        "web_url": drive_item.web_url,
-                        "created_by": (
-                            {
-                                "user": {
-                                    "display_name": (
-                                        drive_item.created_by.user.display_name
-                                        if drive_item.created_by
-                                        and drive_item.created_by.user
+                        metadata = {
+                            "id": drive_item.id,
+                            "name": drive_item.name,
+                            "size": drive_item.size,
+                            "created_datetime": (
+                                drive_item.created_date_time.isoformat()
+                                if drive_item.created_date_time
+                                else None
+                            ),
+                            "last_modified_datetime": (
+                                drive_item.last_modified_date_time.isoformat()
+                                if drive_item.last_modified_date_time
+                                else None
+                            ),
+                            "web_url": drive_item.web_url,
+                            "created_by": (
+                                {
+                                    "user": {
+                                        "display_name": (
+                                            drive_item.created_by.user.display_name
+                                            if drive_item.created_by
+                                            and drive_item.created_by.user
+                                            else None
+                                        ),
+                                        "email": (
+                                            drive_item.created_by.user.email
+                                            if drive_item.created_by
+                                            and drive_item.created_by.user
+                                            else None
+                                        ),
+                                        "id": (
+                                            drive_item.created_by.user.id
+                                            if drive_item.created_by
+                                            and drive_item.created_by.user
+                                            else None
+                                        ),
+                                    }
+                                }
+                                if drive_item.created_by
+                                else None
+                            ),
+                            "last_modified_by": (
+                                {
+                                    "user": {
+                                        "display_name": (
+                                            drive_item.last_modified_by.user.display_name
+                                            if drive_item.last_modified_by
+                                            and drive_item.last_modified_by.user
+                                            else None
+                                        ),
+                                        "email": (
+                                            drive_item.last_modified_by.user.email
+                                            if drive_item.last_modified_by
+                                            and drive_item.last_modified_by.user
+                                            else None
+                                        ),
+                                        "id": (
+                                            drive_item.last_modified_by.user.id
+                                            if drive_item.last_modified_by
+                                            and drive_item.last_modified_by.user
+                                            else None
+                                        ),
+                                    }
+                                }
+                                if drive_item.last_modified_by
+                                else None
+                            ),
+                            "parent_reference": (
+                                {
+                                    "drive_id": (
+                                        drive_item.parent_reference.drive_id
+                                        if drive_item.parent_reference
                                         else None
                                     ),
-                                    "email": (
-                                        drive_item.created_by.user.email
-                                        if drive_item.created_by
-                                        and drive_item.created_by.user
+                                    "drive_type": (
+                                        drive_item.parent_reference.drive_type
+                                        if drive_item.parent_reference
                                         else None
                                     ),
                                     "id": (
-                                        drive_item.created_by.user.id
-                                        if drive_item.created_by
-                                        and drive_item.created_by.user
+                                        drive_item.parent_reference.id
+                                        if drive_item.parent_reference
+                                        else None
+                                    ),
+                                    "name": (
+                                        drive_item.parent_reference.name
+                                        if drive_item.parent_reference
+                                        else None
+                                    ),
+                                    "path": (
+                                        drive_item.parent_reference.path
+                                        if drive_item.parent_reference
+                                        else None
+                                    ),
+                                    "site_id": (
+                                        drive_item.parent_reference.site_id
+                                        if drive_item.parent_reference
                                         else None
                                     ),
                                 }
-                            }
-                            if drive_item.created_by
-                            else None
-                        ),
-                        "last_modified_by": (
-                            {
-                                "user": {
-                                    "display_name": (
-                                        drive_item.last_modified_by.user.display_name
-                                        if drive_item.last_modified_by
-                                        and drive_item.last_modified_by.user
-                                        else None
-                                    ),
-                                    "email": (
-                                        drive_item.last_modified_by.user.email
-                                        if drive_item.last_modified_by
-                                        and drive_item.last_modified_by.user
-                                        else None
-                                    ),
-                                    "id": (
-                                        drive_item.last_modified_by.user.id
-                                        if drive_item.last_modified_by
-                                        and drive_item.last_modified_by.user
+                                if drive_item.parent_reference
+                                else None
+                            ),
+                            "file": (
+                                {
+                                    "mime_type": (
+                                        drive_item.file.mime_type
+                                        if drive_item.file
                                         else None
                                     ),
                                 }
-                            }
-                            if drive_item.last_modified_by
-                            else None
-                        ),
-                        "parent_reference": (
-                            {
-                                "drive_id": (
-                                    drive_item.parent_reference.drive_id
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                                "drive_type": (
-                                    drive_item.parent_reference.drive_type
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                                "id": (
-                                    drive_item.parent_reference.id
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                                "name": (
-                                    drive_item.parent_reference.name
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                                "path": (
-                                    drive_item.parent_reference.path
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                                "site_id": (
-                                    drive_item.parent_reference.site_id
-                                    if drive_item.parent_reference
-                                    else None
-                                ),
-                            }
-                            if drive_item.parent_reference
-                            else None
-                        ),
-                        "file": (
-                            {
-                                "mime_type": (
-                                    drive_item.file.mime_type
-                                    if drive_item.file
-                                    else None
-                                ),
-                            }
-                            if drive_item.file
-                            else None
-                        ),
-                    }
+                                if drive_item.file
+                                else None
+                            ),
+                        }
 
-                    with open(info_path, "w", encoding="utf-8") as f:
-                        json.dump(metadata, f, indent=2, ensure_ascii=False)
+                        with open(info_path, "w", encoding="utf-8") as f:
+                            json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-                    logger.debug(f"✅ Saved: {file_path.name}")
-                    downloaded += 1
-                else:
-                    logger.warning(f"⚠️ Empty file: {drive_item.name}")
+                        logger.debug(f"✅ Saved: {file_path.name}")
+                        downloaded += 1
+                    else:
+                        logger.warning(f"⚠️ Empty file: {drive_item.name}")
 
-            except Exception as e:
-                logger.error(f"❌ Failed to download {drive_item.name}: {e}")
-                failed += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to download {drive_item.name}: {e}")
+                    failed += 1
 
-    if count > 0:
-        if not save_dir:
-            table = Table(
-                title=f"📄 Search results ({count:,} files)",
-                show_header=True,
-                header_style="bold",
-            )
-            table.add_column("#", justify="right", style="dim")
-            table.add_column("File")
-            table.add_column("Author")
-            table.add_column("Size", justify="right")
-            table.add_column("Created", justify="right")
-            for idx, (name, author, size_str, created) in enumerate(rows, 1):
-                table.add_row(str(idx), name, author, size_str, created)
-            Console().print(table)
+    if count == 0:
+        logger.info("📭 No results found.")
+        return 0
 
-        if save_dir:
-            logger.info(
-                f"💾 {downloaded} items have been saved to: {save_dir.absolute()}"
-            )
-            if failed > 0:
-                logger.warning(f"⚠️ Failed: {failed}")
+    if save_dir:
+        logger.info(f"💾 {downloaded} items saved to: {save_dir.absolute()}")
+        if failed > 0:
+            logger.warning(f"⚠️ Failed: {failed}")
 
     return 0
