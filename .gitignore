@@ -2,6 +2,9 @@
 *.ccache
 *.roadtools_auth
 
+# File Types
+*.pdf
+
 # IDE
 .vscode/
 .idea/
