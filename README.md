@@ -174,7 +174,29 @@ msgraphx sp search --hunt credentials --save /tmp/loot/
 
 #### Download
 
-Download all files from a SharePoint drive:
+Download specific files from the last search by index:
+
+```shell
+# First, search
+msgraphx sp search "Itron" --filetype pdf
+#    1.  Itron_Report_2024.pdf  jsmith  2.1 MB  2024-11-03
+#    2.  Itron_Specs.pdf        jdoe    840 KB  2024-09-15
+#    3.  Itron_Invoice.pdf      admin   120 KB  2025-01-20
+
+# Then, download by index
+msgraphx sp download 2
+msgraphx sp download 1,3
+msgraphx sp download 1-3
+```
+
+Each search caches results locally (`~/.local/share/msgraphx/last_search.json`). A new search always replaces the previous cache.
+
+Download to a specific directory:
+```shell
+msgraphx sp download 1-3 --save /tmp/loot/
+```
+
+Full drive dump (requires `--drive-id`):
 
 ```shell
 msgraphx --drive-id <drive-id> sp download --save /tmp/loot/
