@@ -23,7 +23,7 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import sharepoint, aad, me, outlook
+from .modules import aad, me, outlook, sharepoint, teams
 from .utils import logbook, tokens
 
 
@@ -258,6 +258,15 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     load_subcommands_from_module(outlook_parser, outlook, "outlook", parent_parser)
+
+    # Teams subcommand (inherits parent_parser for global options)
+    teams_parser = subparsers.add_parser(
+        "teams",
+        aliases=["ms-teams"],
+        help="Microsoft Teams commands",
+        parents=[parent_parser],
+    )
+    load_subcommands_from_module(teams_parser, teams, "teams", parent_parser)
 
     return parser
 
