@@ -1,3 +1,5 @@
+# msgraphx/core/graph_search.py
+
 # Built-in imports
 from __future__ import annotations
 
@@ -7,6 +9,7 @@ from dataclasses import dataclass
 # External library imports
 from loguru import logger
 from msgraph.graph_service_client import GraphServiceClient
+from msgraph.generated.models.entity import Entity
 from msgraph.generated.models.search_request import SearchRequest
 from msgraph.generated.models.search_query import SearchQuery
 from msgraph.generated.models.sort_property import SortProperty
@@ -32,7 +35,7 @@ async def search_entities(
     client: GraphServiceClient,
     entity_types: list[EntityType],
     options: SearchOptions = SearchOptions(),
-) -> AsyncGenerator[EntityType, None]:
+) -> AsyncGenerator[Entity, None]:
     """
     Perform a paginated Microsoft Graph search across one or more entity types (e.g., DriveItem, Message, Site).
 

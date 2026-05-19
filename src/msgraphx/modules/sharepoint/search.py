@@ -10,6 +10,7 @@ from pathlib import Path
 # External library imports
 from loguru import logger
 from msgraph.graph_service_client import GraphServiceClient
+from msgraph.generated.models.drive_item import DriveItem
 from msgraph.generated.models.entity_type import EntityType
 from rich.console import Console
 from rich.live import Live
@@ -304,12 +305,18 @@ async def run_with_arguments(
 
     console = Console()
 
-    with Live(table, console=console, refresh_per_second=4, vertical_overflow="visible") as live:
-        async for drive_item in graph_search.search_entities(
+    with Live(
+        table, console=console, refresh_per_second=4, vertical_overflow="visible"
+    ) as live:
+        async for _item in graph_search.search_entities(
             context.graph_client,
             entity_types=[EntityType.DriveItem],
             options=search_options,
         ):
+            drive_item = _item if isinstance(_item, DriveItem) else None
+            if drive_item is None:
+                continue
+
             logger.trace(drive_item.__dict__)
 
             count += 1
