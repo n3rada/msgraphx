@@ -431,9 +431,7 @@ async def run_with_arguments(
                     ),
                     # Pre-authenticated direct download URL (present in search results)
                     "download_url": (
-                        drive_item.additional_data.get(
-                            "@microsoft.graph.downloadUrl"
-                        )
+                        drive_item.additional_data.get("@microsoft.graph.downloadUrl")
                         if drive_item.additional_data
                         else None
                     ),

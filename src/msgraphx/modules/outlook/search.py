@@ -136,7 +136,9 @@ async def run_with_arguments(
             )
             from_name = (
                 msg.from_.email_address.name
-                if msg.from_ and msg.from_.email_address and msg.from_.email_address.name
+                if msg.from_
+                and msg.from_.email_address
+                and msg.from_.email_address.name
                 else ""
             )
             from_display = f"{from_name} <{from_addr}>" if from_name else from_addr
@@ -175,9 +177,7 @@ async def run_with_arguments(
                         else None
                     ),
                     "sent_datetime": (
-                        msg.sent_date_time.isoformat()
-                        if msg.sent_date_time
-                        else None
+                        msg.sent_date_time.isoformat() if msg.sent_date_time else None
                     ),
                     # Formatted date for display
                     "received": received,

@@ -87,11 +87,9 @@ async def run_with_arguments(
 
         try:
             # GET /me/messages/{id}/$value — raw MIME (RFC 2822) bytes
-            mime_content = (
-                await context.graph_client.me.messages.by_message_id(
-                    message_id
-                ).content.get()
-            )
+            mime_content = await context.graph_client.me.messages.by_message_id(
+                message_id
+            ).content.get()
 
             if mime_content:
                 file_path.write_bytes(mime_content)

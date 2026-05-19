@@ -1,1 +1,1 @@
-from . import contacts, download, search
+from . import contacts, download, search, show
