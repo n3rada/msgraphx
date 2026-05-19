@@ -3,6 +3,7 @@
 # Built-in imports
 from __future__ import annotations
 
+import re
 import sys
 import functools
 import asyncio
@@ -15,6 +16,16 @@ from loguru import logger
 
 class AuthenticationError(RuntimeError):
     """Raised when Graph API authentication fails (expired/invalid token)."""
+
+
+class ForbiddenGraphError(RuntimeError):
+    """Raised when the Graph API returns 403 Forbidden (insufficient permissions)."""
+
+    def __init__(self, required: str | None, granted: str | None, raw_message: str):
+        super().__init__(raw_message)
+        self.required = required
+        self.granted = granted
+        self.raw_message = raw_message
 
 
 def is_graph_auth_error(exc: Exception) -> bool:
@@ -93,6 +104,72 @@ def check_and_exit_for_auth_error(exc: Exception) -> None:
     ):
         logger.error("🔒 Authentication failed: token invalid or expired. Stopping.")
         sys.exit(1)
+
+
+def _odata_error_obj(exc: Exception):
+    """Return the underlying ODataError-like object, or None."""
+    try:
+        from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+    except Exception:
+        ODataError = None
+
+    if ODataError is not None and isinstance(exc, ODataError):
+        return exc
+    for attr in ("__cause__", "__context__"):
+        inner = getattr(exc, attr, None)
+        if ODataError is not None and isinstance(inner, ODataError):
+            return inner
+    if hasattr(exc, "error"):
+        return exc
+    return None
+
+
+def is_graph_forbidden_error(exc: Exception) -> bool:
+    """Return True if exc represents a 403 Forbidden from the Graph API."""
+    obj = _odata_error_obj(exc)
+    if obj is None:
+        return False
+    err = getattr(obj, "error", None) or obj
+    code = getattr(err, "code", None)
+    if code == "Forbidden":
+        return True
+    # Some SDK versions surface the HTTP status directly
+    status = getattr(exc, "response_status_code", None) or getattr(
+        getattr(exc, "response", None), "status_code", None
+    )
+    return status == 403
+
+
+def raise_if_forbidden(exc: Exception) -> None:
+    """If exc is a 403 Forbidden, raise ForbiddenGraphError with parsed details."""
+    if not is_graph_forbidden_error(exc):
+        return
+
+    obj = _odata_error_obj(exc)
+    err = getattr(obj, "error", None) or obj
+    raw = getattr(err, "message", None) or str(exc)
+
+    required: str | None = None
+    granted: str | None = None
+
+    if raw:
+        m = re.search(
+            r"requires the following permissions:\s*(.+?)(?:\.\s*However|\Z)",
+            raw,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if m:
+            required = m.group(1).strip().rstrip(".")
+
+        m = re.search(
+            r"(?:permissions granted|following permissions granted):\s*(.+)",
+            raw,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if m:
+            granted = m.group(1).strip().rstrip(".")
+
+    raise ForbiddenGraphError(required=required, granted=granted, raw_message=raw or "") from exc
 
 
 def handle_graph_errors(func: Callable) -> Callable:
