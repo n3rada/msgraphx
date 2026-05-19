@@ -1,7 +1,8 @@
 # Built-in imports
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Optional
 
 # External library imports
 from loguru import logger
@@ -16,13 +17,15 @@ from msgraph.generated.models.entity_type import EntityType
 @dataclass
 class SearchOptions:
     query_string: str = "*"
-    sort_by: Optional[str] = "createdDateTime"
+    sort_by: str | None = "createdDateTime"
     descending: bool = True
-    fields: Optional[list[str]] = None
+    fields: list[str] | None = None
     page_size: int = 500
-    region: Optional[str] = None  # Required for application permissions
-    drive_id: Optional[str] = None  # Scope search to specific drive
-    max_pages: Optional[int] = None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
+    region: str | None = None  # Required for application permissions
+    drive_id: str | None = None  # Scope search to specific drive
+    max_pages: int | None = (
+        None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
+    )
 
 
 async def search_entities(

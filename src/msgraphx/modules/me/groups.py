@@ -1,16 +1,15 @@
 # msgraphx/modules/me/groups.py
 
 # Built-in imports
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+import argparse
 from datetime import datetime, timezone
 
 # External library imports
 from loguru import logger
+from msgraphx.core.context import GraphContext
 from msgraphx.utils.errors import handle_graph_errors
-
-if TYPE_CHECKING:
-    import argparse
-    from msgraphx.core.context import GraphContext
 
 
 @handle_graph_errors

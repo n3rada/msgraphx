@@ -4,10 +4,11 @@
 # Required delegated permission: Mail.ReadBasic (or Mail.Read)
 
 # Built-in imports
+from __future__ import annotations
+
 import json
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -22,9 +23,8 @@ from rich.table import Table
 from ...utils.errors import handle_graph_errors
 from ...utils.dates import parse_date_string
 
-if TYPE_CHECKING:
-    import argparse
-    from msgraphx.core.context import GraphContext
+import argparse
+from msgraphx.core.context import GraphContext
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):
@@ -183,14 +183,21 @@ async def run_with_arguments(
 
     if user_email:
         # Domains that are automated notification senders, not real contacts
-        noise_domains = {"yammer.com", "engage.mail.microsoft", "sharepointonline.com", "docusign.net"}
+        noise_domains = {
+            "yammer.com",
+            "engage.mail.microsoft",
+            "sharepointonline.com",
+            "docusign.net",
+        }
 
         # KQL date bounds for $search (date portion only)
         kql_date_parts: list[str] = []
         if after:
             kql_date_parts.append(f"received>={parse_date_string(after).split('T')[0]}")
         if args.before:
-            kql_date_parts.append(f"received<={parse_date_string(args.before).split('T')[0]}")
+            kql_date_parts.append(
+                f"received<={parse_date_string(args.before).split('T')[0]}"
+            )
 
         async def _search_senders(field: str) -> tuple[Counter[str], dict[str, str]]:
             """GET /me/messages?$search with KQL - server-side filtering, typed Message objects."""
@@ -206,7 +213,11 @@ async def run_with_arguments(
             page = await context.graph_client.me.messages.get(request_configuration=cfg)
             while page:
                 for msg in page.value or []:
-                    if msg.from_ and msg.from_.email_address and msg.from_.email_address.address:
+                    if (
+                        msg.from_
+                        and msg.from_.email_address
+                        and msg.from_.email_address.address
+                    ):
                         sender = msg.from_.email_address.address.lower()
                         counter[sender] += 1
                         if msg.from_.email_address.name:
@@ -229,8 +240,20 @@ async def run_with_arguments(
         )
 
         # Filter noise domains for display only (counts remain accurate)
-        filtered_to = Counter({k: v for k, v in recv_to_counter.items() if k.split("@", 1)[-1] not in noise_domains})
-        filtered_cc = Counter({k: v for k, v in recv_cc_counter.items() if k.split("@", 1)[-1] not in noise_domains})
+        filtered_to = Counter(
+            {
+                k: v
+                for k, v in recv_to_counter.items()
+                if k.split("@", 1)[-1] not in noise_domains
+            }
+        )
+        filtered_cc = Counter(
+            {
+                k: v
+                for k, v in recv_cc_counter.items()
+                if k.split("@", 1)[-1] not in noise_domains
+            }
+        )
 
         _print_ranking(
             filtered_to,

@@ -1,11 +1,11 @@
 # msgraphx/core/context.py
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from msgraph import GraphServiceClient
-    from msgraph.generated.models.user import User
+from dataclasses import dataclass
+
+from msgraph import GraphServiceClient
+from msgraph.generated.models.user import User
 
 
 @dataclass
@@ -20,10 +20,10 @@ class GraphContext:
     - Other shared runtime state
     """
 
-    graph_client: "GraphServiceClient"
+    graph_client: GraphServiceClient
     is_app_only: bool
     region: str = "EMEA"
-    cached_user: Optional["User"] = None
+    cached_user: User | None = None
 
     @property
     def is_delegated(self) -> bool:

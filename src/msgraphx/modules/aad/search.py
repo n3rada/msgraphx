@@ -1,7 +1,9 @@
 # msgraphx/modules/aad/search.py
 
 # Built-in imports
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+import argparse
 import json
 from pathlib import Path
 import datetime
@@ -21,12 +23,7 @@ from msgraph.generated.applications.applications_request_builder import (
 # Local library imports
 from ...utils import pagination
 from ...utils.errors import handle_graph_errors
-
-
-if TYPE_CHECKING:
-    import argparse
-    from msgraphx.core.context import GraphContext
-
+from msgraphx.core.context import GraphContext
 
 # Preset hunt queries for common privileged groups
 HUNT_GROUPS = {

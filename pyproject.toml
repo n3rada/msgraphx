@@ -31,3 +31,13 @@ documentation = "https://github.com/n3rada/msgraphx/blob/main/README.md"
 [project.scripts]
 msgraphx = 'msgraphx.cli:main'
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+

@@ -1,17 +1,12 @@
 # Built-in imports
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-# Third party library imports
-from loguru import logger
+import argparse
 
 # Local library imports
 from . import groups
+from msgraphx.core.context import GraphContext
 from msgraphx.utils.errors import handle_graph_errors
-
-
-if TYPE_CHECKING:
-    import argparse
-    from msgraphx.core.context import GraphContext
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):

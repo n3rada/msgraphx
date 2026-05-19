@@ -1,9 +1,11 @@
 # msgraphx/modules/sharepoint/search.py
 
 # Built-in imports
+from __future__ import annotations
+
+import argparse
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 # External library imports
 from loguru import logger
@@ -16,11 +18,7 @@ from rich.table import Table
 from ...core import graph_search
 from ...utils.errors import handle_graph_errors
 from ...utils.dates import parse_date_string
-
-
-if TYPE_CHECKING:
-    import argparse
-    from msgraphx.core.context import GraphContext
+from msgraphx.core.context import GraphContext
 
 HUNT_QUERIES = {
     "scripts": (

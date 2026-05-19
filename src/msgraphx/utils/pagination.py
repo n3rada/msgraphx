@@ -1,7 +1,10 @@
 # msgraphx/utils/pagination.py
 
 # Built-in imports
-from typing import TypeVar, AsyncIterator, Any, Protocol
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import TypeVar, Any, Protocol
 from loguru import logger
 from .errors import handle_graph_errors
 

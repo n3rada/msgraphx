@@ -1,11 +1,13 @@
 # msgraphx/utils/errors.py
 
 # Built-in imports
+from __future__ import annotations
+
 import sys
 import functools
 import asyncio
-from typing import Callable, Any
-
+from collections.abc import Callable
+from typing import Any
 
 # External library imports
 from loguru import logger
