@@ -1,4 +1,4 @@
-# msgraphx/modules/teams/channels.py
+# msgraphx/modules/teams/channel.py
 #
 # Search Teams channel messages via the Microsoft Graph Search API.
 # Channels are shared topic spaces inside a Team workspace — all team
@@ -6,13 +6,10 @@
 # the caller has access to in a single request.
 #
 # Required delegated permissions:
-#   Chat.Read          (user-consentable)
+#   Chat.Read              (user-consentable)
 #   ChannelMessage.Read.All  (admin consent required)
 #
-# Exchange-like cap: from + size <= 1000.
-# Sorting is not supported for ChatMessage.
-#
-# For personal chat messages (1:1 / group DMs), use: msgraphx teams search
+# For personal chat messages (1:1 / group DMs), use: msgraphx teams chat
 #
 # Tip: prototype queries in Graph Explorer
 # https://developer.microsoft.com/en-us/graph/graph-explorer
@@ -62,6 +59,12 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
+    if not context.has_scope("ChannelMessage.Read.All"):
+        logger.error(
+            "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
+        )
+        return 1
+
     parts: list[str] = []
 
     if args.query and args.query != "*":
@@ -87,14 +90,12 @@ async def run_with_arguments(
             return 1
 
     query_string = " ".join(parts) if parts else "*"
-    logger.info(f"🔍 Channel search query: {query_string}")
-    logger.info("ℹ️  Requires Chat.Read + ChannelMessage.Read.All (admin consent).")
+    logger.info(f"🔍 Channel search: {query_string!r}")
 
     search_options = graph_search.SearchOptions(
         query_string=query_string,
         sort_by=None,
-        page_size=500,
-        max_pages=2,
+        page_size=25,
     )
 
     count = 0
@@ -176,6 +177,6 @@ async def run_with_arguments(
     if count == 0:
         logger.info("📭 No results found.")
     else:
-        logger.info(f"✅ {count} message(s) found.")
+        logger.success(f"✅ {count} message(s) found.")
 
     return 0
