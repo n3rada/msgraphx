@@ -289,13 +289,18 @@ msgraphx teams channel "subject:deployment AND azure"
 
 #### Show
 
-Display a cached result with surrounding conversation context (default: 4 messages before and after):
+Show context around a cached result, or browse a named chat directly:
 
 ```shell
-# after a chat or channel search
+# context around a cached search result (default: 4 messages before/after)
 msgraphx teams show 3
 msgraphx teams show 1-5
 msgraphx teams show 2 --context 8
+
+# browse the last N messages from a chat matched by name (default: 20)
+msgraphx teams show --chat alice
+msgraphx teams show --chat "project phoenix" --last 50
+msgraphx teams show --chat alice --last 5
 ```
 
 ## 🔬 Graph Explorer
