@@ -1,0 +1,19 @@
+# Local parts (the portion before @) filtered from received-mail analysis.
+# One entry per line. Matching is done after stripping - and _ and lowercasing.
+# Lines starting with # are ignored.
+
+# Generic no-reply variants (also caught by substring match, listed for clarity)
+noreply
+
+# Mailing list / service accounts
+info
+notifications
+newsletter
+mailer
+donotreply
+
+# Security / compliance
+quarantine
+spam
+phishing
+abuse

@@ -1,0 +1,14 @@
+# Domains whose senders are filtered from received-mail analysis.
+# One domain per line. Subdomain matching is applied (e.g. eumail.docusign.net
+# is caught by docusign.net). Lines starting with # are ignored.
+
+# Microsoft internal noise
+yammer.com
+engage.mail.microsoft
+sharepointonline.com
+
+# Document signing
+docusign.net
+
+# Security research / vendor comms — remove if you want these
+portswigger.net

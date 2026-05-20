@@ -4,11 +4,16 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import TypeVar, Any, Protocol
+from typing import Any, Protocol, TypeVar
+
 from loguru import logger
+from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+
 from .errors import handle_graph_errors
 
 T = TypeVar("T")
+
+_TRANSIENT_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 
 class RequestBuilder(Protocol):
@@ -76,9 +81,18 @@ class GraphPaginator:
         """Get next item from paginated results."""
         # First iteration - get initial page
         if not self._started:
-            self._current_result = await self._builder.get(
-                request_configuration=self._config
-            )
+            try:
+                self._current_result = await self._builder.get(
+                    request_configuration=self._config
+                )
+            except ODataError as exc:
+                status = getattr(exc, "response_status_code", None)
+                if status in _TRANSIENT_STATUS_CODES:
+                    logger.error(
+                        f"❌ HTTP {status} from Graph API — aborting pagination"
+                    )
+                    raise StopAsyncIteration from exc
+                raise
             self._started = True
 
             if not self._current_result or not self._current_result.value:
@@ -106,9 +120,15 @@ class GraphPaginator:
             raise StopAsyncIteration
 
         # Fetch next page
-        self._current_result = await self._builder.with_url(
-            self._current_result.odata_next_link
-        ).get()
+        next_link = self._current_result.odata_next_link
+        try:
+            self._current_result = await self._builder.with_url(next_link).get()
+        except ODataError as exc:
+            status = getattr(exc, "response_status_code", None)
+            if status in _TRANSIENT_STATUS_CODES:
+                logger.error(f"❌ HTTP {status} from Graph API — aborting pagination")
+                raise StopAsyncIteration from exc
+            raise
 
         if not self._current_result or not self._current_result.value:
             raise StopAsyncIteration
