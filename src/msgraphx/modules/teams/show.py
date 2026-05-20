@@ -4,6 +4,7 @@
 # Fetches messages from /chats/{id}/messages to build the context window.
 #
 # Required delegated permission: Chat.Read
+# Run 'teams chat <query>' or 'teams channel <query>' first to populate the cache.
 
 # Built-in imports
 from __future__ import annotations

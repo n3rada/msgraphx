@@ -1,1 +1,1 @@
-from . import channels, contacts, search, send, show
+from . import channel, chat, contacts, send, show
