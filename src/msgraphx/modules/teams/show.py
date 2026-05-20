@@ -108,31 +108,48 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
     )
     chat_config = RequestConfiguration(query_parameters=chat_params)
 
-    chat_id: str | None = None
-    chat_label: str | None = None
+    # Collect (score, chat_id, chat_label) for all matching chats.
+    # Score: 3 = exact member name, 2 = member starts-with, 1 = topic/member substring.
+    matches: list[tuple[int, str, str]] = []
 
     async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
         topic = chat.topic or ""
         members = chat.members or []
-        member_names = [
-            (getattr(m, "display_name", None) or "").lower() for m in members
-        ]
-        if name_lower in topic.lower() or any(name_lower in mn for mn in member_names):
-            chat_id = chat.id
-            chat_label = (
-                topic
-                or ", ".join(
-                    getattr(m, "display_name", "") or ""
-                    for m in members
-                    if (getattr(m, "display_name", None) or "").lower() != "me"
-                )
-                or chat.id
-            )
-            break
 
-    if not chat_id:
+        score = 0
+        for m in members:
+            mn = (getattr(m, "display_name", None) or "").lower()
+            if mn == name_lower:
+                score = max(score, 3)
+            elif mn.startswith(name_lower):
+                score = max(score, 2)
+            elif name_lower in mn:
+                score = max(score, 1)
+        if name_lower in topic.lower() and score < 2:
+            score = max(score, 1)
+
+        if score:
+            label = topic or ", ".join(
+                getattr(m, "display_name", "") or ""
+                for m in members
+                if (getattr(m, "display_name", None) or "").lower() != "me"
+            ) or chat.id
+            matches.append((score, chat.id, label))
+
+    if not matches:
         logger.error(f"No chat found matching {name!r}.")
         return 1
+
+    matches.sort(key=lambda x: x[0], reverse=True)
+    best_score, chat_id, chat_label = matches[0]
+
+    if len(matches) > 1 and matches[1][0] == best_score:
+        logger.warning(
+            f"Multiple chats match {name!r}; showing the first. "
+            f"Be more specific to narrow it down."
+        )
+        for _, _, lbl in matches[:5]:
+            logger.info(f"  - {lbl}")
 
     logger.info(f"Showing last {last} messages from: {chat_label}")
 
