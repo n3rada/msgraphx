@@ -385,14 +385,16 @@ def _classify_token(token) -> bool:
     return False
 
 
-async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
-    """Resolve auth method and return (client, is_app_only, exit_code)."""
+async def _authenticate(
+    args,
+) -> tuple["GraphServiceClient | None", bool, frozenset[str], int]:
+    """Resolve auth method and return (client, is_app_only, token_scopes, exit_code)."""
     if args.access_token and args.tenant_id:
         logger.error(
             "❌ Cannot use both token-based authentication (--access-token) and "
             "client credentials (--tenant-id) simultaneously."
         )
-        return None, False, 1
+        return None, False, frozenset(), 1
 
     has_env_creds = all(
         os.environ.get(k) for k in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET")
@@ -420,35 +422,39 @@ async def _authenticate(args) -> tuple["GraphServiceClient | None", bool, int]:
 
         logger.info("🔑 Using client credentials authentication")
         client = _build_app_client(tenant_id, client_id, client_secret)
-        return (client, True, 0) if client else (None, True, 1)
+        return (
+            (client, True, frozenset(), 0) if client else (None, True, frozenset(), 1)
+        )
 
     access_token, refresh_token, token_source = _load_token(args)
     if not access_token:
-        return None, False, 1
+        return None, False, frozenset(), 1
 
     token = tokens.TokenManager(access_token, refresh_token, source=token_source)
 
     if token.is_expired:
         logger.error("🔒 Token is expired.")
-        return None, False, 1
+        return None, False, frozenset(), 1
 
     if (
         token.audience != "00000003-0000-0000-c000-000000000000"
         and not token.audience.startswith("https://graph.microsoft.com")
     ):
         logger.error(f"❌ JWT audience mismatch, got '{token.audience}'")
-        return None, False, 1
+        return None, False, frozenset(), 1
 
     is_app_only = _classify_token(token)
 
+    token_scopes: frozenset[str] = frozenset()
     if token.app_id:
         logger.info(f"📱 Token app: {token.app_id}")
     if not is_app_only and token.scope:
         scope_list = token.scope.split()
-        logger.info(f"🔑 Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
+        token_scopes = frozenset(scope_list)
+        logger.debug(f"🔑 Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
 
     token.start_auto_refresh()
-    return GraphServiceClient(token), is_app_only, 0
+    return GraphServiceClient(token), is_app_only, token_scopes, 0
 
 
 async def _verify_connection(
@@ -596,7 +602,7 @@ async def _main() -> int:
     if args.drive_id:
         logger.info(f"💾 Drive ID: {args.drive_id}")
 
-    graph_client, is_app_only, err = await _authenticate(args)
+    graph_client, is_app_only, token_scopes, err = await _authenticate(args)
     if err:
         return err
 
@@ -613,6 +619,7 @@ async def _main() -> int:
         is_app_only=is_app_only,
         region=args.region,
         cached_user=cached_user,
+        token_scopes=token_scopes,
     )
 
     return await _dispatch(args, context)
@@ -621,4 +628,7 @@ async def _main() -> int:
 def main() -> None:
     import asyncio
 
-    raise SystemExit(asyncio.run(_main()))
+    try:
+        raise SystemExit(asyncio.run(_main()))
+    except KeyboardInterrupt:
+        raise SystemExit(130)

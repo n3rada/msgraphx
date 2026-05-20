@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.user import User
@@ -24,6 +24,11 @@ class GraphContext:
     is_app_only: bool
     region: str = "EMEA"
     cached_user: User | None = None
+    token_scopes: frozenset[str] = field(default_factory=frozenset)
+
+    def has_scope(self, *required: str) -> bool:
+        """Return True if all required scopes are present in the delegated token."""
+        return all(s in self.token_scopes for s in required)
 
     @property
     def is_delegated(self) -> bool:

@@ -16,17 +16,20 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
@@ -56,16 +59,33 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
+    if not (context.has_scope("Chat.Read") or context.has_scope("Chat.ReadBasic")):
+        logger.error(
+            "❌ Missing required scope. Grant at least Chat.ReadBasic or Chat.Read."
+        )
+        return 1
+
     me = await context.graph_client.me.get()
     my_id = me.id if me else None
 
     logger.info("💬 Fetching Teams chats...")
 
     query_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
-        expand=["members"],
+        expand=["members", "lastMessagePreview"],
+        orderby=["lastMessagePreview/createdDateTime desc"],
         top=50,
     )
     request_config = RequestConfiguration(query_parameters=query_params)
+
+    after_cutoff: datetime | None = None
+    if args.after:
+        try:
+            after_cutoff = datetime.fromisoformat(
+                parse_date_string(args.after)
+            ).replace(tzinfo=timezone.utc)
+        except ValueError as e:
+            logger.error(str(e))
+            return 1
 
     dm_counter: Counter[str] = Counter()
     group_counter: Counter[str] = Counter()
@@ -73,80 +93,87 @@ async def run_with_arguments(
 
     one_on_one: list[dict] = []
     groups: list[dict] = []
-
-    async for chat in GraphPaginator(context.graph_client.me.chats, request_config):
-        chat_type = str(chat.chat_type) if chat.chat_type else ""
-        members = chat.members or []
-
-        for m in members:
-            uid = getattr(m, "user_id", None) or getattr(m, "id", None)
-            display = getattr(m, "display_name", None) or ""
-            if uid and uid != my_id:
-                if display:
-                    names[uid] = display
-                if "oneOnOne" in chat_type:
-                    dm_counter[uid] += 1
-                else:
-                    group_counter[uid] += 1
-
-        if "oneOnOne" in chat_type:
-            other = next(
-                (
-                    m
-                    for m in members
-                    if (getattr(m, "user_id", None) or getattr(m, "id", None)) != my_id
-                ),
-                None,
-            )
-            if other:
-                one_on_one.append(
-                    {
-                        "chat_id": chat.id,
-                        "display_name": getattr(other, "display_name", "") or "",
-                        "email": getattr(other, "email", "") or "",
-                    }
-                )
-        else:
-            groups.append(
-                {
-                    "chat_id": chat.id,
-                    "topic": chat.topic or "",
-                    "member_count": len(members),
-                }
-            )
+    total = 0
 
     top_n = args.top if args.top > 0 else None
     console = Console()
 
-    # 1:1 chat partners ranked by chat count (proxy for communication frequency)
-    dm_ranking = dm_counter.most_common(top_n)
-    if dm_ranking:
-        table = Table(
-            title=f"💬 Top {args.top or len(dm_ranking)} — Direct message partners",
-            show_header=True,
-            header_style="bold",
-        )
+    def _build_table(counter: Counter, title: str, emoji: str) -> Table:
+        table = Table(title=f"{emoji} {title}", show_header=True, header_style="bold")
         table.add_column("#", justify="right", style="dim")
         table.add_column("Chats", justify="right")
         table.add_column("Contact")
-        for rank, (uid, cnt) in enumerate(dm_ranking, 1):
+        for rank, (uid, cnt) in enumerate(counter.most_common(top_n), 1):
             table.add_row(str(rank), str(cnt), names.get(uid, uid))
-        console.print(table)
+        return table
 
-    # Group chats
-    group_ranking = group_counter.most_common(top_n)
-    if group_ranking:
-        table = Table(
-            title=f"👥 Top {args.top or len(group_ranking)} — Group chat participants",
-            show_header=True,
-            header_style="bold",
-        )
-        table.add_column("#", justify="right", style="dim")
-        table.add_column("Chats", justify="right")
-        table.add_column("Contact")
-        for rank, (uid, cnt) in enumerate(group_ranking, 1):
-            table.add_row(str(rank), str(cnt), names.get(uid, uid))
-        console.print(table)
+    with Live(console=console, refresh_per_second=4) as live:
+        async for chat in GraphPaginator(context.graph_client.me.chats, request_config):
+            total += 1
+            live.update(
+                Group(
+                    _build_table(
+                        dm_counter,
+                        f"Top {args.top or len(dm_counter)} — Direct message partners ({total:,} scanned)",
+                        "💬",
+                    ),
+                    _build_table(
+                        group_counter,
+                        f"Top {args.top or len(group_counter)} — Group chat participants",
+                        "👥",
+                    ),
+                )
+            )
+
+            chat_type = str(chat.chat_type) if chat.chat_type else ""
+            members = chat.members or []
+
+            # Chats are ordered newest-first; stop once we pass the lower date bound
+            if after_cutoff and chat.last_message_preview:
+                last_ts = chat.last_message_preview.created_date_time
+                if last_ts:
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=timezone.utc)
+                    if last_ts < after_cutoff:
+                        break
+
+            for m in members:
+                uid = getattr(m, "user_id", None) or getattr(m, "id", None)
+                display = getattr(m, "display_name", None) or ""
+                if uid and uid != my_id:
+                    if display:
+                        names[uid] = display
+                    if "oneOnOne" in chat_type:
+                        dm_counter[uid] += 1
+                    else:
+                        group_counter[uid] += 1
+
+            if "oneOnOne" in chat_type:
+                other = next(
+                    (
+                        m
+                        for m in members
+                        if (getattr(m, "user_id", None) or getattr(m, "id", None))
+                        != my_id
+                    ),
+                    None,
+                )
+                if other:
+                    one_on_one.append(
+                        {
+                            "chat_id": chat.id,
+                            "display_name": getattr(other, "display_name", "") or "",
+                            "email": getattr(other, "email", "") or "",
+                        }
+                    )
+            else:
+                groups.append(
+                    {
+                        "chat_id": chat.id,
+                        "topic": chat.topic or "",
+                        "member_count": len(members),
+                    }
+                )
 
     logger.info(
         f"📊 {len(one_on_one)} 1:1 chats, {len(groups)} group chats, "

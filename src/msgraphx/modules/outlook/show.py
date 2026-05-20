@@ -12,58 +12,23 @@ from __future__ import annotations
 import argparse
 import email as _email_lib
 from email.header import decode_header as _decode_header
-from html.parser import HTMLParser
 
 # External library imports
 from loguru import logger
 from rich.console import Console
 from rich.padding import Padding
 from rich.panel import Panel
-from rich.rule import Rule
 from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
 from ...utils.cache import load_results, parse_indices
 from ...utils.errors import handle_graph_errors
-
+from ...utils.html import html_to_text
 
 # ---------------------------------------------------------------------------
 # MIME helpers
 # ---------------------------------------------------------------------------
-
-
-class _StripHTML(HTMLParser):
-    """Minimal HTML-to-plaintext converter using only stdlib."""
-
-    _BLOCK_TAGS = {"p", "div", "tr", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6"}
-    _SKIP_TAGS = {"style", "script", "head"}
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._parts: list[str] = []
-        self._skip = False
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        if tag in self._SKIP_TAGS:
-            self._skip = True
-        elif tag in self._BLOCK_TAGS:
-            self._parts.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self._SKIP_TAGS:
-            self._skip = False
-
-    def handle_data(self, data: str) -> None:
-        if not self._skip:
-            self._parts.append(data)
-
-    def get_text(self) -> str:
-        import re
-
-        text = "".join(self._parts)
-        # Collapse runs of blank lines to at most two
-        return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _decode_value(value: str) -> str:
@@ -114,7 +79,7 @@ def _extract_mime(raw: bytes) -> dict:
             else:
                 body_plain = text
 
-    body = body_plain or (_strip_html(body_html) if body_html else "")
+    body = body_plain or (html_to_text(body_html) if body_html else "")
 
     return {
         "subject": _decode_value(msg.get("Subject", "")),
@@ -125,12 +90,6 @@ def _extract_mime(raw: bytes) -> dict:
         "body": body,
         "attachments": attachments,
     }
-
-
-def _strip_html(html: str) -> str:
-    p = _StripHTML()
-    p.feed(html)
-    return p.get_text()
 
 
 # ---------------------------------------------------------------------------
@@ -225,11 +184,9 @@ async def run_with_arguments(
             continue
 
         try:
-            mime_bytes = (
-                await context.graph_client.me.messages.by_message_id(
-                    message_id
-                ).content.get()
-            )
+            mime_bytes = await context.graph_client.me.messages.by_message_id(
+                message_id
+            ).content.get()
         except Exception as exc:
             logger.error(f"Failed to fetch '{subject}': {exc}")
             continue
