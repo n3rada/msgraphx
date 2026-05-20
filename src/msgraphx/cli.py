@@ -81,7 +81,10 @@ def load_subcommands_from_module(
         # Create subparser for this command, inheriting global options if available
         parents = [global_parent] if global_parent else []
         cmd_parser = subparsers.add_parser(
-            short_name, help=f"{short_name.capitalize()} commands", parents=parents
+            short_name,
+            aliases=getattr(module, "ALIASES", []),
+            help=f"{short_name.capitalize()} commands",
+            parents=parents,
         )
         module.add_arguments(cmd_parser)
         # Store the module reference for later execution

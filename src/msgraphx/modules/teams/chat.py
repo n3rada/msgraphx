@@ -18,10 +18,13 @@ from __future__ import annotations
 import argparse
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.entity_type import EntityType
+from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
 from rich.console import Console
+from rich.table import Table
 
 # Local library imports
 from ...core import graph_search
@@ -29,15 +32,18 @@ from ...core.context import GraphContext
 from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
+from ...utils.pagination import GraphPaginator
 from ._common import extract_body
+
+ALIASES = ["chats"]
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "query",
         nargs="?",
-        default="*",
-        help="Keyword to search for. Defaults to '*' (all messages).",
+        default=None,
+        help="Keyword to search for. Omit to list recent chats.",
     )
 
     parser.add_argument(
@@ -47,6 +53,59 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by sender display name (client-side).",
     )
+
+
+async def _list_chats(context: "GraphContext") -> int:
+    chat_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
+        top=20,
+        select=["id", "topic"],
+        expand=["lastMessagePreview", "members"],
+        orderby=["lastMessagePreview/createdDateTime desc"],
+    )
+    chat_config = RequestConfiguration(query_parameters=chat_params)
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    table.add_column("#", style="dim", justify="right", width=4)
+    table.add_column("Chat", min_width=30)
+    table.add_column("Last message", style="dim", max_width=60)
+    table.add_column("Date", style="cyan", width=10)
+
+    count = 0
+    async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
+        members = chat.members or []
+        label = (
+            chat.topic
+            or ", ".join(
+                getattr(m, "display_name", "") or ""
+                for m in members
+                if (getattr(m, "display_name", None) or "").lower() != "me"
+            )
+            or chat.id
+        )
+
+        last_ts = ""
+        last_preview = ""
+        if chat.last_message_preview:
+            ts = chat.last_message_preview.created_date_time
+            if ts:
+                last_ts = ts.strftime("%Y-%m-%d")
+            body = chat.last_message_preview.body
+            if body and body.content:
+                from ...utils.html import strip_html
+
+                raw = strip_html(body.content)
+                last_preview = raw[:60] + "…" if len(raw) > 60 else raw
+
+        count += 1
+        table.add_row(str(count), label, last_preview, last_ts)
+        if count >= 20:
+            break
+
+    console.print("[bold]💬 Recent chats[/bold]")
+    console.rule()
+    console.print(table)
+    return 0
 
 
 @handle_graph_errors
@@ -62,6 +121,10 @@ async def run_with_arguments(
             "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
         )
         return 1
+
+    # No query and no filters → list recent chats overview
+    if not args.query and not args.from_addr and not args.after and not args.before:
+        return await _list_chats(context)
 
     query = args.query or "*"
 
