@@ -245,6 +245,59 @@ msgraphx --drive-id <drive-id> sp download --no-resume --save /tmp/loot/
 ```
 
 
+### 💬 Teams
+
+Requires delegated auth. Both subcommands use `POST /search/query` (`EntityType.ChatMessage`) and need **`ChannelMessage.Read.All`** (admin consent) in addition to `Chat.Read`.
+
+#### Chat (personal messages)
+
+Search 1:1 DMs and group chats:
+
+```shell
+# keyword search
+msgraphx teams chat "password"
+msgraphx teams chat "vpn credentials"
+
+# sender filter (client-side)
+msgraphx teams chat "budget" --from alice
+
+# date range
+msgraphx teams chat "aws key" --after 90d
+msgraphx teams chat "deploy" --after 2024-01-01 --before 2024-06-01
+
+# wildcard — return everything
+msgraphx teams chat
+```
+
+Results are cached locally (`~/.local/share/msgraphx/last_teams.json`).
+
+#### Channel (workspace channels)
+
+Search messages across all Teams channels you have access to:
+
+```shell
+msgraphx teams channel "password"
+msgraphx teams channel "from:alice@corp.com"
+msgraphx teams channel "incident" --after 30d
+```
+
+KQL is passed directly to the Search API, so any valid KQL expression works:
+
+```shell
+msgraphx teams channel "subject:deployment AND azure"
+```
+
+#### Show
+
+Display a cached result with surrounding conversation context (default: 4 messages before and after):
+
+```shell
+# after a chat or channel search
+msgraphx teams show 3
+msgraphx teams show 1-5
+msgraphx teams show 2 --context 8
+```
+
 ## 🔬 Graph Explorer
 
 [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) is Microsoft's interactive API sandbox. It lets you run live queries against the Graph API, inspect raw responses, and generate ready-to-paste **Python SDK code snippets** for any request via the *Code snippets* tab.
