@@ -7,9 +7,25 @@
 from __future__ import annotations
 
 import argparse
+import importlib.resources
 import json
 from collections import Counter
 from pathlib import Path
+
+
+def _load_config(filename: str) -> frozenset[str]:
+    return frozenset(
+        line.strip()
+        for line in importlib.resources.files("msgraphx")
+        .joinpath(f"config/{filename}")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip() and not line.startswith("#")
+    )
+
+
+_NOISE_DOMAINS: frozenset[str] = _load_config("noise_domains.txt")
+_NOISE_LOCALS: frozenset[str] = _load_config("noise_locals.txt")
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -17,7 +33,8 @@ from loguru import logger
 from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import (
     MessagesRequestBuilder,
 )
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.table import Table
 
 # Local library imports
@@ -79,6 +96,22 @@ async def run_with_arguments(
     cc_counter: Counter[str] = Counter()
     names: dict[str, str] = {}
 
+    top_n = args.top if args.top > 0 else None
+    console = Console()
+
+    def _build_table(
+        counter: Counter, names_dict: dict, title: str, emoji: str = "🏆"
+    ) -> Table:
+        table = Table(title=f"{emoji} {title}", show_header=True, header_style="bold")
+        table.add_column("#", justify="right", style="dim")
+        table.add_column("Emails", justify="right")
+        table.add_column("Contact")
+        for rank, (addr, count) in enumerate(counter.most_common(top_n), 1):
+            name = names_dict.get(addr, "")
+            display = f"{name} <{addr}>" if name else addr
+            table.add_row(str(rank), str(count), display)
+        return table
+
     if args.only != "received":
         query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
             select=select_fields,
@@ -98,49 +131,39 @@ async def run_with_arguments(
             "SentItems"
         ).messages
 
-        async for msg in GraphPaginator(sent_builder, request_config):
-            total += 1
+        with Live(console=console, refresh_per_second=4) as live:
+            async for msg in GraphPaginator(sent_builder, request_config):
+                total += 1
+                live.update(
+                    Group(
+                        _build_table(
+                            to_counter,
+                            names,
+                            f"Top {args.top or len(to_counter)} — sent To ({total:,} scanned)",
+                        ),
+                        _build_table(
+                            cc_counter,
+                            names,
+                            f"Top {args.top or len(cc_counter)} — sent CC",
+                        ),
+                    )
+                )
 
-            for r in msg.to_recipients or []:
-                if r.email_address and r.email_address.address:
-                    addr = r.email_address.address.lower()
-                    to_counter[addr] += 1
-                    if r.email_address.name:
-                        names[addr] = r.email_address.name
+                for r in msg.to_recipients or []:
+                    if r.email_address and r.email_address.address:
+                        addr = r.email_address.address.lower()
+                        to_counter[addr] += 1
+                        if r.email_address.name:
+                            names[addr] = r.email_address.name
 
-            for r in msg.cc_recipients or []:
-                if r.email_address and r.email_address.address:
-                    addr = r.email_address.address.lower()
-                    cc_counter[addr] += 1
-                    if r.email_address.name:
-                        names[addr] = r.email_address.name
+                for r in msg.cc_recipients or []:
+                    if r.email_address and r.email_address.address:
+                        addr = r.email_address.address.lower()
+                        cc_counter[addr] += 1
+                        if r.email_address.name:
+                            names[addr] = r.email_address.name
 
         logger.info(f"📊 Analysed {total:,} sent messages")
-    top_n = args.top if args.top > 0 else None
-
-    def _print_ranking(
-        counter: Counter, names_dict: dict, title: str, emoji: str = "🏆"
-    ) -> None:
-        ranking = counter.most_common(top_n)
-        if not ranking:
-            return
-        table = Table(title=f"{emoji} {title}", show_header=True, header_style="bold")
-        table.add_column("#", justify="right", style="dim")
-        table.add_column("Emails", justify="right")
-        table.add_column("Contact")
-        for rank, (addr, count) in enumerate(ranking, 1):
-            name = names_dict.get(addr, "")
-            display = f"{name} <{addr}>" if name else addr
-            table.add_row(str(rank), str(count), display)
-        Console().print(table)
-
-    if args.only != "received":
-        _print_ranking(
-            to_counter, names, f"Top {args.top or len(to_counter)} — sent To"
-        )
-        _print_ranking(
-            cc_counter, names, f"Top {args.top or len(cc_counter)} — sent CC"
-        )
 
     if args.only == "sent":
         return 0
@@ -154,85 +177,110 @@ async def run_with_arguments(
             or ""
         ).lower()
 
+    # Initialised here so the --save block can reference them even when
+    # user_email is empty or received analysis is skipped.
+    recv_to_counter: Counter[str] = Counter()
+    recv_cc_counter: Counter[str] = Counter()
+    recv_names: dict[str, str] = {}
+
     if user_email:
-        # Domains that are automated notification senders, not real contacts
-        noise_domains = {
-            "yammer.com",
-            "engage.mail.microsoft",
-            "sharepointonline.com",
-            "docusign.net",
-        }
 
-        # KQL date bounds for $search (date portion only)
-        kql_date_parts: list[str] = []
+        def _is_noisy(addr: str) -> bool:
+            local, _, domain = addr.partition("@")
+            normalised = local.replace("-", "").replace("_", "").lower()
+            return (
+                any(domain == nd or domain.endswith("." + nd) for nd in _NOISE_DOMAINS)
+                or normalised in _NOISE_LOCALS
+                or "noreply" in normalised
+            )
+
+        recv_filter_parts: list[str] = []
         if args.after:
-            kql_date_parts.append(
-                f"received>={parse_date_string(args.after).split('T')[0]}"
-            )
+            try:
+                recv_filter_parts.append(
+                    f"receivedDateTime ge {parse_date_string(args.after)}"
+                )
+            except ValueError as e:
+                logger.error(str(e))
+                return 1
         if args.before:
-            kql_date_parts.append(
-                f"received<={parse_date_string(args.before).split('T')[0]}"
-            )
+            try:
+                recv_filter_parts.append(
+                    f"receivedDateTime le {parse_date_string(args.before)}"
+                )
+            except ValueError as e:
+                logger.error(str(e))
+                return 1
 
-        async def _search_senders(field: str) -> tuple[Counter[str], dict[str, str]]:
-            """GET /me/messages?$search with KQL - server-side filtering, typed Message objects."""
-            kql = '"' + " ".join([f"{field}:{user_email}"] + kql_date_parts) + '"'
-            qp = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-                select=["from"],
-                top=1000,
-                search=kql,
-            )
-            cfg = RequestConfiguration(query_parameters=qp)
-            counter: Counter[str] = Counter()
-            names_local: dict[str, str] = {}
-            async for msg in GraphPaginator(context.graph_client.me.messages, cfg):
-                if (
+        recv_qp = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+            select=["from", "toRecipients", "ccRecipients"],
+            top=50,
+        )
+        if recv_filter_parts:
+            recv_qp.filter = " and ".join(recv_filter_parts)
+            logger.info(f"📅 Inbox filter: {recv_qp.filter}")
+
+        recv_cfg = RequestConfiguration(query_parameters=recv_qp)
+        inbox_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
+            "Inbox"
+        ).messages
+
+        logger.info("📬 Fetching received messages from Inbox...")
+
+        total_recv = 0
+        with Live(console=console, refresh_per_second=4) as live:
+            async for msg in GraphPaginator(inbox_builder, recv_cfg):
+                total_recv += 1
+                live.update(
+                    Group(
+                        _build_table(
+                            recv_to_counter,
+                            recv_names,
+                            f"Top {args.top or len(recv_to_counter)} — received as To ({total_recv:,} scanned)",
+                            "📥",
+                        ),
+                        _build_table(
+                            recv_cc_counter,
+                            recv_names,
+                            f"Top {args.top or len(recv_cc_counter)} — received as CC",
+                            "📥",
+                        ),
+                    )
+                )
+
+                if not (
                     msg.from_
                     and msg.from_.email_address
                     and msg.from_.email_address.address
                 ):
-                    sender = msg.from_.email_address.address.lower()
-                    counter[sender] += 1
-                    if msg.from_.email_address.name:
-                        names_local[sender] = msg.from_.email_address.name
-            return counter, names_local
+                    continue
 
-        logger.info("📬 Fetching received messages...")
-        recv_to_counter, recv_to_names = await _search_senders("to")
-        recv_cc_counter, recv_cc_names = await _search_senders("cc")
-        recv_names = {**recv_to_names, **recv_cc_names}
+                sender = msg.from_.email_address.address.lower()
+                if _is_noisy(sender):
+                    continue
+
+                if msg.from_.email_address.name:
+                    recv_names[sender] = msg.from_.email_address.name
+
+                to_addrs = {
+                    r.email_address.address.lower()
+                    for r in (msg.to_recipients or [])
+                    if r.email_address and r.email_address.address
+                }
+                cc_addrs = {
+                    r.email_address.address.lower()
+                    for r in (msg.cc_recipients or [])
+                    if r.email_address and r.email_address.address
+                }
+
+                if user_email in to_addrs:
+                    recv_to_counter[sender] += 1
+                elif user_email in cc_addrs:
+                    recv_cc_counter[sender] += 1
+
         logger.info(
             f"📊 Received: {sum(recv_to_counter.values()):,} as To, "
             f"{sum(recv_cc_counter.values()):,} as CC"
-        )
-
-        # Filter noise domains for display only (counts remain accurate)
-        filtered_to = Counter(
-            {
-                k: v
-                for k, v in recv_to_counter.items()
-                if k.split("@", 1)[-1] not in noise_domains
-            }
-        )
-        filtered_cc = Counter(
-            {
-                k: v
-                for k, v in recv_cc_counter.items()
-                if k.split("@", 1)[-1] not in noise_domains
-            }
-        )
-
-        _print_ranking(
-            filtered_to,
-            recv_names,
-            f"Top {args.top or len(filtered_to)} — received as To",
-            "📥",
-        )
-        _print_ranking(
-            filtered_cc,
-            recv_names,
-            f"Top {args.top or len(filtered_cc)} — received as CC",
-            "📥",
         )
     else:
         logger.warning(
