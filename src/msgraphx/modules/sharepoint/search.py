@@ -330,6 +330,12 @@ async def run_with_arguments(
                 else ""
             )
             # Cache full DriveItem metadata for later download by index
+            if not save_dir:
+                console.print(
+                    f"  [dim]{count:>4}.[/dim]  {drive_item.name}  "
+                    f"[dim]{author}[/dim]  [cyan]{size_str}[/cyan]  [dim]{created}[/dim]"
+                )
+
             cached_items.append(
                 {
                     # Identifiers (top-level for download.py)
@@ -367,7 +373,7 @@ async def run_with_arguments(
                     # Created by
                     "author": author,
                     "created_by_email": (
-                        drive_item.created_by.user.email
+                        drive_item.created_by.user.additional_data.get("email")
                         if drive_item.created_by and drive_item.created_by.user
                         else None
                     ),
@@ -384,7 +390,7 @@ async def run_with_arguments(
                         else None
                     ),
                     "last_modified_by_email": (
-                        drive_item.last_modified_by.user.email
+                        drive_item.last_modified_by.user.additional_data.get("email")
                         if drive_item.last_modified_by
                         and drive_item.last_modified_by.user
                         else None
@@ -438,12 +444,6 @@ async def run_with_arguments(
                 }
             )
 
-            if not save_dir:
-                console.print(
-                    f"  [dim]{count:>4}.[/dim]  {drive_item.name}  "
-                    f"[dim]{author}[/dim]  [cyan]{size_str}[/cyan]  [dim]{created}[/dim]"
-                )
-
             # Download file if --save is specified
             if save_dir:
                 try:
@@ -496,7 +496,9 @@ async def run_with_arguments(
                                             else None
                                         ),
                                         "email": (
-                                            drive_item.created_by.user.email
+                                            drive_item.created_by.user.additional_data.get(
+                                                "email"
+                                            )
                                             if drive_item.created_by
                                             and drive_item.created_by.user
                                             else None
@@ -522,7 +524,9 @@ async def run_with_arguments(
                                             else None
                                         ),
                                         "email": (
-                                            drive_item.last_modified_by.user.email
+                                            drive_item.last_modified_by.user.additional_data.get(
+                                                "email"
+                                            )
                                             if drive_item.last_modified_by
                                             and drive_item.last_modified_by.user
                                             else None
