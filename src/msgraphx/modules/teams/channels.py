@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import argparse
-import re
 
 # External library imports
 from loguru import logger
@@ -35,6 +34,7 @@ from ...core.context import GraphContext
 from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
+from ._common import extract_body
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -52,20 +52,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by sender display name or UPN.",
     )
-
-
-def _strip_html(raw: str) -> str:
-    body = re.sub(r"<[^>]+>", " ", raw).strip()
-    return re.sub(r"\s{2,}", " ", body)
-
-
-def _extract_body(msg: ChatMessage) -> str:
-    if not msg.body:
-        return ""
-    raw = msg.body.content or ""
-    if msg.body.content_type and str(msg.body.content_type) == "html":
-        return _strip_html(raw)
-    return raw.strip()
 
 
 @handle_graph_errors
@@ -130,7 +116,7 @@ async def run_with_arguments(
 
             logger.trace(msg.__dict__)
 
-            body = _extract_body(msg)
+            body = extract_body(msg)
             count += 1
 
             sender = "?"
