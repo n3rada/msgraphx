@@ -1,8 +1,8 @@
 # msgraphx/modules/teams/show.py
 #
-# Two modes:
-#   teams show N          — render a cached result with surrounding context
-#   teams show --chat NAME — show the last N messages from a named chat
+# Two modes, auto-detected from the positional argument:
+#   teams show 3          — cached result with surrounding context (numeric index)
+#   teams show alice      — last N messages from the chat matching that name
 #
 # Required delegated permission: Chat.Read
 
@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -35,18 +36,9 @@ _DEFAULT_LAST = 20
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
-        "index",
-        nargs="?",
+        "target",
         type=str,
-        help="Index (or range, e.g. 1-3) from the last teams search to display.",
-    )
-    parser.add_argument(
-        "--chat",
-        dest="chat_name",
-        type=str,
-        default=None,
-        metavar="NAME",
-        help="Show the last N messages from the chat whose topic or member name matches NAME.",
+        help="Cached index / range (e.g. 3, 1-3) or a name to browse (e.g. alice).",
     )
     parser.add_argument(
         "--context",
@@ -60,7 +52,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         type=int,
         default=_DEFAULT_LAST,
         metavar="N",
-        help=f"Number of messages to show in --chat mode (default: {_DEFAULT_LAST}).",
+        help=f"Number of messages to show in browse mode (default: {_DEFAULT_LAST}).",
     )
 
 
@@ -99,14 +91,10 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    if args.chat_name:
-        return await _show_chat(context, args.chat_name, args.last)
-
-    if not args.index:
-        logger.error("Provide an index or --chat NAME.")
-        return 1
-
-    return await _show_cached(context, args.index, args.context)
+    # Auto-detect mode: numeric/range → cached, anything else → chat browse
+    if re.match(r"^[\d][0-9,\- ]*$", args.target):
+        return await _show_cached(context, args.target, args.context)
+    return await _show_chat(context, args.target, args.last)
 
 
 async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
@@ -129,14 +117,17 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
         member_names = [
             (getattr(m, "display_name", None) or "").lower() for m in members
         ]
-        if name_lower in topic.lower() or any(
-            name_lower in mn for mn in member_names
-        ):
+        if name_lower in topic.lower() or any(name_lower in mn for mn in member_names):
             chat_id = chat.id
-            chat_label = topic or ", ".join(
-                getattr(m, "display_name", "") or "" for m in members
-                if (getattr(m, "display_name", None) or "").lower() != "me"
-            ) or chat.id
+            chat_label = (
+                topic
+                or ", ".join(
+                    getattr(m, "display_name", "") or ""
+                    for m in members
+                    if (getattr(m, "display_name", None) or "").lower() != "me"
+                )
+                or chat.id
+            )
             break
 
     if not chat_id:
@@ -182,7 +173,9 @@ async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
     """Show a cached search result with surrounding conversation context."""
     cached = load_results(key="teams")
     if not cached:
-        logger.error("No cached teams results. Run 'teams chat' or 'teams channel' first.")
+        logger.error(
+            "No cached teams results. Run 'teams chat' or 'teams channel' first."
+        )
         return 1
 
     indices = parse_indices(index, len(cached))
