@@ -24,6 +24,7 @@ from loguru import logger
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.entity_type import EntityType
 from rich.console import Console
+from rich.table import Table
 
 # Local library imports
 from ...core import graph_search
@@ -33,13 +34,15 @@ from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ._common import extract_body
 
+ALIASES = ["channels"]
+
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "query",
         nargs="?",
-        default="*",
-        help="KQL search query. Defaults to '*' (all channel messages).",
+        default=None,
+        help="KQL search query. Omit to list joined teams.",
     )
 
     parser.add_argument(
@@ -49,6 +52,26 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by sender display name or UPN.",
     )
+
+
+async def _list_teams(context: "GraphContext") -> int:
+    response = await context.graph_client.me.joined_teams.get()
+    teams = (response.value or []) if response else []
+
+    console = Console()
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    table.add_column("#", style="dim", justify="right", width=4)
+    table.add_column("Team", min_width=30)
+    table.add_column("Description", style="dim", max_width=60)
+
+    for i, team in enumerate(teams, 1):
+        table.add_row(str(i), team.display_name or "", team.description or "")
+
+    console.print("[bold]📢 Joined Teams[/bold]")
+    console.rule()
+    console.print(table)
+    logger.success(f"✅ {len(teams)} team(s) found.")
+    return 0
 
 
 @handle_graph_errors
@@ -64,6 +87,10 @@ async def run_with_arguments(
             "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
         )
         return 1
+
+    # No query and no filters → list joined teams overview
+    if not args.query and not args.from_addr and not args.after and not args.before:
+        return await _list_teams(context)
 
     parts: list[str] = []
 
