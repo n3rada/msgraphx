@@ -119,9 +119,10 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
         score = 0
         for m in members:
             mn = (getattr(m, "display_name", None) or "").lower()
-            if mn == name_lower:
+            words = re.split(r"[\s\(\),]+", mn)
+            if mn == name_lower or name_lower in words:
                 score = max(score, 3)
-            elif mn.startswith(name_lower):
+            elif mn.startswith(name_lower) or any(w.startswith(name_lower) for w in words):
                 score = max(score, 2)
             elif name_lower in mn:
                 score = max(score, 1)
@@ -129,11 +130,15 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
             score = max(score, 1)
 
         if score:
-            label = topic or ", ".join(
-                getattr(m, "display_name", "") or ""
-                for m in members
-                if (getattr(m, "display_name", None) or "").lower() != "me"
-            ) or chat.id
+            label = (
+                topic
+                or ", ".join(
+                    getattr(m, "display_name", "") or ""
+                    for m in members
+                    if (getattr(m, "display_name", None) or "").lower() != "me"
+                )
+                or chat.id
+            )
             matches.append((score, chat.id, label))
 
     if not matches:
