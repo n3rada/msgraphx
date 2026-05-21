@@ -42,13 +42,13 @@ class TokenManager:
 
         if self._refresh_token is not None:
             logger.info(
-                "🔄 Refresh token provided, will be used for refreshing access token."
+                "Refresh token provided, will be used for refreshing access token."
             )
 
         try:
             self._header, self._payload, self._signature = parse_jwt(access_token)
         except Exception as e:
-            logger.error(f"❌ Failed to parse JWT: {e}")
+            logger.error(f"Failed to parse JWT: {e}")
             raise
 
         self._expires_on = self._payload.get("exp")
@@ -57,11 +57,11 @@ class TokenManager:
 
         if self._tenant_id:
             self._tenant_id = self._tenant_id.strip("/").split("/").pop()
-            logger.info(f"🔗 Tenant ID: {self._tenant_id}")
+            logger.info(f"Tenant ID: {self._tenant_id}")
 
         exp_datetime = self.expiration_datetime
         human_date = exp_datetime.strftime("%A %d %b %Y, %H:%M:%S %Z")
-        logger.info(f"🔐 JWT initialized, expires at {human_date}.")
+        logger.info(f"JWT initialized, expires at {human_date}.")
 
     @property
     def audience(self) -> str:
@@ -100,7 +100,7 @@ class TokenManager:
 
     def update_output_file(self) -> None:
         if not self._refresh_token:
-            logger.debug("⏭️ Skipping token persistence - no refresh token available")
+            logger.debug("Skipping token persistence - no refresh token available")
             return
 
         if self._source in ("env", "arg"):
@@ -109,7 +109,7 @@ class TokenManager:
             _os.environ["ACCESS_TOKEN"] = self._access_token
             _os.environ["REFRESH_TOKEN"] = self._refresh_token
             logger.success(
-                "💾 Updated ACCESS_TOKEN / REFRESH_TOKEN env vars with refreshed tokens"
+                "Updated ACCESS_TOKEN / REFRESH_TOKEN env vars with refreshed tokens"
             )
             return
 
@@ -129,12 +129,12 @@ class TokenManager:
 
         with output_file.open(mode="w", encoding="utf-8") as file_obj:
             json.dump(data, file_obj, indent=4)
-            logger.success("💾 Saved refreshed tokens to .roadtools_auth")
+            logger.success("Saved refreshed tokens to .roadtools_auth")
 
     async def refresh_access_token(self, refresh_token: str):
         if not refresh_token:
             logger.warning(
-                "⚠️ No refresh token available - token refresh disabled. Re-authenticate when token expires."
+                "No refresh token available - token refresh disabled. Re-authenticate when token expires."
             )
             return False
 
@@ -151,7 +151,7 @@ class TokenManager:
         )
 
         if response.status_code != 200:
-            logger.error(f"❌ Failed to refresh token: {response.text}.")
+            logger.error(f"Failed to refresh token: {response.text}.")
             return False
 
         new_tokens = response.json()
@@ -162,13 +162,13 @@ class TokenManager:
             refresh_token=new_tokens.get("refresh_token"),
             source=source,
         )
-        logger.success("🔁 Access token refreshed successfully.")
+        logger.success("Access token refreshed successfully.")
         return True
 
     def start_auto_refresh(self) -> None:
         if not self._refresh_token:
             logger.info(
-                "ℹ️ Auto-refresh disabled - no refresh token available. You'll need to re-authenticate when the token expires."
+                "ℹAuto-refresh disabled - no refresh token available. You'll need to re-authenticate when the token expires."
             )
             return
 
@@ -178,10 +178,10 @@ class TokenManager:
                     self.expires_in() - 300
                 )  # Refresh 5 minutes before expiration
                 if sleep_duration > 0:
-                    logger.debug(f"⏳ Sleeping {sleep_duration:.1f}s until refresh.")
+                    logger.debug(f"Sleeping {sleep_duration:.1f}s until refresh.")
                     time.sleep(sleep_duration)
 
-                logger.debug("🛠️ Time to refresh token.")
+                logger.debug("Time to refresh token.")
                 try:
                     success = asyncio.run(
                         self.refresh_access_token(self._refresh_token)
@@ -189,15 +189,15 @@ class TokenManager:
                     if success:
                         self.update_output_file()
                     else:
-                        logger.error("❌ Token refresh failed, stopping auto-refresh.")
+                        logger.error("Token refresh failed, stopping auto-refresh.")
                         break
                 except Exception as exc:
-                    logger.error(f"❌ Failed to refresh token: {exc}")
+                    logger.error(f"Failed to refresh token: {exc}")
                     break
 
         thread = threading.Thread(target=refresher, daemon=True, name="Token Refresher")
         thread.start()
-        logger.info("🔄 Auto token refresher thread started.")
+        logger.info("Auto token refresher thread started.")
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
         return AccessToken(self._access_token, self._expires_on)

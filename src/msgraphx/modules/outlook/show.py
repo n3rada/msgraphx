@@ -15,7 +15,6 @@ from email.header import decode_header as _decode_header
 
 # External library imports
 from loguru import logger
-from rich.console import Console
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
@@ -23,6 +22,7 @@ from rich.text import Text
 # Local library imports
 from ...core.context import GraphContext
 from ...utils.cache import load_results, parse_indices
+from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import render_html
 
@@ -97,7 +97,7 @@ def _extract_mime(raw: bytes) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _render(parsed: dict, console: Console) -> None:
+def _render(parsed: dict) -> None:
     subject = parsed["subject"] or "(no subject)"
 
     # Header grid
@@ -122,7 +122,7 @@ def _render(parsed: dict, console: Console) -> None:
     # Attachments
     attach_text = Text()
     for name in parsed["attachments"]:
-        attach_text.append(f"\n  📎  {name}", style="yellow")
+        attach_text.append(f"\n   {name}", style="yellow")
 
     # Compose panel using Group to mix Text and Markdown renderables
     from rich.console import Group
@@ -175,7 +175,6 @@ async def run_with_arguments(
         logger.error(f"Invalid index: {args.index} (cached: 1-{len(cached)})")
         return 1
 
-    console = Console()
 
     for idx in indices:
         item = cached[idx]
@@ -199,6 +198,6 @@ async def run_with_arguments(
             continue
 
         parsed = _extract_mime(mime_bytes)
-        _render(parsed, console)
+        _render(parsed)
 
     return 0

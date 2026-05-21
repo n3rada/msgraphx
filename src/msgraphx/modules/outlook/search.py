@@ -18,11 +18,10 @@ import argparse
 from loguru import logger
 from msgraph.generated.models.entity_type import EntityType
 from msgraph.generated.models.message import Message
-from rich.console import Console
-
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
+from ...utils.console import console
 from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -97,7 +96,7 @@ async def run_with_arguments(
             return 1
 
     query_string = " ".join(parts) if parts else "*"
-    logger.info(f"🔍 Search query: {query_string}")
+    logger.info(f"Search query: {query_string}")
 
     # Exchange caps: from + size <= 1000 → max 2 pages of 500
     # Sorting is not supported for Message (handled automatically in graph_search)
@@ -111,8 +110,7 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    console = Console()
-    console.print("[bold]📧 Mail search results[/bold]")
+    console.print("[bold]Mail search results[/bold]")
     console.rule()
 
     try:
@@ -150,7 +148,7 @@ async def run_with_arguments(
             )
 
             subject = msg.subject or "(no subject)"
-            attach_flag = " 📎" if msg.has_attachments else ""
+            attach_flag = " [+att]" if msg.has_attachments else ""
 
             console.print(
                 f"  [dim]{count:>4}.[/dim]  {subject}{attach_flag}  "
@@ -206,7 +204,7 @@ async def run_with_arguments(
             save_results(cached_items, key="mail")
 
     if count == 0:
-        logger.info("📭 No results found.")
+        logger.info("No results found.")
         return 0
 
     return 0

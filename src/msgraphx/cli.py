@@ -7,6 +7,8 @@ import os
 import time
 from pathlib import Path
 
+import shutil
+
 # External library imports
 import httpx
 from azure.identity.aio import ClientSecretCredential
@@ -279,7 +281,7 @@ def _apply_proxy(proxy: str | None) -> int:
         "all_proxy",
     ):
         os.environ[key] = proxy
-    logger.info(f"🌐 Proxy set to {proxy}")
+    logger.info(f"Proxy set to {proxy}")
     return 0
 
 
@@ -294,7 +296,7 @@ def _check_public_ip() -> tuple[str | None, float]:
     except httpx.TimeoutException:
         logger.error("Request timed-out.")
     except Exception as exc:
-        logger.warning(f"⚠️ Error retrieving public IP: {exc}")
+        logger.warning(f"Error retrieving public IP: {exc}")
     return None, 0.0
 
 
@@ -310,22 +312,22 @@ def _load_token(args) -> tuple[str | None, str | None, str]:
 
     env_token = os.environ.get("ACCESS_TOKEN")
     if env_token:
-        logger.info("🔐 Using JWT from environment variable ACCESS_TOKEN.")
+        logger.info("Using JWT from environment variable ACCESS_TOKEN.")
         return env_token, os.environ.get("REFRESH_TOKEN"), "env"
 
-    logger.info("🔐 No JWT provided, checking for .roadtools_auth file.")
+    logger.info("No JWT provided, checking for .roadtools_auth file.")
     tokens_path = Path(".roadtools_auth")
     if not tokens_path.exists():
-        logger.error("🔐 No JWT provided and .roadtools_auth file not found.")
+        logger.error("No JWT provided and .roadtools_auth file not found.")
         return None, None, "file"
 
-    logger.info("🔐 Using JWT from .roadtools_auth file.")
+    logger.info("Using JWT from .roadtools_auth file.")
     try:
         data = json.loads(tokens_path.read_bytes())
         return data.get("accessToken"), data.get("refreshToken"), "file"
     except json.JSONDecodeError:
         logger.error(
-            "❌ Failed to decode .roadtools_auth file. Ensure it contains valid JSON."
+            "Failed to decode .roadtools_auth file. Ensure it contains valid JSON."
         )
         return None, None, "file"
 
@@ -344,7 +346,7 @@ def _build_app_client(
             scopes=["https://graph.microsoft.com/.default"],
         )
     except Exception as exc:
-        logger.error(f"❌ Failed to create Graph client with client credentials: {exc}")
+        logger.error(f"Failed to create Graph client with client credentials: {exc}")
         return None
 
 
@@ -352,9 +354,9 @@ def _classify_token(token) -> bool:
     """Return True if the token carries app-only permissions."""
     payload = token.payload
     if payload.get("roles") and not payload.get("scp"):
-        logger.info("📋 Token contains application permissions (app roles).")
+        logger.info("Token contains application permissions (app roles).")
         return True
-    logger.info("👤 Token contains delegated permissions (user scopes).")
+    logger.info("Token contains delegated permissions (user scopes).")
     return False
 
 
@@ -364,7 +366,7 @@ async def _authenticate(
     """Resolve auth method and return (client, is_app_only, token_scopes, exit_code)."""
     if args.access_token and args.tenant_id:
         logger.error(
-            "❌ Cannot use both token-based authentication (--access-token) and "
+            "Cannot use both token-based authentication (--access-token) and "
             "client credentials (--tenant-id) simultaneously."
         )
         return None, False, frozenset(), 1
@@ -389,11 +391,11 @@ async def _authenticate(
         )
 
         if tenant_id:
-            logger.info(f"🏢 Tenant ID: {tenant_id}")
+            logger.info(f"Tenant ID: {tenant_id}")
         if client_id:
-            logger.info(f"📱 Client ID: {client_id}")
+            logger.info(f"Client ID: {client_id}")
 
-        logger.info("🔑 Using client credentials authentication")
+        logger.info("Using client credentials authentication")
         client = _build_app_client(tenant_id, client_id, client_secret)
         return (
             (client, True, frozenset(), 0) if client else (None, True, frozenset(), 1)
@@ -406,25 +408,25 @@ async def _authenticate(
     token = tokens.TokenManager(access_token, refresh_token, source=token_source)
 
     if token.is_expired:
-        logger.error("🔒 Token is expired.")
+        logger.error("Token is expired.")
         return None, False, frozenset(), 1
 
     if (
         token.audience != "00000003-0000-0000-c000-000000000000"
         and not token.audience.startswith("https://graph.microsoft.com")
     ):
-        logger.error(f"❌ JWT audience mismatch, got '{token.audience}'")
+        logger.error(f"JWT audience mismatch, got '{token.audience}'")
         return None, False, frozenset(), 1
 
     is_app_only = _classify_token(token)
 
     token_scopes: frozenset[str] = frozenset()
     if token.app_id:
-        logger.info(f"📱 Token app: {token.app_id}")
+        logger.info(f"Token app: {token.app_id}")
     if not is_app_only and token.scope:
         scope_list = token.scope.split()
         token_scopes = frozenset(scope_list)
-        logger.debug(f"🔑 Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
+        logger.debug(f"Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
 
     token.start_auto_refresh()
     return GraphServiceClient(token), is_app_only, token_scopes, 0
@@ -435,8 +437,8 @@ async def _verify_connection(
 ):
     """Verify the Graph connection. Returns (cached_user, exit_code)."""
     if is_app_only:
-        logger.info("✅ Authenticated with application permissions.")
-        logger.info(f"🌍 Region: {region}")
+        logger.info("Authenticated with application permissions.")
+        logger.info(f"Region: {region}")
         if client_id:
             await _log_service_principal(graph_client, client_id)
         return None, 0
@@ -444,23 +446,23 @@ async def _verify_connection(
     try:
         user = await graph_client.me.get()
         logger.info(
-            f"🔗 Authenticated as: {user.display_name} ({user.user_principal_name})"
+            f"Authenticated as: {user.display_name} ({user.user_principal_name})"
         )
         return user, 0
     except ODataError as exc:
         code = getattr(exc.error, "code", "Unknown")
         message = getattr(exc.error, "message", "No message")
         logger.error(
-            f"❌ Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
+            f"Failed to connect to Microsoft Graph API. Code: {code} | Message: {message}"
         )
         if code == "InvalidAuthenticationToken":
-            logger.error("🔒 Token is invalid or expired. Please re-authenticate.")
+            logger.error("Token is invalid or expired. Please re-authenticate.")
         return None, 1
     except TimeoutError:
-        logger.error("❌ Connection timeout. Check your network connection.")
+        logger.error("Connection timeout. Check your network connection.")
         return None, 1
     except Exception as exc:
-        logger.error(f"❌ Unexpected error while connecting to Graph API: {exc}")
+        logger.error(f"Unexpected error while connecting to Graph API: {exc}")
         return None, 1
 
 
@@ -476,7 +478,7 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
             request_configuration=request_config
         )
         if sps and sps.value:
-            logger.info(f"🤖 Application: {sps.value[0].display_name}")
+            logger.info(f"Application: {sps.value[0].display_name}")
     except Exception:
         pass
 
@@ -486,8 +488,8 @@ async def _call_module(coro) -> int:
     try:
         return await coro
     except ForbiddenGraphError as exc:
-        console = Console(stderr=True)
-        console.print("\n[bold red]🚫 Access denied — 403 Forbidden[/bold red]")
+        console = Console(stderr=True, width=shutil.get_terminal_size().columns)
+        console.print("\n[bold red]Access denied — 403 Forbidden[/bold red]")
         if exc.required:
             console.print(f"  [bold]Required:[/bold]  {exc.required}")
         if exc.granted:
@@ -519,7 +521,7 @@ async def _dispatch(args, context) -> int:
     if command in ("teams", "ms-teams"):
         return await _call_module(teams.run_with_arguments(context, args))
 
-    logger.info("✅ Authentication successful. Use a subcommand to perform actions.")
+    logger.info("Authentication successful. Use a subcommand to perform actions.")
     return 0
 
 
@@ -575,18 +577,20 @@ async def _main() -> int:
     if not public_ip:
         return 1
 
-    logger.info(f"🌍 Public IP: {public_ip} (⏱️ RTT: {rtt:.2f}s)")
+    logger.info(f"Public IP: {public_ip} (RTT: {rtt:.2f}s)")
 
-    # Default --after to 1y unless --all or an explicit --after was provided
-    if not getattr(args, "fetch_all", False) and not args.after:
-        args.after = "1y"
-        logger.info(
-            "📅 No time bound specified, defaulting to last year. Use --all to fetch everything."
-        )
+    # Only apply a default --after time bound for subcommands that opted in
+    # via parser.set_defaults(uses_time_bounds=True) in their add_arguments().
+    if getattr(args, "uses_time_bounds", False):
+        if not getattr(args, "fetch_all", False) and not args.after:
+            args.after = "1y"
+            logger.info(
+                "No time bound specified, defaulting to last year. Use --all to fetch everything."
+            )
 
     args.drive_id = getattr(args, "drive_id", None) or os.environ.get("DRIVE_ID")
     if args.drive_id:
-        logger.info(f"💾 Drive ID: {args.drive_id}")
+        logger.info(f"Drive ID: {args.drive_id}")
 
     graph_client, is_app_only, token_scopes, err = await _authenticate(args)
     if err:

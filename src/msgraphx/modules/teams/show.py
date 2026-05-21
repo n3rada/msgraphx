@@ -22,12 +22,12 @@ from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
 from rich.align import Align
-from rich.console import Console
 from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
 from ...utils.cache import load_results, parse_indices
+from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import render_html, strip_html
 from ...utils.pagination import GraphPaginator
@@ -81,7 +81,6 @@ def _render_window(
     segment: list[ChatMessage],
     target_id: str,
     chat_label: str,
-    console: Console,
 ) -> None:
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in segment:
@@ -213,7 +212,6 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
         logger.error(f"Failed to fetch messages: {exc}")
         return 1
 
-    console = Console()
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in reversed(collected):
         body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
@@ -252,7 +250,6 @@ async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
         logger.error(f"Invalid index: {index} (cached: 1-{len(cached)})")
         return 1
 
-    console = Console()
 
     for idx in indices:
         item = cached[idx]
@@ -297,6 +294,6 @@ async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
         win_end = min(len(collected), target_idx + ctx_n + 1)
         segment = list(reversed(collected[win_start:win_end]))
 
-        _render_window(segment, message_id, chat_label, console)
+        _render_window(segment, message_id, chat_label)
 
     return 0

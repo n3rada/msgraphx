@@ -93,7 +93,7 @@ async def search_entities(
         et in {EntityType.Message, EntityType.Event} for et in entity_types
     ):
         logger.warning(
-            "⚠️ Sorting is not supported for 'message' or 'event'. Disabling sorting for compatibility."
+            "Sorting is not supported for 'message' or 'event'. Disabling sorting for compatibility."
         )
         sort_by = None
 
@@ -105,7 +105,7 @@ async def search_entities(
         if options.drive_id:
             # Add drive ID filter to restrict search to specific drive
             query_string = f"({query_string}) AND DriveId:{options.drive_id}"
-            logger.debug(f"🔒 Scoping search to drive: {options.drive_id}")
+            logger.debug(f"Scoping search to drive: {options.drive_id}")
 
         search_request = SearchRequest(
             entity_types=entity_types,
@@ -134,7 +134,7 @@ async def search_entities(
             hits = hits_container.hits or [] if hits_container else []
 
             if not hits:
-                logger.info("📭 No hits found.")
+                logger.info("No hits found.")
                 break
 
             for hit in hits:
@@ -158,5 +158,5 @@ async def search_entities(
         except Exception as exc:
             from ..utils.errors import raise_if_forbidden
             raise_if_forbidden(exc)
-            logger.error(f"❌ Error during search: {exc}")
+            logger.error(f"Error during search: {exc}")
             break

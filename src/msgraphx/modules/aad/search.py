@@ -115,7 +115,7 @@ def save_results_to_json(
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    logger.success(f"💾 Saved {len(results)} results to: {filepath}")
+    logger.success(f"Saved {len(results)} results to: {filepath}")
     return filepath
 
 
@@ -130,7 +130,7 @@ async def search_groups(
     show_synced_only: bool = False,
 ) -> int:
     """Search for groups matching the query."""
-    logger.info(f"🔍 Searching for groups matching: {query}")
+    logger.info(f"Searching for groups matching: {query}")
 
     count = 0
     all_results = []
@@ -138,7 +138,7 @@ async def search_groups(
     try:
         # For contains search, get all groups and filter client-side
         if contains:
-            logger.debug("🔎 Using client-side 'contains' filter (fetching all groups)")
+            logger.debug("Using client-side 'contains' filter (fetching all groups)")
             all_results = await pagination.collect_all(graph_client.groups, None)
             # Filter client-side
             all_results = [
@@ -166,7 +166,7 @@ async def search_groups(
         if show_synced_only:
             all_results = [g for g in all_results if g.on_premises_sync_enabled]
             logger.debug(
-                f"🔄 Filtered to {len(all_results)} synced from on-premises AD"
+                f"Filtered to {len(all_results)} synced from on-premises AD"
             )
 
         if all_results:
@@ -175,9 +175,9 @@ async def search_groups(
                 if group.group_types and "Unified" in group.group_types:
                     group_type = "Microsoft 365"
 
-                sync_indicator = "🔄 Synced" if group.on_premises_sync_enabled else ""
+                sync_indicator = "Synced" if group.on_premises_sync_enabled else ""
                 logger.success(
-                    f"👥 {group.display_name} | Type: {group_type} {sync_indicator} | ID: {group.id}"
+                    f"{group.display_name} | Type: {group_type} {sync_indicator} | ID: {group.id}"
                 )
                 if group.description:
                     logger.info(f"   Description: {group.description}")
@@ -186,12 +186,12 @@ async def search_groups(
                 count += 1
 
         if count == 0:
-            logger.info("📭 No groups found")
+            logger.info("No groups found")
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "groups", query, all_results, output_dir)
 
     except Exception as e:
-        logger.error(f"❌ Failed to search groups: {e}")
+        logger.error(f"Failed to search groups: {e}")
 
     return count
 
@@ -205,7 +205,7 @@ async def search_users(
     output_dir: Path = None,
 ) -> int:
     """Search for users matching the query."""
-    logger.info(f"🔍 Searching for users matching: {query}")
+    logger.info(f"Searching for users matching: {query}")
 
     count = 0
     all_results = []
@@ -225,9 +225,9 @@ async def search_users(
 
         if all_results:
             for user in all_results:
-                status = "✅ Enabled" if user.account_enabled else "🔒 Disabled"
+                status = "Enabled" if user.account_enabled else "Disabled"
                 logger.success(
-                    f"👤 {user.display_name} ({user.user_principal_name}) | {status} | ID: {user.id}"
+                    f"{user.display_name} ({user.user_principal_name}) | {status} | ID: {user.id}"
                 )
                 if user.job_title:
                     logger.info(f"   Title: {user.job_title}")
@@ -236,12 +236,12 @@ async def search_users(
                 count += 1
 
         if count == 0:
-            logger.info("📭 No users found")
+            logger.info("No users found")
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "users", query, all_results, output_dir)
 
     except Exception as e:
-        logger.error(f"❌ Failed to search users: {e}")
+        logger.error(f"Failed to search users: {e}")
 
     return count
 
@@ -255,7 +255,7 @@ async def search_devices(
     output_dir: Path = None,
 ) -> int:
     """Search for devices/computers matching the query."""
-    logger.info(f"🔍 Searching for devices matching: {query}")
+    logger.info(f"Searching for devices matching: {query}")
 
     count = 0
     all_results = []
@@ -277,7 +277,7 @@ async def search_devices(
 
         if all_results:
             for device in all_results:
-                status = "✅ Enabled" if device.account_enabled else "🔒 Disabled"
+                status = "Enabled" if device.account_enabled else "Disabled"
                 os_info = (
                     f"{device.operating_system} {device.operating_system_version}"
                     if device.operating_system
@@ -285,19 +285,19 @@ async def search_devices(
                 )
 
                 logger.success(
-                    f"💻 {device.display_name} | {os_info} | {status} | ID: {device.id}"
+                    f"{device.display_name} | {os_info} | {status} | ID: {device.id}"
                 )
                 if device.trust_type:
                     logger.info(f"   Trust Type: {device.trust_type}")
                 count += 1
 
         if count == 0:
-            logger.info("📭 No devices found")
+            logger.info("No devices found")
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "devices", query, all_results, output_dir)
 
     except Exception as e:
-        logger.error(f"❌ Failed to search devices: {e}")
+        logger.error(f"Failed to search devices: {e}")
 
     return count
 
@@ -311,7 +311,7 @@ async def search_service_principals(
     output_dir: Path = None,
 ) -> int:
     """Search for service principals matching the query."""
-    logger.info(f"🔍 Searching for service principals matching: {query}")
+    logger.info(f"Searching for service principals matching: {query}")
 
     count = 0
     all_results = []
@@ -332,23 +332,23 @@ async def search_service_principals(
 
         if all_results:
             for sp in all_results:
-                status = "✅ Enabled" if sp.account_enabled else "🔒 Disabled"
+                status = "Enabled" if sp.account_enabled else "Disabled"
                 logger.success(
-                    f"🤖 {sp.display_name} | App ID: {sp.app_id} | {status} | ID: {sp.id}"
+                    f"{sp.display_name} | App ID: {sp.app_id} | {status} | ID: {sp.id}"
                 )
                 if sp.service_principal_type:
                     logger.info(f"   Type: {sp.service_principal_type}")
                 count += 1
 
         if count == 0:
-            logger.info("📭 No service principals found")
+            logger.info("No service principals found")
         elif save_json and tenant_id:
             save_results_to_json(
                 tenant_id, "service_principals", query, all_results, output_dir
             )
 
     except Exception as e:
-        logger.error(f"❌ Failed to search service principals: {e}")
+        logger.error(f"Failed to search service principals: {e}")
 
     return count
 
@@ -362,7 +362,7 @@ async def search_applications(
     output_dir: Path = None,
 ) -> int:
     """Search for applications matching the query."""
-    logger.info(f"🔍 Searching for applications matching: {query}")
+    logger.info(f"Searching for applications matching: {query}")
 
     count = 0
     all_results = []
@@ -386,21 +386,21 @@ async def search_applications(
         if all_results:
             for app in all_results:
                 logger.success(
-                    f"📱 {app.display_name} | App ID: {app.app_id} | Audience: {app.sign_in_audience} | ID: {app.id}"
+                    f"{app.display_name} | App ID: {app.app_id} | Audience: {app.sign_in_audience} | ID: {app.id}"
                 )
                 if app.created_date_time:
                     logger.info(f"   Created: {app.created_date_time}")
                 count += 1
 
         if count == 0:
-            logger.info("📭 No applications found")
+            logger.info("No applications found")
         elif save_json and tenant_id:
             save_results_to_json(
                 tenant_id, "applications", query, all_results, output_dir
             )
 
     except Exception as e:
-        logger.error(f"❌ Failed to search applications: {e}")
+        logger.error(f"Failed to search applications: {e}")
 
     return count
 
@@ -471,13 +471,13 @@ async def run_with_arguments(
     if args.hunt:
         # Use hunt preset
         hunt_keywords = HUNT_GROUPS[args.hunt]
-        logger.info(f"🎯 Hunt mode: {args.hunt}")
-        logger.info(f"🔍 Keywords: {', '.join(hunt_keywords)}")
+        logger.info(f"Hunt mode: {args.hunt}")
+        logger.info(f"Keywords: {', '.join(hunt_keywords)}")
         queries = hunt_keywords
     elif args.query:
         queries = [args.query]
     else:
-        logger.error("❌ Please provide a search query or use --hunt")
+        logger.error("Please provide a search query or use --hunt")
         return 1
 
     # Determine which types to search
@@ -501,7 +501,7 @@ async def run_with_arguments(
     output_dir = Path(args.json_output) if args.json_output else Path.cwd()
 
     if save_json and not tenant_id:
-        logger.warning("⚠️ Tenant ID not available, using 'unknown' for directory name")
+        logger.warning("Tenant ID not available, using 'unknown' for directory name")
         tenant_id = "unknown"
 
     total_found = 0
@@ -540,5 +540,5 @@ async def run_with_arguments(
             if len(queries) > 1 or len(search_types) > 1:
                 logger.info("─" * 80)
 
-    logger.info(f"📊 Total objects found: {total_found}")
+    logger.info(f"Total objects found: {total_found}")
     return 0

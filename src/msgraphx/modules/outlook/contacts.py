@@ -33,18 +33,20 @@ from loguru import logger
 from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import (
     MessagesRequestBuilder,
 )
-from rich.console import Console, Group
+from rich.console import Group
 from rich.live import Live
 from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):
+    parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "--top",
         "-n",
@@ -68,7 +70,7 @@ async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
     if context.is_app_only:
-        logger.error("❌ This module requires delegated authentication (user context).")
+        logger.error("This module requires delegated authentication (user context).")
         return 1
 
     # Build OData $filter for date range
@@ -97,12 +99,9 @@ async def run_with_arguments(
     names: dict[str, str] = {}
 
     top_n = args.top if args.top > 0 else None
-    console = Console()
 
-    def _build_table(
-        counter: Counter, names_dict: dict, title: str, emoji: str = "🏆"
-    ) -> Table:
-        table = Table(title=f"{emoji} {title}", show_header=True, header_style="bold")
+    def _build_table(counter: Counter, names_dict: dict, title: str) -> Table:
+        table = Table(title=title, show_header=True, header_style="bold")
         table.add_column("#", justify="right", style="dim")
         table.add_column("Emails", justify="right")
         table.add_column("Contact")
@@ -120,11 +119,11 @@ async def run_with_arguments(
 
         if odata_filters:
             query_params.filter = " and ".join(odata_filters)
-            logger.info(f"📅 Date filter: {query_params.filter}")
+            logger.info(f"Date filter: {query_params.filter}")
 
         request_config = RequestConfiguration(query_parameters=query_params)
 
-        logger.info("📨 Fetching sent messages")
+        logger.info("Fetching sent messages")
         total = 0
 
         sent_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
@@ -163,7 +162,7 @@ async def run_with_arguments(
                         if r.email_address.name:
                             names[addr] = r.email_address.name
 
-        logger.info(f"📊 Analysed {total:,} sent messages")
+        logger.info(f"Analysed {total:,} sent messages")
 
     if args.only == "sent":
         return 0
@@ -218,14 +217,14 @@ async def run_with_arguments(
         )
         if recv_filter_parts:
             recv_qp.filter = " and ".join(recv_filter_parts)
-            logger.info(f"📅 Inbox filter: {recv_qp.filter}")
+            logger.info(f"Inbox filter: {recv_qp.filter}")
 
         recv_cfg = RequestConfiguration(query_parameters=recv_qp)
         inbox_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
             "Inbox"
         ).messages
 
-        logger.info("📬 Fetching received messages from Inbox")
+        logger.info("Fetching received messages from Inbox")
 
         total_recv = 0
         with Live(console=console, refresh_per_second=4) as live:
@@ -237,13 +236,11 @@ async def run_with_arguments(
                             recv_to_counter,
                             recv_names,
                             f"Top {args.top or len(recv_to_counter)} — received as To ({total_recv:,} scanned)",
-                            "📥",
                         ),
                         _build_table(
                             recv_cc_counter,
                             recv_names,
                             f"Top {args.top or len(recv_cc_counter)} — received as CC",
-                            "📥",
                         ),
                     )
                 )
@@ -279,12 +276,12 @@ async def run_with_arguments(
                     recv_cc_counter[sender] += 1
 
         logger.info(
-            f"📊 Received: {sum(recv_to_counter.values()):,} as To, "
+            f"Received: {sum(recv_to_counter.values()):,} as To, "
             f"{sum(recv_cc_counter.values()):,} as CC"
         )
     else:
         logger.warning(
-            "⚠️ Could not determine your email address; skipping received analysis."
+            "Could not determine your email address; skipping received analysis."
         )
 
     if args.save:
@@ -330,6 +327,6 @@ async def run_with_arguments(
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        logger.info(f"💾 Full results saved to: {save_path.absolute()}")
+        logger.info(f"Full results saved to: {save_path.absolute()}")
 
     return 0

@@ -102,7 +102,7 @@ def check_and_exit_for_auth_error(exc: Exception) -> None:
     if code == "InvalidAuthenticationToken" or (
         isinstance(message, str) and "expired" in message.lower()
     ):
-        logger.error("🔒 Authentication failed: token invalid or expired. Stopping.")
+        logger.error("Authentication failed: token invalid or expired. Stopping.")
         sys.exit(1)
 
 

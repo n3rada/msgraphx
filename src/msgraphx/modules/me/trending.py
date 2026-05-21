@@ -17,11 +17,11 @@ from loguru import logger
 from msgraph.generated.users.item.insights.trending.trending_request_builder import (
     TrendingRequestBuilder,
 )
-from rich.console import Console
 from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
 
@@ -53,7 +53,7 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    logger.info("📈 Fetching trending documents")
+    logger.info("Fetching trending documents")
 
     query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
         top=min(args.top, 100),
@@ -67,7 +67,7 @@ async def run_with_arguments(
     items = result.value if result and result.value else []
 
     if not items:
-        logger.info("📭 No trending items found.")
+        logger.info("No trending items found.")
         return 0
 
     # Client-side type filter
@@ -81,7 +81,6 @@ async def run_with_arguments(
             and type_filter in i.resource_visualization.type.lower()
         ]
 
-    console = Console()
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("#", style="dim", justify="right", width=4)
     table.add_column("Type", style="cyan", width=12)
@@ -104,9 +103,9 @@ async def run_with_arguments(
 
         table.add_row(str(i), file_type, title, site, weight)
 
-    console.print("[bold]📈 Trending around you[/bold]")
+    console.print("[bold]Trending around you[/bold]")
     console.rule()
     console.print(table)
-    logger.success(f"✅ {len(items)} trending item(s).")
+    logger.success(f"{len(items)} trending item(s).")
 
     return 0

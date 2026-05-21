@@ -50,7 +50,7 @@ async def download_drive_item(
 
     if item.folder:
         # It's a folder - recurse into it
-        logger.debug(f"📁 Entering folder: {current_path}")
+        logger.debug(f"Entering folder: {current_path}")
         try:
             # Get all children of this folder (with pagination)
             children = await collect_all(
@@ -77,12 +77,12 @@ async def download_drive_item(
 
                 for result in results:
                     if isinstance(result, BaseException):
-                        logger.error(f"❌ Error in folder {current_path}: {result}")
+                        logger.error(f"Error in folder {current_path}: {result}")
                     elif isinstance(result, int):
                         downloaded_count += result
 
         except Exception as e:
-            logger.error(f"❌ Failed to list folder {current_path}: {e}")
+            logger.error(f"Failed to list folder {current_path}: {e}")
 
     elif item.file:
         # It's a file - download it with semaphore to limit concurrency
@@ -136,15 +136,15 @@ async def _download_file(
         if skip_existing and file_path.exists():
             existing_size = file_path.stat().st_size
             if existing_size == item.size:
-                logger.debug(f"⏭️  Skipping (already exists): {current_path}")
+                logger.debug(f" Skipping (already exists): {current_path}")
                 return 1  # Count as downloaded
             else:
                 logger.debug(
-                    f"🔄 Re-downloading (size mismatch): {current_path} (local: {existing_size}, remote: {item.size})"
+                    f"Re-downloading (size mismatch): {current_path} (local: {existing_size}, remote: {item.size})"
                 )
 
         # Download the file content
-        logger.debug(f"📥 Downloading: {current_path} ({item.size} bytes)")
+        logger.debug(f"Downloading: {current_path} ({item.size} bytes)")
 
         content_stream = (
             await graph_client.drives.by_drive_id(drive_id)
@@ -159,11 +159,11 @@ async def _download_file(
 
             return 1
         else:
-            logger.warning(f"⚠️ No content for: {current_path}")
+            logger.warning(f"No content for: {current_path}")
             return 0
 
     except Exception as e:
-        logger.error(f"❌ Failed to download {current_path}: {e}")
+        logger.error(f"Failed to download {current_path}: {e}")
         return 0
 
 
@@ -187,23 +187,23 @@ async def download_drive(
     Returns:
         Total number of files downloaded
     """
-    logger.info(f"🚀 Starting drive dump: {drive_id}")
-    logger.info(f"💾 Output directory: {output_dir}")
-    logger.info(f"⚡ Max concurrent downloads: {max_concurrent}")
+    logger.info(f"Starting drive dump: {drive_id}")
+    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Max concurrent downloads: {max_concurrent}")
     if skip_existing:
-        logger.info(f"⏭️  Resume mode: Skipping existing files")
+        logger.info(f" Resume mode: Skipping existing files")
 
     try:
         # Get drive info
         drive = await graph_client.drives.by_drive_id(drive_id).get()
         logger.info(
-            f"📊 Drive: {drive.name} (Owner: {drive.owner.user.display_name if drive.owner and drive.owner.user else 'Unknown'})"
+            f"Drive: {drive.name} (Owner: {drive.owner.user.display_name if drive.owner and drive.owner.user else 'Unknown'})"
         )
 
         # Create output directory inside a folder named after the drive
         drive_folder = output_dir / drive.name
         drive_folder.mkdir(parents=True, exist_ok=True)
-        logger.info(f"📂 Files will be saved to: {drive_folder}")
+        logger.info(f"Files will be saved to: {drive_folder}")
 
         # Start from root - use items with "root" as the item ID (with pagination)
         root_children = await collect_all(
@@ -213,7 +213,7 @@ async def download_drive(
         )
 
         if not root_children:
-            logger.info("📭 Drive is empty")
+            logger.info("Drive is empty")
             return 0
 
         # Create semaphore to limit concurrent downloads
@@ -232,15 +232,15 @@ async def download_drive(
 
         for result in results:
             if isinstance(result, BaseException):
-                logger.error(f"❌ Error during download: {result}")
+                logger.error(f"Error during download: {result}")
             elif isinstance(result, int):
                 total_downloaded += result
 
-        logger.success(f"🎉 Download complete! Total files: {total_downloaded}")
+        logger.success(f"Download complete! Total files: {total_downloaded}")
         return total_downloaded
 
     except Exception as e:
-        logger.error(f"❌ Failed to download drive: {e}")
+        logger.error(f"Failed to download drive: {e}")
         return 0
 
 

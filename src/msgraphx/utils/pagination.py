@@ -89,7 +89,7 @@ class GraphPaginator:
                 status = getattr(exc, "response_status_code", None)
                 if status in _TRANSIENT_STATUS_CODES:
                     logger.error(
-                        f"❌ HTTP {status} from Graph API — aborting pagination"
+                        f"HTTP {status} from Graph API — aborting pagination"
                     )
                     raise StopAsyncIteration from exc
                 raise
@@ -100,7 +100,7 @@ class GraphPaginator:
 
             self._page_count = 1
             logger.debug(
-                f"📄 Page {self._page_count}: {len(self._current_result.value)} items"
+                f"Page {self._page_count}: {len(self._current_result.value)} items"
             )
             self._current_index = 0
 
@@ -116,7 +116,7 @@ class GraphPaginator:
 
         # Check page limit
         if self._max_pages and self._page_count >= self._max_pages:
-            logger.warning(f"⚠️ Reached maximum page limit: {self._max_pages}")
+            logger.warning(f"Reached maximum page limit: {self._max_pages}")
             raise StopAsyncIteration
 
         # Fetch next page
@@ -126,7 +126,7 @@ class GraphPaginator:
         except ODataError as exc:
             status = getattr(exc, "response_status_code", None)
             if status in _TRANSIENT_STATUS_CODES:
-                logger.error(f"❌ HTTP {status} from Graph API — aborting pagination")
+                logger.error(f"HTTP {status} from Graph API — aborting pagination")
                 raise StopAsyncIteration from exc
             raise
 
@@ -135,7 +135,7 @@ class GraphPaginator:
 
         self._page_count += 1
         logger.debug(
-            f"📄 Page {self._page_count}: {len(self._current_result.value)} items"
+            f"Page {self._page_count}: {len(self._current_result.value)} items"
         )
         self._current_index = 0
 

@@ -101,7 +101,7 @@ async def _send_dm(
         return 1
 
     recipient = args.to
-    logger.info(f"💬 Resolving user: {recipient}")
+    logger.info(f"Resolving user: {recipient}")
 
     # Accept either UPN or object ID — the by_user_id call works for both
     try:
@@ -115,7 +115,7 @@ async def _send_dm(
         return 1
 
     logger.info(
-        f"💬 Creating or reusing 1:1 chat with "
+        f"Creating or reusing 1:1 chat with "
         f"{target_user.display_name} ({target_user.mail or target_user.id})"
     )
 
@@ -159,7 +159,7 @@ async def _send_dm(
     if result:
         preview = args.message[:80] + ("…" if len(args.message) > 80 else "")
         logger.success(
-            f"✅ Message sent to {target_user.display_name or recipient}: {preview!r}"
+            f"Message sent to {target_user.display_name or recipient}: {preview!r}"
         )
     else:
         logger.error("Message POST returned no result.")
@@ -181,7 +181,7 @@ async def _send_channel_message(
     team_id = args.team
     channel_id = args.channel
 
-    logger.info(f"📣 Posting to channel {channel_id} in team {team_id}")
+    logger.info(f"Posting to channel {channel_id} in team {team_id}")
 
     outgoing = ChatMessage(body=message_body)
     result = await (
@@ -192,7 +192,7 @@ async def _send_channel_message(
 
     if result:
         preview = args.message[:80] + ("…" if len(args.message) > 80 else "")
-        logger.success(f"✅ Message posted to channel: {preview!r}")
+        logger.success(f"Message posted to channel: {preview!r}")
     else:
         logger.error("Channel message POST returned no result.")
         return 1
