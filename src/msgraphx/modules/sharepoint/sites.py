@@ -28,9 +28,11 @@ from ...utils.pagination import GraphPaginator
 async def _fetch_group_site(context: "GraphContext", group_id: str) -> tuple | None:
     """Fetch root SharePoint site for a group. Returns (site_name, web_url) or None."""
     try:
-        site = await context.graph_client.groups.by_group_id(
-            group_id
-        ).sites.by_site_id("root").get()
+        site = (
+            await context.graph_client.groups.by_group_id(group_id)
+            .sites.by_site_id("root")
+            .get()
+        )
         if site:
             return (
                 site.display_name or site.name or "(unnamed site)",

@@ -60,7 +60,7 @@ async def _list_teams(context: "GraphContext") -> int:
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("#", style="dim", justify="right", width=4)
     table.add_column("Team", min_width=30)
-    table.add_column("Description", style="dim", max_width=60)
+    table.add_column("Description", style="dim")
 
     for i, team in enumerate(teams, 1):
         table.add_row(str(i), team.display_name or "", team.description or "")
