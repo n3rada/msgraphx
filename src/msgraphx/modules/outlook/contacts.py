@@ -124,7 +124,7 @@ async def run_with_arguments(
 
         request_config = RequestConfiguration(query_parameters=query_params)
 
-        logger.info("📨 Fetching sent messages...")
+        logger.info("📨 Fetching sent messages")
         total = 0
 
         sent_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
@@ -225,7 +225,7 @@ async def run_with_arguments(
             "Inbox"
         ).messages
 
-        logger.info("📬 Fetching received messages from Inbox...")
+        logger.info("📬 Fetching received messages from Inbox")
 
         total_recv = 0
         with Live(console=console, refresh_per_second=4) as live:

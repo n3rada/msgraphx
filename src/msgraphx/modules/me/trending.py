@@ -53,7 +53,7 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    logger.info("📈 Fetching trending documents...")
+    logger.info("📈 Fetching trending documents")
 
     query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
         top=min(args.top, 100),
