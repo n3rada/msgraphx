@@ -68,7 +68,7 @@ async def run_with_arguments(
     me = await context.graph_client.me.get()
     my_id = me.id if me else None
 
-    logger.info("💬 Fetching Teams chats...")
+    logger.info("💬 Fetching Teams chats")
 
     query_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
         expand=["members", "lastMessagePreview"],

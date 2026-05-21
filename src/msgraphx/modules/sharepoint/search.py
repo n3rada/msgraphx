@@ -96,7 +96,7 @@ async def get_user_sharepoint_groups(
     Returns:
         List of group objects with SharePoint sites
     """
-    logger.info("📋 Fetching user's Microsoft 365 groups...")
+    logger.info("📋 Fetching user's Microsoft 365 groups")
 
     try:
         # Build filter for M365 groups
