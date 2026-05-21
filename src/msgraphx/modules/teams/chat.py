@@ -113,7 +113,7 @@ async def run_with_arguments(
         return 1
 
     # No query and no filters → list recent chats overview (only needs Chat.Read)
-    if not args.query and not args.from_addr and not args.after and not args.before:
+    if not args.query and not args.from_addr:
         return await _list_chats(context)
 
     if not context.has_scope("ChannelMessage.Read.All"):
