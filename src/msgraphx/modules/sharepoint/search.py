@@ -99,35 +99,28 @@ async def get_user_sharepoint_groups(
     logger.info("📋 Fetching user's Microsoft 365 groups")
 
     try:
-        # Build filter for M365 groups
-        filters = ["groupTypes/any(c:c eq 'Unified')"]
-        if visibility:
-            filters.append(f"visibility eq '{visibility}'")
-
-        # Use direct query without explicit builder import
         result = await graph_client.me.transitive_member_of.graph_group.get()
 
-        if result and result.value:
-            # Apply client-side filters
-            sp_groups = result.value
+        if not result or not result.value:
+            logger.info("📭 No Microsoft 365 groups found")
+            return []
 
-            # Filter by visibility if specified
-            if visibility:
-                sp_groups = [g for g in sp_groups if g.visibility == visibility]
+        # Filter for M365 (Unified) groups with Teams/SharePoint provisioned
+        sp_groups = [
+            g
+            for g in result.value
+            if g.resource_provisioning_options
+            and "Team" in g.resource_provisioning_options
+        ]
 
-            # Filter for groups with Team/SharePoint
-            sp_groups = [
-                g
-                for g in result.value
-                if g.resource_provisioning_options
-                and "Team" in g.resource_provisioning_options
-            ]
-            logger.success(
-                f"✅ Found {len(sp_groups)} Microsoft 365 groups with SharePoint sites"
-            )
-            return sp_groups
+        # Filter by visibility if specified
+        if visibility:
+            sp_groups = [g for g in sp_groups if g.visibility == visibility]
 
-        logger.info("📭 No Microsoft 365 groups found")
+        logger.success(
+            f"✅ Found {len(sp_groups)} Microsoft 365 groups with SharePoint sites"
+        )
+        return sp_groups
         return []
 
     except Exception as e:
