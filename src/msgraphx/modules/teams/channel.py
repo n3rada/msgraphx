@@ -81,7 +81,7 @@ async def run_with_arguments(
         return 1
 
     # No query and no filters → list joined teams overview (only needs Team.ReadBasic.All)
-    if not args.query and not args.from_addr and not args.after and not args.before:
+    if not args.query and not args.from_addr:
         return await _list_teams(context)
 
     if not context.has_scope("ChannelMessage.Read.All"):
