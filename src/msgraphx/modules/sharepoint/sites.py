@@ -105,7 +105,7 @@ async def run_with_arguments(
 
         site_name, web_url = result
         visibility = group.visibility or "Public"
-        row = (group.display_name or "(unnamed)", group.mail or "", site_name, web_url)
+        row = (group.display_name or "(unnamed)", site_name, web_url)
 
         logger.debug(f"  {visibility}: {group.display_name} -> {web_url}")
 
@@ -153,14 +153,14 @@ async def run_with_arguments(
 
     _print_table(
         f"🔒 Private sites ({len(private_rows)}) - via group membership",
-        ["Group", "Group mail", "Site", "URL"],
+        ["Group", "Site", "URL"],
         private_rows,
     )
 
     if show_all:
         _print_table(
             f"🌐 Public sites ({len(public_rows)}) - via group membership",
-            ["Group", "Group mail", "Site", "URL"],
+            ["Group", "Site", "URL"],
             public_rows,
         )
 

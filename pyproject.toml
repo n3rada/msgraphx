@@ -41,4 +41,8 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:kiota_abstractions",
+    "ignore::DeprecationWarning:msgraph",
+]
 
