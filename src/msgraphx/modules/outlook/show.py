@@ -24,7 +24,7 @@ from rich.text import Text
 from ...core.context import GraphContext
 from ...utils.cache import load_results, parse_indices
 from ...utils.errors import handle_graph_errors
-from ...utils.html import html_to_text
+from ...utils.html import render_html
 
 # ---------------------------------------------------------------------------
 # MIME helpers
@@ -79,7 +79,7 @@ def _extract_mime(raw: bytes) -> dict:
             else:
                 body_plain = text
 
-    body = body_plain or (html_to_text(body_html) if body_html else "")
+    body = body_plain or (body_html if body_html else "")
 
     return {
         "subject": _decode_value(msg.get("Subject", "")),
@@ -112,28 +112,31 @@ def _render(parsed: dict, console: Console) -> None:
             header.append(f"  {label:<6}", style="bold dim")
             header.append(f"  {value}\n")
 
-    # Body
-    body_text = Text(parsed["body"] or "(empty body)")
+    # Body: render HTML as Markdown for rich display, plain text as-is
+    body_raw = parsed["body"]
+    if body_raw and "<" in body_raw:
+        body_renderable = render_html(body_raw)
+    else:
+        body_renderable = Text(body_raw or "(empty body)")
 
     # Attachments
     attach_text = Text()
     for name in parsed["attachments"]:
         attach_text.append(f"\n  📎  {name}", style="yellow")
 
-    # Compose inner content
-    inner = Text.assemble(header)
-    if parsed["body"]:
-        inner.append("\n")
-        inner.append_text(Text("─" * 2, style="dim"))
-        inner.append("\n\n")
-        inner.append_text(body_text)
+    # Compose panel using Group to mix Text and Markdown renderables
+    from rich.console import Group
+
+    parts = [header]
+    if body_raw:
+        parts.append(Text("─" * 2, style="dim"))
+        parts.append(body_renderable)
     if parsed["attachments"]:
-        inner.append("\n")
-        inner.append_text(attach_text)
+        parts.append(attach_text)
 
     console.print(
         Panel(
-            Padding(inner, (0, 1)),
+            Padding(Group(*parts), (0, 1)),
             title=f"[bold]{subject}[/bold]",
             title_align="left",
             border_style="blue",
