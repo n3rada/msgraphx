@@ -32,9 +32,7 @@ from ...core.context import GraphContext
 from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
-from ._common import extract_body
-
-ALIASES = ["channels"]
+from ...utils.html import strip_html
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -82,15 +80,15 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
+    # No query and no filters → list joined teams overview (only needs Team.ReadBasic.All)
+    if not args.query and not args.from_addr and not args.after and not args.before:
+        return await _list_teams(context)
+
     if not context.has_scope("ChannelMessage.Read.All"):
         logger.error(
             "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
         )
         return 1
-
-    # No query and no filters → list joined teams overview
-    if not args.query and not args.from_addr and not args.after and not args.before:
-        return await _list_teams(context)
 
     parts: list[str] = []
 
@@ -144,7 +142,7 @@ async def run_with_arguments(
 
             logger.trace(msg.__dict__)
 
-            body = extract_body(msg)
+            body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
             count += 1
 
             sender = "?"
