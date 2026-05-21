@@ -23,13 +23,13 @@ from loguru import logger
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.entity_type import EntityType
 from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
-from rich.console import Console
 from rich.table import Table
 
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
 from ...utils.cache import save_results
+from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
@@ -37,6 +37,7 @@ from ...utils.pagination import GraphPaginator
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
+    parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "query",
         nargs="?",
@@ -62,7 +63,6 @@ async def _list_chats(context: "GraphContext") -> int:
     )
     chat_config = RequestConfiguration(query_parameters=chat_params)
 
-    console = Console()
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("#", style="dim", justify="right", width=4)
     table.add_column("Chat", min_width=30)
@@ -98,7 +98,7 @@ async def _list_chats(context: "GraphContext") -> int:
         if count >= 20:
             break
 
-    console.print("[bold]💬 Recent chats[/bold]")
+    console.print("[bold]Recent chats[/bold]")
     console.rule()
     console.print(table)
     return 0
@@ -118,7 +118,7 @@ async def run_with_arguments(
 
     if not context.has_scope("ChannelMessage.Read.All"):
         logger.error(
-            "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
+            "Missing required scope: ChannelMessage.Read.All (admin consent required)."
         )
         return 1
 
@@ -149,7 +149,7 @@ async def run_with_arguments(
             return 1
 
     query_string = " ".join(parts) if parts else "*"
-    logger.info(f"🔍 Chat search: {query_string!r}")
+    logger.info(f"Chat search: {query_string!r}")
 
     search_options = graph_search.SearchOptions(
         query_string=query_string,
@@ -160,8 +160,7 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    console = Console()
-    console.print("[bold]💬 Teams chat search results[/bold]")
+    console.print("[bold]Teams chat search results[/bold]")
     console.rule()
 
     try:
@@ -220,8 +219,8 @@ async def run_with_arguments(
     console.rule()
 
     if count == 0:
-        logger.info("📭 No results found.")
+        logger.info("No results found.")
     else:
-        logger.success(f"✅ {count} message(s) found.")
+        logger.success(f"{count} message(s) found.")
 
     return 0

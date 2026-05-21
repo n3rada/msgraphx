@@ -23,18 +23,20 @@ from pathlib import Path
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
-from rich.console import Console, Group
+from rich.console import Group
 from rich.live import Live
 from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
+    parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "--top",
         "-n",
@@ -61,14 +63,14 @@ async def run_with_arguments(
 
     if not (context.has_scope("Chat.Read") or context.has_scope("Chat.ReadBasic")):
         logger.error(
-            "❌ Missing required scope. Grant at least Chat.ReadBasic or Chat.Read."
+            "Missing required scope. Grant at least Chat.ReadBasic or Chat.Read."
         )
         return 1
 
     me = await context.graph_client.me.get()
     my_id = me.id if me else None
 
-    logger.info("💬 Fetching Teams chats")
+    logger.info("Fetching Teams chats")
 
     query_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
         expand=["members", "lastMessagePreview"],
@@ -96,10 +98,9 @@ async def run_with_arguments(
     total = 0
 
     top_n = args.top if args.top > 0 else None
-    console = Console()
 
-    def _build_table(counter: Counter, title: str, emoji: str) -> Table:
-        table = Table(title=f"{emoji} {title}", show_header=True, header_style="bold")
+    def _build_table(counter: Counter, title: str) -> Table:
+        table = Table(title=title, show_header=True, header_style="bold")
         table.add_column("#", justify="right", style="dim")
         table.add_column("Chats", justify="right")
         table.add_column("Contact")
@@ -115,12 +116,10 @@ async def run_with_arguments(
                     _build_table(
                         dm_counter,
                         f"Top {args.top or len(dm_counter)} — Direct message partners ({total:,} scanned)",
-                        "💬",
                     ),
                     _build_table(
                         group_counter,
                         f"Top {args.top or len(group_counter)} — Group chat participants",
-                        "👥",
                     ),
                 )
             )
@@ -176,7 +175,7 @@ async def run_with_arguments(
                 )
 
     logger.info(
-        f"📊 {len(one_on_one)} 1:1 chats, {len(groups)} group chats, "
+        f"{len(one_on_one)} 1:1 chats, {len(groups)} group chats, "
         f"{len(dm_counter) + len(group_counter)} unique contacts"
     )
 
@@ -197,6 +196,6 @@ async def run_with_arguments(
         }
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        logger.info(f"💾 Full results saved to: {save_path.absolute()}")
+        logger.info(f"Full results saved to: {save_path.absolute()}")
 
     return 0

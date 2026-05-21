@@ -29,7 +29,7 @@ async def fetch_user_groups(context: "GraphContext") -> list:
         result = await context.graph_client.me.transitive_member_of.graph_group.get()
         return result.value if result and result.value else []
     except Exception as e:
-        logger.error(f"❌ Failed to fetch user groups: {e}")
+        logger.error(f"Failed to fetch user groups: {e}")
         return []
 
 
@@ -46,7 +46,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
-    logger.info("📊 Microsoft 365 Groups")
+    logger.info("Microsoft 365 Groups")
 
     groups = await fetch_user_groups(context)
 
@@ -91,6 +91,6 @@ async def run_with_arguments(
 
         logger.info(f"Total: {len(groups)} groups")
     else:
-        logger.info("📭 No groups found")
+        logger.info("No groups found")
 
     return 0
