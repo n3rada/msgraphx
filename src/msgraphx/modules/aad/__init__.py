@@ -9,11 +9,16 @@ from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(
+    parser: "argparse.ArgumentParser", parents: "list | None" = None
+) -> None:
+    parents = parents or []
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     search_parser = subparsers.add_parser(
-        "search", help="Search Azure AD for groups, users, devices, and more"
+        "search",
+        parents=parents,
+        help="Search Azure AD for groups, users, devices, and more.",
     )
     search.add_arguments(search_parser)
 

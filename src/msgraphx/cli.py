@@ -2,10 +2,8 @@
 
 # Built-in imports
 import argparse
-import importlib
 import json
 import os
-import pkgutil
 import time
 from pathlib import Path
 
@@ -29,116 +27,76 @@ from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 
-def load_subcommands_from_module(
-    parent_parser: argparse.ArgumentParser,
-    module_package,
-    module_name: str,
-    global_parent: argparse.ArgumentParser,
-):
-    """
-    Dynamically load and register subcommands from a module package.
-
-    This function discovers all modules within a package that contain
-    'add_arguments' and 'run_with_arguments' functions, and registers them
-    as subparsers.
-
-    Args:
-        parent_parser: The parent ArgumentParser to add subparsers to
-        module_package: The package module to scan for subcommands
-        module_name: The name to use for the main subcommand (e.g., 'sp', 'sharepoint')
-        global_parent: Optional parent parser with global options to inherit
-
-    Example:
-        >>> sp_parser = subparsers.add_parser('sharepoint', aliases=['sp'])
-        >>> load_subcommands_from_module(sp_parser, sharepoint, 'sharepoint', parent_parser)
-    """
-    subparsers = parent_parser.add_subparsers(
-        dest=f"{module_name}_command", help=f"{module_name} subcommand"
+def build_parser() -> argparse.ArgumentParser:
+    # Create parent parser with global options that all subcommands inherit.
+    # argument_default=SUPPRESS ensures subparsers don't reset values to defaults
+    # when a flag is placed before the subcommand (e.g. `msgraphx --debug teams chats`).
+    parent_parser = argparse.ArgumentParser(
+        add_help=False, argument_default=argparse.SUPPRESS
     )
 
-    for importer, full_module_name, is_pkg in pkgutil.iter_modules(
-        module_package.__path__, module_package.__name__ + "."
-    ):
-        # Skip __init__ and __pycache__
-        if full_module_name.endswith("__init__"):
-            continue
+    advanced_group = parent_parser.add_argument_group(
+        "Advanced options", "Logging and debugging controls."
+    )
 
-        # Get the actual module name without the package prefix
-        short_name = full_module_name.split(".")[-1]
-
-        # Import the module
-        try:
-            module = importlib.import_module(full_module_name)
-        except Exception:
-            continue  # Skip modules that fail to load
-
-        # Check if module has the required functions
-        if not (
-            hasattr(module, "add_arguments") and hasattr(module, "run_with_arguments")
-        ):
-            continue
-
-        # Create subparser for this command, inheriting global options if available
-        parents = [global_parent] if global_parent else []
-        cmd_parser = subparsers.add_parser(
-            short_name,
-            aliases=getattr(module, "ALIASES", []),
-            help=f"{short_name.capitalize()} commands",
-            parents=parents,
-        )
-        module.add_arguments(cmd_parser)
-        # Store the module reference for later execution
-        cmd_parser.set_defaults(**{f"{module_name}_module": module})
-
-
-def build_parser() -> argparse.ArgumentParser:
-    # Create parent parser with global options that all subcommands inherit
-    parent_parser = argparse.ArgumentParser(add_help=False)
-
-    parent_parser.add_argument(
+    advanced_group.add_argument(
         "--debug",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Enable debug logging (shortcut for --log-level DEBUG).",
     )
 
-    parent_parser.add_argument(
+    advanced_group.add_argument(
         "--trace",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Enable TRACE logging (shortcut for --log-level TRACE).",
     )
 
-    parent_parser.add_argument(
+    advanced_group.add_argument(
         "--log-level",
         type=str,
         choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=None,
+        default=argparse.SUPPRESS,
         help="Set the logging level explicitly.",
     )
 
-    parent_parser.add_argument(
+    filter_group = parent_parser.add_argument_group(
+        "Filters", "Narrow results by time range."
+    )
+
+    filter_group.add_argument(
         "--before",
         type=str,
+        default=argparse.SUPPRESS,
         help="Filter items created on or before this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y).",
     )
 
-    parent_parser.add_argument(
+    filter_group.add_argument(
         "--after",
         type=str,
+        default=argparse.SUPPRESS,
         help="Filter items created on or after this date/time. Format: YYYY-MM-DD or relative (e.g. 5h, 3d, 1w, 2y). Defaults to 1y.",
     )
 
-    parent_parser.add_argument(
+    filter_group.add_argument(
         "--all",
         action="store_true",
+        default=argparse.SUPPRESS,
         dest="fetch_all",
         help="Fetch all items with no time bound (overrides the default --after 1y).",
     )
 
-    parent_parser.add_argument(
+    output_group = parent_parser.add_argument_group(
+        "Output", "Control where results are saved."
+    )
+
+    output_group.add_argument(
         "--save",
         "--output",
         "-o",
         type=str,
+        default=argparse.SUPPRESS,
         metavar="PATH",
         help="Directory path to save downloaded files. Creates the directory if it doesn't exist.",
     )
@@ -148,6 +106,18 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=True,
         description="Microsoft Graph eXploitation toolkit.",
         parents=[parent_parser],
+    )
+
+    # Set proper defaults on the main parser. Subparsers use SUPPRESS so they
+    # never overwrite these values when the flag is not present in their argv slice.
+    parser.set_defaults(
+        debug=False,
+        trace=False,
+        log_level=None,
+        before=None,
+        after=None,
+        fetch_all=False,
+        save=None,
     )
 
     parser.add_argument(
@@ -229,25 +199,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
 
-    # SharePoint subcommand (inherits parent_parser for global options)
+    # SharePoint subcommand
     sp_parser = subparsers.add_parser(
         "sharepoint",
         aliases=["sp"],
         help="SharePoint commands",
         parents=[parent_parser],
     )
-    load_subcommands_from_module(sp_parser, sharepoint, "sp", parent_parser)
+    sharepoint.add_arguments(sp_parser, parents=[parent_parser])
 
-    # Azure AD subcommand (inherits parent_parser for global options)
+    # Azure AD subcommand
     aad_parser = subparsers.add_parser(
         "aad",
         aliases=["ad"],
         help="Azure Active Directory commands",
         parents=[parent_parser],
     )
-    load_subcommands_from_module(aad_parser, aad, "aad", parent_parser)
+    aad.add_arguments(aad_parser, parents=[parent_parser])
 
-    # Me subcommand (inherits parent_parser for global options)
+    # Me subcommand
     me_parser = subparsers.add_parser(
         "me",
         help="Current user information",
@@ -255,23 +225,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     me.add_arguments(me_parser)
 
-    # Outlook subcommand (inherits parent_parser for global options)
+    # Outlook subcommand
     outlook_parser = subparsers.add_parser(
         "outlook",
         aliases=["mail"],
         help="Outlook / mail commands",
         parents=[parent_parser],
     )
-    load_subcommands_from_module(outlook_parser, outlook, "outlook", parent_parser)
+    outlook.add_arguments(outlook_parser, parents=[parent_parser])
 
-    # Teams subcommand (inherits parent_parser for global options)
+    # Teams subcommand
     teams_parser = subparsers.add_parser(
         "teams",
         aliases=["ms-teams"],
         help="Microsoft Teams commands",
         parents=[parent_parser],
     )
-    load_subcommands_from_module(teams_parser, teams, "teams", parent_parser)
+    teams.add_arguments(teams_parser, parents=[parent_parser])
 
     return parser
 
@@ -535,39 +505,19 @@ async def _dispatch(args, context) -> int:
     command = args.command
 
     if command in ("sharepoint", "sp"):
-        if not getattr(args, "sp_command", None):
-            logger.error(
-                "Please specify a SharePoint subcommand (e.g., 'msgraphx sp search')"
-            )
-            return 1
-        return await _call_module(args.sp_module.run_with_arguments(context, args))
+        return await _call_module(sharepoint.run_with_arguments(context, args))
 
     if command in ("aad", "ad"):
-        if not getattr(args, "aad_command", None):
-            logger.error(
-                "Please specify an Azure AD subcommand (e.g., 'msgraphx aad search admin')"
-            )
-            return 1
-        return await _call_module(args.aad_module.run_with_arguments(context, args))
+        return await _call_module(aad.run_with_arguments(context, args))
 
     if command == "me":
         return await _call_module(me.run_with_arguments(context, args))
 
     if command in ("outlook", "mail"):
-        if not getattr(args, "outlook_command", None):
-            logger.error(
-                "Please specify an Outlook subcommand (e.g., 'msgraphx outlook contacts')"
-            )
-            return 1
-        return await _call_module(args.outlook_module.run_with_arguments(context, args))
+        return await _call_module(outlook.run_with_arguments(context, args))
 
     if command in ("teams", "ms-teams"):
-        if not getattr(args, "teams_command", None):
-            logger.error(
-                "Please specify a Teams subcommand (e.g., 'msgraphx teams contacts')"
-            )
-            return 1
-        return await _call_module(args.teams_module.run_with_arguments(context, args))
+        return await _call_module(teams.run_with_arguments(context, args))
 
     logger.info("✅ Authentication successful. Use a subcommand to perform actions.")
     return 0
@@ -578,12 +528,45 @@ async def _dispatch(args, context) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
+    """Extract global flags from argv independently of subparser nesting.
+
+    This avoids argparse's known limitation where nested subparsers stomp
+    namespace values set by a parent parser (even with SUPPRESS defaults).
+    """
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--debug", action="store_true", default=False)
+    p.add_argument("--trace", action="store_true", default=False)
+    p.add_argument(
+        "--log-level",
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default=None,
+    )
+    p.add_argument("--before", type=str, default=None)
+    p.add_argument("--after", type=str, default=None)
+    p.add_argument("--all", dest="fetch_all", action="store_true", default=False)
+    p.add_argument("--save", "--output", "-o", type=str, default=None)
+    ns, _ = p.parse_known_args(argv)
+    return ns
+
+
 @logger.catch
 async def _main() -> int:
+    # Pre-parse global flags to survive nested subparser default-stomping
+    globals_ns = _pre_parse_globals()
+
     parser = build_parser()
     args = parser.parse_args()
 
+    # Merge: pre-parsed globals win over subparser-stomped defaults
+    for key, value in vars(globals_ns).items():
+        if value:  # Only override if the flag was actually passed
+            setattr(args, key, value)
+
     _configure_logging(args)
+    logger.trace(
+        f"debug={args.debug!r}  trace={args.trace!r}  log_level={args.log_level!r}"
+    )
 
     if _apply_proxy(getattr(args, "proxy", None)):
         return 1
