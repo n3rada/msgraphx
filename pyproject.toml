@@ -17,6 +17,7 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "httpx[socks]>=0.28.1",
     "loguru>=0.7.3",
+    "markdownify>=0.14.1",
     "msgraph-sdk>=1.57.0",
     "pkce>=1.0.3",
     "prompt-toolkit>=3.0.52",
