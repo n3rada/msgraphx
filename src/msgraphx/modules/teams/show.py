@@ -21,14 +21,16 @@ from msgraph.generated.chats.item.messages.messages_request_builder import (
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph.generated.users.item.chats.chats_request_builder import ChatsRequestBuilder
+from rich.align import Align
 from rich.console import Console
+from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
 from ...utils.cache import load_results, parse_indices
 from ...utils.errors import handle_graph_errors
+from ...utils.html import render_html, strip_html
 from ...utils.pagination import GraphPaginator
-from ._common import extract_body
 
 _DEFAULT_CONTEXT = 4
 _DEFAULT_LAST = 20
@@ -62,6 +64,19 @@ def _sender(msg: ChatMessage) -> str:
     return "?"
 
 
+def _sender_short(msg: ChatMessage) -> str:
+    """Return just the first name of the sender."""
+    full = _sender(msg)
+    return full.split()[0] if full != "?" else "?"
+
+
+def _is_me(msg: ChatMessage, context: "GraphContext") -> bool:
+    """Check if the message was sent by the current user."""
+    if not context.cached_user or not msg.from_ or not msg.from_.user:
+        return False
+    return msg.from_.user.id == context.cached_user.id
+
+
 def _render_window(
     segment: list[ChatMessage],
     target_id: str,
@@ -70,7 +85,7 @@ def _render_window(
 ) -> None:
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in segment:
-        body = extract_body(msg)
+        body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
         sender = _sender(msg)
         created = msg.created_date_time
         sent = created.strftime("%Y-%m-%d %H:%M") if created else ""
@@ -102,7 +117,7 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
     name_lower = name.lower()
 
     chat_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
-        top=50,
+        top=10,
         select=["id", "topic"],
         expand=["members"],
     )
@@ -110,11 +125,13 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
     # Collect (score, chat_id, chat_label) for all matching chats.
     # Score: 3 = exact member name, 2 = member starts-with, 1 = topic/member substring.
+    # Smaller chats (1:1, small groups) get a bonus to prefer personal conversations.
     matches: list[tuple[int, str, str]] = []
 
     async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
         topic = chat.topic or ""
         members = chat.members or []
+        member_count = len(members)
 
         score = 0
         for m in members:
@@ -131,7 +148,16 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
                 score = max(score, 1)
         if name_lower in topic.lower() and score < 2:
             score = max(score, 1)
-        logger.debug(f"chat {(topic or chat.id)!r}: score={score}")
+
+        # Prefer 1:1 and small group chats over large groups
+        if score and member_count <= 3:
+            score += 2
+        elif score and member_count <= 5:
+            score += 1
+
+        logger.debug(
+            f"chat {(topic or chat.id)!r}: score={score} members={member_count}"
+        )
 
         if score:
             label = (
@@ -144,6 +170,10 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
                 or chat.id
             )
             matches.append((score, chat.id, label))
+
+            # Exact match in a 1:1 chat - no need to keep fetching
+            if score >= 5:
+                break
 
     if not matches:
         logger.error(f"No chat found matching {name!r}.")
@@ -186,11 +216,24 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
     console = Console()
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in reversed(collected):
-        body = extract_body(msg)
-        sender = _sender(msg)
+        body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
         created = msg.created_date_time
-        sent = created.strftime("%Y-%m-%d %H:%M") if created else ""
-        console.print(f"     {body}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]")
+        sent = created.strftime("%H:%M") if created else ""
+
+        if _is_me(msg, context):
+            # Own messages: right-aligned
+            line = Text()
+            line.append(body)
+            line.append(f"  {sent}", style="dim")
+            console.print(Align.right(line))
+        else:
+            # Other person: left-aligned with colored name
+            name = _sender_short(msg)
+            line = Text()
+            line.append(f"  {name}", style="bold cyan")
+            line.append(f" {sent}", style="dim")
+            line.append(f"  {body}")
+            console.print(line)
 
     return 0
 

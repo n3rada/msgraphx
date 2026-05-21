@@ -32,10 +32,8 @@ from ...core.context import GraphContext
 from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
+from ...utils.html import strip_html
 from ...utils.pagination import GraphPaginator
-from ._common import extract_body
-
-ALIASES = ["chats"]
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -92,8 +90,6 @@ async def _list_chats(context: "GraphContext") -> int:
                 last_ts = ts.strftime("%Y-%m-%d")
             body = chat.last_message_preview.body
             if body and body.content:
-                from ...utils.html import strip_html
-
                 raw = strip_html(body.content)
                 last_preview = raw[:60] + "…" if len(raw) > 60 else raw
 
@@ -116,15 +112,15 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
+    # No query and no filters → list recent chats overview (only needs Chat.Read)
+    if not args.query and not args.from_addr and not args.after and not args.before:
+        return await _list_chats(context)
+
     if not context.has_scope("ChannelMessage.Read.All"):
         logger.error(
             "❌ Missing required scope: ChannelMessage.Read.All (admin consent required)."
         )
         return 1
-
-    # No query and no filters → list recent chats overview
-    if not args.query and not args.from_addr and not args.after and not args.before:
-        return await _list_chats(context)
 
     query = args.query or "*"
 
@@ -182,7 +178,7 @@ async def run_with_arguments(
 
             created = msg.created_date_time
 
-            body = extract_body(msg)
+            body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
 
             sender = "?"
             sender_id = None
