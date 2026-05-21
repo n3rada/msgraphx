@@ -16,13 +16,13 @@ import asyncio
 
 # External library imports
 from loguru import logger
-from rich.console import Console
 from rich.table import Table
 
 # Local library imports
+from .groups import get_user_m365_groups
 from ...core.context import GraphContext
+from ...utils.console import console
 from ...utils.errors import handle_graph_errors
-from ...utils.pagination import GraphPaginator
 
 
 async def _fetch_group_site(context: "GraphContext", group_id: str) -> tuple | None:
@@ -56,26 +56,13 @@ async def run_with_arguments(
 
     show_all = getattr(args, "all_visibility", False)
 
-    console = Console()
 
     # -------------------------------------------------------------------------
     # 1. Fetch user's M365 group memberships
     # -------------------------------------------------------------------------
-    logger.info("Fetching group memberships")
-
-    groups = await GraphPaginator(
-        context.graph_client.me.transitive_member_of.graph_group
-    ).collect()
-
-    # Only Unified (M365) groups have SharePoint sites
-    m365_groups = [g for g in groups if g.group_types and "Unified" in g.group_types]
+    m365_groups = await get_user_m365_groups(context.graph_client)
     private_groups = [g for g in m365_groups if g.visibility == "Private"]
     public_groups = [g for g in m365_groups if g.visibility != "Private"]
-
-    logger.info(
-        f"Found {len(m365_groups)} M365 groups ({len(private_groups)} private, "
-        f"{len(public_groups)} public) out of {len(groups)} total groups"
-    )
 
     # -------------------------------------------------------------------------
     # 2. Resolve SharePoint site URLs for target groups (in parallel)
@@ -152,20 +139,20 @@ async def run_with_arguments(
         console.print()
 
     _print_table(
-        f"🔒 Private sites ({len(private_rows)}) - via group membership",
+        f"Private sites ({len(private_rows)}) - via group membership",
         ["Group", "Site", "URL"],
         private_rows,
     )
 
     if show_all:
         _print_table(
-            f"🌐 Public sites ({len(public_rows)}) - via group membership",
+            f"Public sites ({len(public_rows)}) - via group membership",
             ["Group", "Site", "URL"],
             public_rows,
         )
 
     _print_table(
-        f"⭐ Followed sites ({len(followed_rows)})",
+        f"Followed sites ({len(followed_rows)})",
         ["Site", "URL"],
         followed_rows,
     )

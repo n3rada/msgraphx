@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import download, search, sites
+from . import download, groups, search, sites
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -21,6 +21,13 @@ def add_arguments(
         help="Search for files inside both SharePoint and OneDrive.",
     )
     search.add_arguments(search_parser)
+
+    groups_parser = subparsers.add_parser(
+        "groups",
+        parents=parents,
+        help="List current user's Microsoft 365 groups.",
+    )
+    groups.add_arguments(groups_parser)
 
     sites_parser = subparsers.add_parser(
         "sites",
@@ -44,6 +51,8 @@ async def run_with_arguments(
 ) -> int:
     subcommand = args.subcommand
 
+    if subcommand == "groups":
+        return await groups.run_with_arguments(context, args)
     if subcommand == "search":
         return await search.run_with_arguments(context, args)
     if subcommand == "sites":

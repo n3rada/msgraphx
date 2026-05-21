@@ -9,16 +9,16 @@ from pathlib import Path
 
 # External library imports
 from loguru import logger
-from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.generated.models.entity_type import EntityType
-from rich.console import Console
 from rich.table import Table
 
 # Local library imports
+from .groups import get_user_m365_groups
 from ...core import graph_search
 from ...core.context import GraphContext
 from ...utils.cache import save_results
+from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 
@@ -82,53 +82,8 @@ HUNT_QUERIES = {
 }
 
 
-@handle_graph_errors
-async def get_user_sharepoint_groups(
-    graph_client: "GraphServiceClient", visibility: str = None
-) -> list:
-    """
-    Get current user's Microsoft 365 groups (which have SharePoint sites).
-
-    Args:
-        graph_client: Authenticated Graph client
-        visibility: Optional filter - 'Private' or 'Public'
-
-    Returns:
-        List of group objects with SharePoint sites
-    """
-    logger.info("📋 Fetching user's Microsoft 365 groups")
-
-    try:
-        result = await graph_client.me.transitive_member_of.graph_group.get()
-
-        if not result or not result.value:
-            logger.info("📭 No Microsoft 365 groups found")
-            return []
-
-        # Filter for M365 (Unified) groups with Teams/SharePoint provisioned
-        sp_groups = [
-            g
-            for g in result.value
-            if g.resource_provisioning_options
-            and "Team" in g.resource_provisioning_options
-        ]
-
-        # Filter by visibility if specified
-        if visibility:
-            sp_groups = [g for g in sp_groups if g.visibility == visibility]
-
-        logger.success(
-            f"✅ Found {len(sp_groups)} Microsoft 365 groups with SharePoint sites"
-        )
-        return sp_groups
-        return []
-
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch user groups: {e}")
-        return []
-
-
 def add_arguments(parser: "argparse.ArgumentParser"):
+    parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "query",
         nargs="?",
@@ -163,17 +118,11 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
     parser.add_argument(
-        "--list-groups",
-        action="store_true",
-        help="List current user's Microsoft 365 groups and exit (no search).",
-    )
-
-    parser.add_argument(
         "--visibility",
         type=str,
         choices=["Private", "Public"],
         default=None,
-        help="Filter groups by visibility (use with --my-groups or --list-groups).",
+        help="Filter groups by visibility (use with --my-groups).",
     )
 
 
@@ -181,27 +130,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
-
-    # Handle --list-groups command
-    if args.list_groups:
-        groups = await get_user_sharepoint_groups(context.graph_client, args.visibility)
-
-        if groups:
-            table = Table(
-                title=f"👥 Your Microsoft 365 Groups ({len(groups)})",
-                show_header=True,
-                header_style="bold",
-            )
-            table.add_column("#", justify="right", style="dim")
-            table.add_column("Group")
-            table.add_column("Email")
-            table.add_column("Visibility")
-            for idx, group in enumerate(groups, 1):
-                vis = f"🔒 {group.visibility}" if group.visibility else ""
-                table.add_row(str(idx), group.display_name, group.mail or "", vis)
-            Console().print(table)
-
-        return 0
 
     search_query = args.query
 
@@ -212,7 +140,7 @@ async def run_with_arguments(
     elif args.hunt:
         # Use predefined hunt query
         search_query = HUNT_QUERIES[args.hunt]
-        logger.info("🎯 Hunt mode")
+        logger.info("Hunt mode")
 
     filters = []
 
@@ -234,9 +162,9 @@ async def run_with_arguments(
 
     if filters:
         search_query += " " + " ".join(filters)
-        logger.info(f"📅 Date filters applied: {' and '.join(filters)}")
+        logger.info(f"Date filters applied: {' and '.join(filters)}")
 
-    logger.info(f"🔍 Search query: {search_query}")
+    logger.info(f"Search query: {search_query}")
 
     # Region is required for application permissions, optional for delegated
     region = args.region if getattr(args, "is_app_only", False) else None
@@ -244,27 +172,29 @@ async def run_with_arguments(
     # Handle --my-groups: search only in user's groups
     group_ids = None
     if args.my_groups:
-        groups = await get_user_sharepoint_groups(context.graph_client, args.visibility)
+        groups = await get_user_m365_groups(
+            context.graph_client, visibility=args.visibility, teams_only=True
+        )
         if not groups:
             logger.warning(
-                "⚠️ No Microsoft 365 groups found, no results will be returned"
+                "No Microsoft 365 groups found, no results will be returned"
             )
             return 0
 
         group_ids = [g.id for g in groups]
-        logger.info(f"🔒 Scoping search to {len(group_ids)} user groups")
+        logger.info(f"Scoping search to {len(group_ids)} user groups")
 
     # Get drive_id if provided to scope search
     drive_id = getattr(args, "drive_id", None)
     if drive_id:
-        logger.info(f"🔒 Scoping search to Drive ID: {drive_id}")
+        logger.info(f"Scoping search to Drive ID: {drive_id}")
 
     # Build search query with group filter if needed
     if group_ids:
         # Add filter to search only in these groups' drives
         group_filter = " OR ".join([f"GroupId:{gid}" for gid in group_ids])
         search_query = f"({search_query}) AND ({group_filter})"
-        logger.debug(f"📝 Modified query: {search_query}")
+        logger.debug(f"Modified query: {search_query}")
 
     search_options = graph_search.SearchOptions(
         query_string=search_query,
@@ -286,10 +216,9 @@ async def run_with_arguments(
     failed = 0
     cached_items: list[dict[str, str | int | None]] = []
 
-    console = Console()
 
     if not save_dir:
-        console.print("[bold]📄 Search results[/bold]")
+        console.print("[bold]Search results[/bold]")
         console.rule()
 
     try:
@@ -447,7 +376,7 @@ async def run_with_arguments(
 
                     # Check if file already exists - skip download if it does
                     if file_path.exists() and info_path.exists():
-                        logger.debug(f"⏭️  Skipping (already exists): {file_path.name}")
+                        logger.debug(f" Skipping (already exists): {file_path.name}")
                         downloaded += 1
                         continue
 
@@ -587,13 +516,13 @@ async def run_with_arguments(
                         with open(info_path, "w", encoding="utf-8") as f:
                             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-                        logger.debug(f"✅ Saved: {file_path.name}")
+                        logger.debug(f"Saved: {file_path.name}")
                         downloaded += 1
                     else:
-                        logger.warning(f"⚠️ Empty file: {drive_item.name}")
+                        logger.warning(f"Empty file: {drive_item.name}")
 
                 except Exception as e:
-                    logger.error(f"❌ Failed to download {drive_item.name}: {e}")
+                    logger.error(f"Failed to download {drive_item.name}: {e}")
                     failed += 1
 
     except KeyboardInterrupt:
@@ -604,12 +533,12 @@ async def run_with_arguments(
             save_results(cached_items, key="sharepoint")
 
     if count == 0:
-        logger.info("📭 No results found.")
+        logger.info("No results found.")
         return 0
 
     if save_dir:
-        logger.info(f"💾 {downloaded} items saved to: {save_dir.absolute()}")
+        logger.info(f"{downloaded} items saved to: {save_dir.absolute()}")
         if failed > 0:
-            logger.warning(f"⚠️ Failed: {failed}")
+            logger.warning(f"Failed: {failed}")
 
     return 0
