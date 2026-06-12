@@ -15,6 +15,7 @@ from rich.table import Table
 from ...utils.console import console
 
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
@@ -108,6 +109,22 @@ async def run_with_arguments(
 
     if not groups:
         logger.warning("No M365 groups found.")
+        return 0
+
+    if context.json_output:
+        output.print_json([
+            {
+                "id": g.id,
+                "display_name": g.display_name,
+                "mail": g.mail,
+                "visibility": g.visibility,
+                "teams_provisioned": bool(
+                    g.resource_provisioning_options
+                    and "Team" in g.resource_provisioning_options
+                ),
+            }
+            for g in groups
+        ])
         return 0
 
     table = Table(

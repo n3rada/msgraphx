@@ -21,6 +21,7 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
@@ -81,6 +82,21 @@ async def run_with_arguments(
             and type_filter in i.resource_visualization.type.lower()
         ]
 
+    if context.json_output:
+        output.print_json([
+            {
+                "rank": i,
+                "type": (item.resource_visualization.type if item.resource_visualization else None),
+                "title": (item.resource_visualization.title if item.resource_visualization else None),
+                "site": (item.resource_visualization.container_display_name if item.resource_visualization else None),
+                "weight": item.weight,
+                "url": (item.resource_reference.web_url if item.resource_reference else None),
+                "id": (item.resource_reference.id if item.resource_reference else None),
+            }
+            for i, item in enumerate(items, 1)
+        ])
+        return 0
+
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("#", style="dim", justify="right", width=4)
     table.add_column("Type", style="cyan", width=12)
@@ -90,14 +106,12 @@ async def run_with_arguments(
 
     for i, item in enumerate(items, 1):
         viz = item.resource_visualization
-        ref = item.resource_reference
 
         title = (viz.title if viz else None) or "(untitled)"
         file_type = (viz.type if viz else None) or "?"
         site = (viz.container_display_name if viz else None) or ""
         weight = f"{item.weight:.3f}" if item.weight else ""
 
-        # Truncate long titles
         if len(title) > 80:
             title = title[:77] + "..."
 

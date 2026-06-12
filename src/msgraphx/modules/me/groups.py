@@ -11,6 +11,7 @@ from loguru import logger
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.errors import handle_graph_errors
 
 
@@ -55,43 +56,58 @@ async def run_with_arguments(
     if args.visibility:
         groups = [g for g in groups if g.visibility == args.visibility]
 
-    if groups:
-        # Sort by creation date (newest first)
-        groups.sort(
-            key=lambda g: g.created_date_time
-            or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
-        )
-
-        for group in groups:
-            logger.success(f"{group.display_name}")
-
-            if group.description:
-                logger.info(f"Description: {group.description}")
-
-            logger.info(f"ID: {group.id}")
-
-            if group.mail:
-                logger.info(f"Email: {group.mail}")
-
-            if group.security_identifier:
-                logger.info(f"Security Identifier: {group.security_identifier}")
-
-            # Show boolean properties
-            logger.info(f"Security Enabled: {group.security_enabled}")
-            logger.info(f"Mail Enabled: {group.mail_enabled}")
-
-            if group.visibility:
-                logger.info(f"Visibility: {group.visibility}")
-
-            # Show creation date if available
-            if group.created_date_time:
-                logger.info(
-                    f"Created: {group.created_date_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                )
-
-        logger.info(f"Total: {len(groups)} groups")
-    else:
+    if not groups:
         logger.info("No groups found")
+        return 0
 
+    # Sort by creation date (newest first)
+    groups.sort(
+        key=lambda g: g.created_date_time
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    if context.json_output:
+        output.print_json([
+            {
+                "id": g.id,
+                "display_name": g.display_name,
+                "description": g.description,
+                "mail": g.mail,
+                "security_identifier": g.security_identifier,
+                "security_enabled": g.security_enabled,
+                "mail_enabled": g.mail_enabled,
+                "visibility": g.visibility,
+                "created_date_time": g.created_date_time.isoformat() if g.created_date_time else None,
+            }
+            for g in groups
+        ])
+        return 0
+
+    for group in groups:
+        logger.success(f"{group.display_name}")
+
+        if group.description:
+            logger.info(f"Description: {group.description}")
+
+        logger.info(f"ID: {group.id}")
+
+        if group.mail:
+            logger.info(f"Email: {group.mail}")
+
+        if group.security_identifier:
+            logger.info(f"Security Identifier: {group.security_identifier}")
+
+        logger.info(f"Security Enabled: {group.security_enabled}")
+        logger.info(f"Mail Enabled: {group.mail_enabled}")
+
+        if group.visibility:
+            logger.info(f"Visibility: {group.visibility}")
+
+        if group.created_date_time:
+            logger.info(
+                f"Created: {group.created_date_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            )
+
+    logger.info(f"Total: {len(groups)} groups")
     return 0

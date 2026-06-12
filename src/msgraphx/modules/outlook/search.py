@@ -22,7 +22,7 @@ from msgraph.generated.models.message import Message
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils import cache
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -111,8 +111,9 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    console.print("[bold]Mail search results[/bold]")
-    console.rule()
+    if not context.json_output:
+        console.print("[bold]Mail search results[/bold]")
+        console.rule()
 
     try:
         async for _item in graph_search.search_entities(
@@ -151,10 +152,11 @@ async def run_with_arguments(
             subject = msg.subject or "(no subject)"
             attach_flag = " [+att]" if msg.has_attachments else ""
 
-            console.print(
-                f"  [dim]{count:>4}.[/dim]  {subject}{attach_flag}  "
-                f"[dim]{from_display}[/dim]  [cyan]{received}[/cyan]"
-            )
+            if not context.json_output:
+                console.print(
+                    f"  [dim]{count:>4}.[/dim]  {subject}{attach_flag}  "
+                    f"[dim]{from_display}[/dim]  [cyan]{received}[/cyan]"
+                )
 
             cached_items.append(
                 {
@@ -207,5 +209,8 @@ async def run_with_arguments(
     if count == 0:
         logger.info("No results found.")
         return 0
+
+    if context.json_output and cached_items:
+        output.print_json(cached_items)
 
     return 0

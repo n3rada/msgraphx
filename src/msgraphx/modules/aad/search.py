@@ -22,7 +22,7 @@ from msgraph.generated.applications.applications_request_builder import (
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import pagination
+from ...utils import output, pagination
 from ...utils.errors import handle_graph_errors
 
 # Preset hunt queries for common privileged groups
@@ -128,6 +128,7 @@ async def search_groups(
     output_dir: Path = None,
     contains: bool = False,
     show_synced_only: bool = False,
+    results_collector: list | None = None,
 ) -> int:
     """Search for groups matching the query."""
     logger.info(f"Searching for groups matching: {query}")
@@ -190,6 +191,9 @@ async def search_groups(
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "groups", query, all_results, output_dir)
 
+        if results_collector is not None:
+            results_collector.extend([serialize_object(obj) for obj in all_results])
+
     except Exception as e:
         logger.error(f"Failed to search groups: {e}")
 
@@ -203,6 +207,7 @@ async def search_users(
     save_json: bool = False,
     tenant_id: str = None,
     output_dir: Path = None,
+    results_collector: list | None = None,
 ) -> int:
     """Search for users matching the query."""
     logger.info(f"Searching for users matching: {query}")
@@ -240,6 +245,9 @@ async def search_users(
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "users", query, all_results, output_dir)
 
+        if results_collector is not None:
+            results_collector.extend([serialize_object(obj) for obj in all_results])
+
     except Exception as e:
         logger.error(f"Failed to search users: {e}")
 
@@ -253,6 +261,7 @@ async def search_devices(
     save_json: bool = False,
     tenant_id: str = None,
     output_dir: Path = None,
+    results_collector: list | None = None,
 ) -> int:
     """Search for devices/computers matching the query."""
     logger.info(f"Searching for devices matching: {query}")
@@ -296,6 +305,9 @@ async def search_devices(
         elif save_json and tenant_id:
             save_results_to_json(tenant_id, "devices", query, all_results, output_dir)
 
+        if results_collector is not None:
+            results_collector.extend([serialize_object(obj) for obj in all_results])
+
     except Exception as e:
         logger.error(f"Failed to search devices: {e}")
 
@@ -309,6 +321,7 @@ async def search_service_principals(
     save_json: bool = False,
     tenant_id: str = None,
     output_dir: Path = None,
+    results_collector: list | None = None,
 ) -> int:
     """Search for service principals matching the query."""
     logger.info(f"Searching for service principals matching: {query}")
@@ -347,6 +360,9 @@ async def search_service_principals(
                 tenant_id, "service_principals", query, all_results, output_dir
             )
 
+        if results_collector is not None:
+            results_collector.extend([serialize_object(obj) for obj in all_results])
+
     except Exception as e:
         logger.error(f"Failed to search service principals: {e}")
 
@@ -360,6 +376,7 @@ async def search_applications(
     save_json: bool = False,
     tenant_id: str = None,
     output_dir: Path = None,
+    results_collector: list | None = None,
 ) -> int:
     """Search for applications matching the query."""
     logger.info(f"Searching for applications matching: {query}")
@@ -398,6 +415,9 @@ async def search_applications(
             save_results_to_json(
                 tenant_id, "applications", query, all_results, output_dir
             )
+
+        if results_collector is not None:
+            results_collector.extend([serialize_object(obj) for obj in all_results])
 
     except Exception as e:
         logger.error(f"Failed to search applications: {e}")
@@ -455,10 +475,11 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
     parser.add_argument(
-        "--json-output",
+        "--save-dir",
+        dest="save_dir",
         type=str,
         default=None,
-        help="Output directory for JSON results. Defaults to current directory. Results saved as: {output}/{tenant_id}/{type}_{query}_{timestamp}.json",
+        help="Save results as JSON files under this directory. Structure: {dir}/{tenant_id}/{type}_{query}_{timestamp}.json",
     )
 
 
@@ -497,18 +518,23 @@ async def run_with_arguments(
 
     # Get tenant ID and output settings
     tenant_id = getattr(args, "tenant_id", None)
-    save_json = args.json_output is not None
-    output_dir = Path(args.json_output) if args.json_output else Path.cwd()
+    save_dir = getattr(args, "save_dir", None)
+    save_json = save_dir is not None
+    output_dir = Path(save_dir) if save_dir else Path.cwd()
 
     if save_json and not tenant_id:
         logger.warning("Tenant ID not available, using 'unknown' for directory name")
         tenant_id = "unknown"
 
     total_found = 0
+    # Keyed by search_type, accumulates serialized results for --json output
+    json_results: dict[str, list] | None = {} if context.json_output else None
 
     # Execute searches
     for query in queries:
         for search_type in search_types:
+            collector: list | None = [] if json_results is not None else None
+
             if search_type == "groups":
                 total_found += await search_groups(
                     context.graph_client,
@@ -518,27 +544,55 @@ async def run_with_arguments(
                     output_dir,
                     contains=args.contains,
                     show_synced_only=args.synced_only,
+                    results_collector=collector,
                 )
             elif search_type == "users":
                 total_found += await search_users(
-                    context.graph_client, query, save_json, tenant_id, output_dir
+                    context.graph_client,
+                    query,
+                    save_json,
+                    tenant_id,
+                    output_dir,
+                    results_collector=collector,
                 )
             elif search_type in ["devices", "computers"]:
                 total_found += await search_devices(
-                    context.graph_client, query, save_json, tenant_id, output_dir
+                    context.graph_client,
+                    query,
+                    save_json,
+                    tenant_id,
+                    output_dir,
+                    results_collector=collector,
                 )
             elif search_type == "service-principals":
                 total_found += await search_service_principals(
-                    context.graph_client, query, save_json, tenant_id, output_dir
+                    context.graph_client,
+                    query,
+                    save_json,
+                    tenant_id,
+                    output_dir,
+                    results_collector=collector,
                 )
             elif search_type == "applications":
                 total_found += await search_applications(
-                    context.graph_client, query, save_json, tenant_id, output_dir
+                    context.graph_client,
+                    query,
+                    save_json,
+                    tenant_id,
+                    output_dir,
+                    results_collector=collector,
                 )
+
+            if collector and json_results is not None:
+                json_results.setdefault(search_type, []).extend(collector)
 
             # Add separator between different searches
             if len(queries) > 1 or len(search_types) > 1:
                 logger.info("─" * 80)
 
     logger.info(f"Total objects found: {total_found}")
+
+    if json_results is not None:
+        output.print_json(json_results)
+
     return 0

@@ -28,7 +28,7 @@ from rich.table import Table
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils.cache import save_results
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -70,6 +70,8 @@ async def _list_chats(context: "GraphContext") -> int:
     table.add_column("Date", style="cyan", width=10)
 
     count = 0
+    chats_data: list[dict] = []
+
     async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
         members = chat.members or []
         label = (
@@ -94,9 +96,14 @@ async def _list_chats(context: "GraphContext") -> int:
                 last_preview = raw[:60] + "…" if len(raw) > 60 else raw
 
         count += 1
+        chats_data.append({"id": chat.id, "label": label, "last_message": last_preview, "last_date": last_ts})
         table.add_row(str(count), label, last_preview, last_ts)
         if count >= 20:
             break
+
+    if context.json_output:
+        output.print_json(chats_data)
+        return 0
 
     console.print("[bold]Recent chats[/bold]")
     console.rule()
@@ -160,8 +167,9 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    console.print("[bold]Teams chat search results[/bold]")
-    console.rule()
+    if not context.json_output:
+        console.print("[bold]Teams chat search results[/bold]")
+        console.rule()
 
     try:
         async for _item in graph_search.search_entities(
@@ -189,10 +197,11 @@ async def run_with_arguments(
             sent = created.strftime("%Y-%m-%d") if created else ""
             preview = body[:120] + "…" if len(body) > 120 else body
 
-            console.print(
-                f"  [dim]{count:>4}.[/dim]  "
-                f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
-            )
+            if not context.json_output:
+                console.print(
+                    f"  [dim]{count:>4}.[/dim]  "
+                    f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
+                )
 
             cached_items.append(
                 {
@@ -214,13 +223,17 @@ async def run_with_arguments(
             logger.info(f"Interrupted — {count} result(s) cached.")
     finally:
         if cached_items:
-            save_results(cached_items, key="teams")
+            cache.save_results(cached_items, key="teams")
 
-    console.rule()
+    if not context.json_output:
+        console.rule()
 
     if count == 0:
         logger.info("No results found.")
     else:
         logger.success(f"{count} message(s) found.")
+
+    if context.json_output and cached_items:
+        output.print_json(cached_items)
 
     return 0

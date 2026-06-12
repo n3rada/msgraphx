@@ -102,6 +102,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory path to save downloaded files. Creates the directory if it doesn't exist.",
     )
 
+    output_group.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        dest="json_output",
+        help="Output results as JSON to stdout (suppresses console rendering, sets log level to WARNING).",
+    )
+
     parser = argparse.ArgumentParser(
         prog="msgraphx",
         add_help=True,
@@ -119,6 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         after=None,
         fetch_all=False,
         save=None,
+        json_output=False,
     )
 
     parser.add_argument(
@@ -259,6 +268,8 @@ def _configure_logging(args) -> None:
         level = "DEBUG"
     elif args.trace:
         level = "TRACE"
+    elif getattr(args, "json_output", False):
+        level = "WARNING"
     else:
         level = "INFO"
     logbook.setup_logging(level=level)
@@ -547,6 +558,7 @@ def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--after", type=str, default=None)
     p.add_argument("--all", dest="fetch_all", action="store_true", default=False)
     p.add_argument("--save", "--output", "-o", type=str, default=None)
+    p.add_argument("--json", dest="json_output", action="store_true", default=False)
     ns, _ = p.parse_known_args(argv)
     return ns
 
@@ -609,6 +621,7 @@ async def _main() -> int:
         region=args.region,
         cached_user=cached_user,
         token_scopes=token_scopes,
+        json_output=getattr(args, "json_output", False),
     )
 
     return await _dispatch(args, context)

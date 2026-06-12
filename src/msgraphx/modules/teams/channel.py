@@ -28,7 +28,7 @@ from rich.table import Table
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils.cache import save_results
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -56,6 +56,13 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 async def _list_teams(context: "GraphContext") -> int:
     response = await context.graph_client.me.joined_teams.get()
     teams = (response.value or []) if response else []
+
+    if context.json_output:
+        output.print_json([
+            {"id": t.id, "display_name": t.display_name, "description": t.description}
+            for t in teams
+        ])
+        return 0
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
     table.add_column("#", style="dim", justify="right", width=4)
@@ -126,8 +133,9 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    console.print("[bold]Teams channel search results[/bold]")
-    console.rule()
+    if not context.json_output:
+        console.print("[bold]Teams channel search results[/bold]")
+        console.rule()
 
     try:
         async for _item in graph_search.search_entities(
@@ -164,10 +172,11 @@ async def run_with_arguments(
 
             preview = body[:120] + "…" if len(body) > 120 else body
 
-            console.print(
-                f"  [dim]{count:>4}.[/dim]  "
-                f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
-            )
+            if not context.json_output:
+                console.print(
+                    f"  [dim]{count:>4}.[/dim]  "
+                    f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
+                )
 
             cached_items.append(
                 {
@@ -195,12 +204,17 @@ async def run_with_arguments(
             logger.info(f"Interrupted — {count} result(s) cached.")
     finally:
         if cached_items:
-            save_results(cached_items, key="teams")
+            cache.save_results(cached_items, key="teams")
 
-    console.rule()
+    if not context.json_output:
+        console.rule()
+
     if count == 0:
         logger.info("No results found.")
     else:
         logger.success(f"{count} message(s) found.")
+
+    if context.json_output and cached_items:
+        output.print_json(cached_items)
 
     return 0

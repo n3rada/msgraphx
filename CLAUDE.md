@@ -48,7 +48,8 @@ uv run msgraphx --trace outlook contacts
 | [`src/msgraphx/utils/cache.py`](src/msgraphx/utils/cache.py) | XDG result cache, `parse_indices` |
 | [`src/msgraphx/utils/tokens.py`](src/msgraphx/utils/tokens.py) | Token loading, refresh, `.roadtools_auth` interop |
 | [`src/msgraphx/utils/logbook.py`](src/msgraphx/utils/logbook.py) | Loguru setup, log rotation |
-| [`src/msgraphx/utils/console.py`](src/msgraphx/utils/console.py) | Shared Rich `Console` instance |
+| [`src/msgraphx/utils/console.py`](src/msgraphx/utils/console.py) | Shared Rich `Console` instance (stdout) |
+| [`src/msgraphx/utils/output.py`](src/msgraphx/utils/output.py) | `print_json(data)` — writes JSON to stdout for `--json` mode |
 | [`tests/`](tests/) | pytest suite |
 
 ## Architecture and Design Principles
@@ -83,6 +84,19 @@ When adding or changing a module:
 5. Prototype the Graph API call in [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) first — note required scopes and exact response shape before writing model access code.
 6. Use `pagination.GraphPaginator` or `pagination.collect_all` for any paginated resource.
 7. Use `search_entities` from `core/graph_search.py` for full-text search endpoints.
+
+## JSON Output
+
+Every module supports `--json` (global flag). When set:
+- `context.json_output` is `True` inside the module.
+- Skip all `console.print()` calls — output nothing to stdout except the final JSON.
+- At the end of `run_with_arguments`, call `output.print_json(data)` with a list of dicts or a dict.
+- The log level is automatically set to `WARNING` to suppress info noise on stderr.
+- Logger still writes warnings and errors to stderr — this does not pollute the stdout JSON.
+
+Import: `from ...utils import output`, then call `output.print_json(data)`.
+
+The `--save-dir` argument in `aad search` saves results to disk files. It is separate from `--json` (stdout) and can be combined with it.
 
 ## Logging and Output Rules
 

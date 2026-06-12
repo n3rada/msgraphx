@@ -124,7 +124,25 @@ from ...utils.errors import handle_graph_errors
 - Prefer concrete types. Avoid `Any` except where the SDK's own types are unresolvable at annotation time.
 - Use `frozenset`, `tuple`, and other immutable types where mutation is not intended.
 
-### 3. Error handling and logging
+### 3. JSON output
+
+All modules support the global `--json` flag. When `context.json_output` is `True`:
+
+- Do not call `console.print()` — output nothing to stdout except the final JSON.
+- At the end of `run_with_arguments`, call `output.print_json(data)` where `data` is a list of dicts or a dict.
+- Log level is automatically raised to `WARNING` so stderr noise does not pollute the JSON stream.
+- Import via `from ...utils import output`, call as `output.print_json(data)`.
+
+```python
+if context.json_output:
+    output.print_json([{"id": item.id, "name": item.name, ...} for item in results])
+    return 0
+# existing Rich rendering below
+```
+
+The `--save-dir` argument in `aad search` saves results to disk as JSON files — this is independent of `--json` (stdout) and both can be used simultaneously.
+
+### 4. Error handling and logging
 
 - Avoid broad `except Exception` unless you are re-raising, translating to a domain error, or intentionally degrading behavior.
 - In `except Exception` handlers, choose based on whether the tool stops or continues:
@@ -206,7 +224,8 @@ Prefer composing small, focused functions and passing `GraphContext` over buildi
 | [`src/msgraphx/utils/cache.py`](src/msgraphx/utils/cache.py) | Result persistence and retrieval |
 | [`src/msgraphx/utils/tokens.py`](src/msgraphx/utils/tokens.py) | Token loading, refresh, `.roadtools_auth` interop |
 | [`src/msgraphx/utils/logbook.py`](src/msgraphx/utils/logbook.py) | Loguru configuration |
-| [`src/msgraphx/utils/console.py`](src/msgraphx/utils/console.py) | Shared Rich `Console` instance |
+| [`src/msgraphx/utils/console.py`](src/msgraphx/utils/console.py) | Shared Rich `Console` instance (stdout) |
+| [`src/msgraphx/utils/output.py`](src/msgraphx/utils/output.py) | `print_json(data)` — JSON-to-stdout for `--json` mode |
 | [`tests/`](tests/) | pytest suite |
 
 ---

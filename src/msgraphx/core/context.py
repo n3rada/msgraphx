@@ -25,6 +25,7 @@ class GraphContext:
     region: str = "EMEA"
     cached_user: User | None = None
     token_scopes: frozenset[str] = field(default_factory=frozenset)
+    json_output: bool = False
 
     def has_scope(self, *required: str) -> bool:
         """Return True if all required scopes are present in the delegated token."""

@@ -17,7 +17,7 @@ from rich.table import Table
 from .groups import get_user_m365_groups
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils import cache
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -217,7 +217,7 @@ async def run_with_arguments(
     cached_items: list[dict[str, str | int | None]] = []
 
 
-    if not save_dir:
+    if not save_dir and not context.json_output:
         console.print("[bold]Search results[/bold]")
         console.rule()
 
@@ -252,7 +252,7 @@ async def run_with_arguments(
                 else ""
             )
             # Cache full DriveItem metadata for later download by index
-            if not save_dir:
+            if not save_dir and not context.json_output:
                 console.print(
                     f"  [dim]{count:>4}.[/dim]  {drive_item.name}  "
                     f"[dim]{author}[/dim]  [cyan]{size_str}[/cyan]  [dim]{created}[/dim]"
@@ -540,5 +540,8 @@ async def run_with_arguments(
         logger.info(f"{downloaded} items saved to: {save_dir.absolute()}")
         if failed > 0:
             logger.warning(f"Failed: {failed}")
+
+    if context.json_output and cached_items:
+        output.print_json(cached_items)
 
     return 0

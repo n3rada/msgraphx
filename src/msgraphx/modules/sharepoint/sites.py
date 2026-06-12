@@ -21,6 +21,7 @@ from rich.table import Table
 # Local library imports
 from .groups import get_user_m365_groups
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
@@ -116,6 +117,18 @@ async def run_with_arguments(
     except Exception as exc:
         logger.error(f"Failed to fetch followed sites: {exc}")
 
+    total = (
+        len(private_rows) + (len(public_rows) if show_all else 0) + len(followed_rows)
+    )
+
+    if context.json_output:
+        output.print_json({
+            "private_sites": [{"group": r[0], "site": r[1], "url": r[2]} for r in private_rows],
+            "public_sites": [{"group": r[0], "site": r[1], "url": r[2]} for r in public_rows] if show_all else [],
+            "followed_sites": [{"site": r[0], "url": r[1]} for r in followed_rows],
+        })
+        return 0
+
     # -------------------------------------------------------------------------
     # Display
     # -------------------------------------------------------------------------
@@ -155,9 +168,6 @@ async def run_with_arguments(
         followed_rows,
     )
 
-    total = (
-        len(private_rows) + (len(public_rows) if show_all else 0) + len(followed_rows)
-    )
     if total == 0:
         logger.info("No sites found")
     else:
