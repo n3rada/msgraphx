@@ -29,6 +29,26 @@ from .modules import aad, graph, me, outlook, sharepoint, teams
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
+_KNOWN_COMMANDS: frozenset[str] = frozenset(
+    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query"}
+)
+
+
+def _inject_query_subcommand(argv: list[str]) -> list[str]:
+    """Make 'query' the default subcommand.
+
+    If the first non-flag positional is not a known subcommand, prepend 'query'
+    so that e.g. `msgraphx /users` and `msgraphx me/messages` work without
+    an explicit subcommand name.
+    """
+    for i, tok in enumerate(argv):
+        if tok.startswith("-"):
+            continue
+        if tok not in _KNOWN_COMMANDS:
+            return argv[:i] + ["query"] + argv[i:]
+        break
+    return argv
+
 
 def build_parser() -> argparse.ArgumentParser:
     # Create parent parser with global options that all subcommands inherit.
@@ -595,16 +615,19 @@ def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 @logger.catch
-async def _main() -> int:
-    # Pre-parse global flags to survive nested subparser default-stomping
-    globals_ns = _pre_parse_globals()
+async def _main(argv: list[str]) -> int:
+    # Pre-parse global flags to survive nested subparser default-stomping.
+    # argparse resets parent-parser values when nested subparsers are involved;
+    # _pre_parse_globals extracts globals from the raw argv independently.
+    globals_ns = _pre_parse_globals(argv)
 
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    # Merge: pre-parsed globals win over subparser-stomped defaults
+    # Merge globals back: only override values that were explicitly passed
+    # (non-None for strings, True for store_true flags — never False, never None).
     for key, value in vars(globals_ns).items():
-        if value:  # Only override if the flag was actually passed
+        if value is not None and value is not False:
             setattr(args, key, value)
 
     _configure_logging(args)
@@ -660,31 +683,9 @@ async def _main() -> int:
     return await _dispatch(args, context)
 
 
-_KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query"}
-)
-
-
-def _inject_query_subcommand(argv: list[str]) -> list[str]:
-    """Make 'query' the default subcommand.
-
-    If the first non-flag positional is not a known subcommand, prepend 'query'
-    so that e.g. `msgraphx /users` and `msgraphx me/messages` work without
-    an explicit subcommand name.
-    """
-    for i, tok in enumerate(argv):
-        if tok.startswith("-"):
-            continue
-        if tok not in _KNOWN_COMMANDS:
-            return argv[:i] + ["query"] + argv[i:]
-        break
-    return argv
-
-
 def main() -> None:
-    sys.argv[1:] = _inject_query_subcommand(sys.argv[1:])
-
+    argv = _inject_query_subcommand(sys.argv[1:])
     try:
-        raise SystemExit(asyncio.run(_main()))
+        raise SystemExit(asyncio.run(_main(argv)))
     except KeyboardInterrupt:
         raise SystemExit(130)
