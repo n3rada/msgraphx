@@ -210,7 +210,7 @@ async def run_with_arguments(
                     "chat_label": msg.chat_id,
                     "body": body,
                     "web_url": msg.web_url,
-                    "importance": str(msg.importance) if msg.importance else None,
+                    "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
                     "sent_datetime": created.isoformat() if created else None,
                     "sent": sent,
                     "sender": sender,
@@ -233,7 +233,7 @@ async def run_with_arguments(
     else:
         logger.success(f"{count} message(s) found.")
 
-    if context.json_output and cached_items:
+    if context.json_output:
         output.print_json(cached_items)
 
     return 0

@@ -169,7 +169,7 @@ async def run_with_arguments(
                     "conversation_id": msg.conversation_id,
                     "internet_message_id": msg.internet_message_id,
                     "is_read": msg.is_read,
-                    "importance": str(msg.importance) if msg.importance else None,
+                    "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
                     "has_attachments": msg.has_attachments,
                     # Dates
                     "received_datetime": (
@@ -208,6 +208,8 @@ async def run_with_arguments(
 
     if count == 0:
         logger.info("No results found.")
+        if context.json_output:
+            output.print_json([])
         return 0
 
     if context.json_output and cached_items:

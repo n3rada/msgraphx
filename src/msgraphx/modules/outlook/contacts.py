@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.resources
 import json
 from collections import Counter
@@ -39,6 +40,7 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -130,23 +132,25 @@ async def run_with_arguments(
             "SentItems"
         ).messages
 
-        with Live(console=console, refresh_per_second=4) as live:
+        live_ctx = contextlib.nullcontext() if context.json_output else Live(console=console, refresh_per_second=4)
+        with live_ctx as live:
             async for msg in GraphPaginator(sent_builder, request_config):
                 total += 1
-                live.update(
-                    Group(
-                        _build_table(
-                            to_counter,
-                            names,
-                            f"Top {args.top or len(to_counter)} — sent To ({total:,} scanned)",
-                        ),
-                        _build_table(
-                            cc_counter,
-                            names,
-                            f"Top {args.top or len(cc_counter)} — sent CC",
-                        ),
+                if live is not None:
+                    live.update(
+                        Group(
+                            _build_table(
+                                to_counter,
+                                names,
+                                f"Top {args.top or len(to_counter)} — sent To ({total:,} scanned)",
+                            ),
+                            _build_table(
+                                cc_counter,
+                                names,
+                                f"Top {args.top or len(cc_counter)} — sent CC",
+                            ),
+                        )
                     )
-                )
 
                 for r in msg.to_recipients or []:
                     if r.email_address and r.email_address.address:
@@ -227,23 +231,25 @@ async def run_with_arguments(
         logger.info("Fetching received messages from Inbox")
 
         total_recv = 0
-        with Live(console=console, refresh_per_second=4) as live:
+        recv_live_ctx = contextlib.nullcontext() if context.json_output else Live(console=console, refresh_per_second=4)
+        with recv_live_ctx as live:
             async for msg in GraphPaginator(inbox_builder, recv_cfg):
                 total_recv += 1
-                live.update(
-                    Group(
-                        _build_table(
-                            recv_to_counter,
-                            recv_names,
-                            f"Top {args.top or len(recv_to_counter)} — received as To ({total_recv:,} scanned)",
-                        ),
-                        _build_table(
-                            recv_cc_counter,
-                            recv_names,
-                            f"Top {args.top or len(recv_cc_counter)} — received as CC",
-                        ),
+                if live is not None:
+                    live.update(
+                        Group(
+                            _build_table(
+                                recv_to_counter,
+                                recv_names,
+                                f"Top {args.top or len(recv_to_counter)} — received as To ({total_recv:,} scanned)",
+                            ),
+                            _build_table(
+                                recv_cc_counter,
+                                recv_names,
+                                f"Top {args.top or len(recv_cc_counter)} — received as CC",
+                            ),
+                        )
                     )
-                )
 
                 if not (
                     msg.from_
@@ -284,10 +290,7 @@ async def run_with_arguments(
             "Could not determine your email address; skipping received analysis."
         )
 
-    if args.save:
-        save_path = Path(args.save)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-
+    if args.save or context.json_output:
         all_addrs = set(to_counter) | set(cc_counter)
         data = {
             "sent": [
@@ -324,9 +327,14 @@ async def run_with_arguments(
             ),
         }
 
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        if args.save:
+            save_path = Path(args.save)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Full results saved to: {save_path.absolute()}")
 
-        logger.info(f"Full results saved to: {save_path.absolute()}")
+        if context.json_output:
+            output.print_json(data)
 
     return 0

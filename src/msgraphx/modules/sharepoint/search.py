@@ -534,6 +534,8 @@ async def run_with_arguments(
 
     if count == 0:
         logger.info("No results found.")
+        if context.json_output:
+            output.print_json([])
         return 0
 
     if save_dir:

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 from collections import Counter
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
@@ -108,21 +110,23 @@ async def run_with_arguments(
             table.add_row(str(rank), str(cnt), names.get(uid, uid))
         return table
 
-    with Live(console=console, refresh_per_second=4) as live:
+    live_ctx = contextlib.nullcontext() if context.json_output else Live(console=console, refresh_per_second=4)
+    with live_ctx as live:
         async for chat in GraphPaginator(context.graph_client.me.chats, request_config):
             total += 1
-            live.update(
-                Group(
-                    _build_table(
-                        dm_counter,
-                        f"Top {args.top or len(dm_counter)} — Direct message partners ({total:,} scanned)",
-                    ),
-                    _build_table(
-                        group_counter,
-                        f"Top {args.top or len(group_counter)} — Group chat participants",
-                    ),
+            if live is not None:
+                live.update(
+                    Group(
+                        _build_table(
+                            dm_counter,
+                            f"Top {args.top or len(dm_counter)} — Direct message partners ({total:,} scanned)",
+                        ),
+                        _build_table(
+                            group_counter,
+                            f"Top {args.top or len(group_counter)} — Group chat participants",
+                        ),
+                    )
                 )
-            )
 
             chat_type = str(chat.chat_type) if chat.chat_type else ""
             members = chat.members or []
@@ -179,9 +183,7 @@ async def run_with_arguments(
         f"{len(dm_counter) + len(group_counter)} unique contacts"
     )
 
-    if args.save:
-        save_path = Path(args.save)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.save or context.json_output:
         data = {
             "one_on_one": one_on_one,
             "groups": groups,
@@ -194,8 +196,15 @@ async def run_with_arguments(
                 for uid, cnt in group_counter.most_common()
             ],
         }
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        logger.info(f"Full results saved to: {save_path.absolute()}")
+
+        if args.save:
+            save_path = Path(args.save)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Full results saved to: {save_path.absolute()}")
+
+        if context.json_output:
+            output.print_json(data)
 
     return 0
