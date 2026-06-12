@@ -107,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=argparse.SUPPRESS,
         dest="json_output",
-        help="Output results as JSON to stdout (suppresses console rendering, sets log level to WARNING).",
+        help="Output results as JSON to stdout. Suppresses console rendering; logs still go to stderr.",
     )
 
     parser = argparse.ArgumentParser(
@@ -268,8 +268,6 @@ def _configure_logging(args) -> None:
         level = "DEBUG"
     elif args.trace:
         level = "TRACE"
-    elif getattr(args, "json_output", False):
-        level = "WARNING"
     else:
         level = "INFO"
     logbook.setup_logging(level=level)

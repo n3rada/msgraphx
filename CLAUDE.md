@@ -91,8 +91,7 @@ Every module supports `--json` (global flag). When set:
 - `context.json_output` is `True` inside the module.
 - Skip all `console.print()` calls — output nothing to stdout except the final JSON.
 - At the end of `run_with_arguments`, call `output.print_json(data)` with a list of dicts or a dict.
-- The log level is automatically set to `WARNING` to suppress info noise on stderr.
-- Logger still writes warnings and errors to stderr — this does not pollute the stdout JSON.
+- Logger continues writing to stderr at normal level — this does not pollute the stdout JSON stream.
 
 Import: `from ...utils import output`, then call `output.print_json(data)`.
 

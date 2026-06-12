@@ -63,7 +63,7 @@ Detailed rationale lives in [DEVELOPMENT.md](../DEVELOPMENT.md). If this file an
 Every module supports the global `--json` flag. When `context.json_output` is `True`:
 - Suppress all `console.print()` calls — nothing goes to stdout except the final JSON.
 - Call `output.print_json(data)` at the end of `run_with_arguments` with a list of dicts or a dict.
-- Log level is automatically raised to `WARNING` (stderr) to keep the stdout stream clean.
+- Logger continues writing to stderr at normal level — stdout stays clean for the JSON consumer.
 - Import: `from ...utils import output`, call: `output.print_json(data)`.
 
 The `--save-dir` flag in `aad search` saves to disk files — separate from `--json` (stdout).
