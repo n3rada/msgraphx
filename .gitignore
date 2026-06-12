@@ -1,6 +1,7 @@
 # Project specific
 *.ccache
 *.roadtools_auth
+msgraph-sdk-python/
 
 # File Types
 *.pdf
