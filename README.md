@@ -1,6 +1,12 @@
 # 🔭 msgraphx
 
-Microsoft Graph eXploitation toolkit. ~~Ab~~using the Microsoft Graph SDK to search and harvest SharePoint files, Outlook mail, Teams messages and lot of M365 things.
+Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/overview) SDK to search and harvest SharePoint files, Outlook mail, Teams messages and Microsoft 365 data during red team operations and penetration tests.
+
+- **SharePoint**: search across all sites, filter by filetype, use predefined hunt queries, bulk download
+- **Outlook**: build communication graphs from mailboxes, KQL keyword search, download emails as `.eml`
+- **Teams**: search DMs and channel messages, browse chats, inspect message context
+- **Authentication**: delegated (user token via OAuth PKCE / [msauth-browser](https://github.com/n3rada/msauth-browser)) and app-only (client credentials / service principal)
+- **Output**: local caching of search results, JSON export, resumable downloads
 
 ## 📦 Installation
 
@@ -108,10 +114,10 @@ msgraphx sp search "password"
 
 Build a full communication graph from your mailbox. By default analyses both sent and received mail across four ranked tables:
 
-- 📤 **Sent → To** — who you direct-email most
-- 📤 **Sent → CC** — who you copy most
-- 📥 **Received → as To** — who emails you directly most
-- 📥 **Received → as CC** — who copies you most
+- 📤 **Sent → To**: who you direct-email most
+- 📤 **Sent → CC**: who you copy most
+- 📥 **Received → as To**: who emails you directly most
+- 📥 **Received → as CC**: who copies you most
 
 ```shell
 msgraphx outlook contacts
@@ -265,7 +271,7 @@ msgraphx teams chat "budget" --from alice
 msgraphx teams chat "aws key" --after 90d
 msgraphx teams chat "deploy" --after 2024-01-01 --before 2024-06-01
 
-# wildcard — return everything
+# wildcard: return everything
 msgraphx teams chat
 ```
 

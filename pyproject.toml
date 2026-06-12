@@ -6,13 +6,34 @@ build-backend = "uv_build"
 [project]
 name = "msgraphx"
 version = "0.1.0"
-description = "Microsoft Graph eXploitation toolkit"
+description = "Python Microsoft Graph exploitation toolkit for red team recon of SharePoint, Outlook, Teams, and Microsoft 365."
 authors = [
     {name = "n3rada",email = "72791564+n3rada@users.noreply.github.com"}
 ]
 license = {text = "GPL-3.0-or-later"}
 readme = "README.md"
 requires-python = ">=3.12,<4.0"
+
+keywords = [
+    "microsoft-graph", "graph-api", "microsoft-365", "m365", "azure-ad", "entra-id",
+    "sharepoint", "outlook", "teams",
+    "red-team", "pentesting", "offensive-security", "post-exploitation",
+    "recon", "data-harvesting", "oauth", "pkce",
+    "python",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP",
+]
 
 dependencies = [
     "httpx[socks]>=0.28.1",
