@@ -20,7 +20,7 @@ from loguru import logger
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils.cache import load_results, parse_indices
+from ...utils import cache
 from ...utils.errors import handle_graph_errors
 
 
@@ -41,7 +41,7 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    cached = load_results(key="mail")
+    cached = cache.load_results(key="mail")
     if not cached:
         logger.error("No cached mail search results. Run 'outlook search' first.")
         return 1
@@ -50,7 +50,7 @@ async def run_with_arguments(
         logger.error("Provide indices to download (e.g., '1', '1,3', '2-5').")
         return 1
 
-    indices = parse_indices(args.indices, len(cached))
+    indices = cache.parse_indices(args.indices, len(cached))
     if not indices:
         logger.error(f"Invalid indices: {args.indices} (cached: 1-{len(cached)})")
         return 1

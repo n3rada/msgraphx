@@ -26,11 +26,10 @@ from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils.cache import load_results, parse_indices
+from ...utils import cache, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import render_html, strip_html
-from ...utils.pagination import GraphPaginator
 
 _DEFAULT_CONTEXT = 4
 _DEFAULT_LAST = 20
@@ -127,7 +126,7 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
     # Smaller chats (1:1, small groups) get a bonus to prefer personal conversations.
     matches: list[tuple[int, str, str]] = []
 
-    async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
+    async for chat in pagination.GraphPaginator(context.graph_client.me.chats, chat_config):
         topic = chat.topic or ""
         members = chat.members or []
         member_count = len(members)
@@ -199,7 +198,7 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
     collected: list[ChatMessage] = []
     try:
-        async for msg in GraphPaginator(
+        async for msg in pagination.GraphPaginator(
             context.graph_client.chats.by_chat_id(chat_id).messages,
             msg_config,
         ):
@@ -238,14 +237,14 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
 async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
     """Show a cached search result with surrounding conversation context."""
-    cached = load_results(key="teams")
+    cached = cache.load_results(key="teams")
     if not cached:
         logger.error(
             "No cached teams results. Run 'teams chat' or 'teams channel' first."
         )
         return 1
 
-    indices = parse_indices(index, len(cached))
+    indices = cache.parse_indices(index, len(cached))
     if not indices:
         logger.error(f"Invalid index: {index} (cached: 1-{len(cached)})")
         return 1
@@ -271,7 +270,7 @@ async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
         target_idx: int | None = None
 
         try:
-            async for msg in GraphPaginator(
+            async for msg in pagination.GraphPaginator(
                 context.graph_client.chats.by_chat_id(chat_id).messages,
                 msg_config,
             ):

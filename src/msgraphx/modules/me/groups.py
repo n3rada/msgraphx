@@ -43,6 +43,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
+@handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

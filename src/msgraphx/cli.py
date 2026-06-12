@@ -1,13 +1,12 @@
-# msrgraphx/cli.py
+# msgraphx/cli.py
 
 # Built-in imports
 import argparse
 import json
 import os
+import shutil
 import time
 from pathlib import Path
-
-import shutil
 
 # External library imports
 import httpx
@@ -479,8 +478,8 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         )
         if sps and sps.value:
             logger.info(f"Application: {sps.value[0].display_name}")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"Failed to log service principal details: {exc}")
 
 
 async def _call_module(coro) -> int:

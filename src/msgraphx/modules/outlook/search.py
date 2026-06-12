@@ -18,11 +18,12 @@ import argparse
 from loguru import logger
 from msgraph.generated.models.entity_type import EntityType
 from msgraph.generated.models.message import Message
+
 # Local library imports
 from ...core import graph_search
 from ...core.context import GraphContext
+from ...utils import cache
 from ...utils.console import console
-from ...utils.cache import save_results
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 
@@ -201,7 +202,7 @@ async def run_with_arguments(
             logger.info(f"Interrupted — {count} result(s) cached.")
     finally:
         if cached_items:
-            save_results(cached_items, key="mail")
+            cache.save_results(cached_items, key="mail")
 
     if count == 0:
         logger.info("No results found.")

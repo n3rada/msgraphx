@@ -13,10 +13,9 @@ from msgraph.generated.models.drive_item import DriveItem
 from msgraph.graph_service_client import GraphServiceClient
 
 # Local library imports
-from ...utils.cache import load_results, parse_indices
-from ...utils.pagination import collect_all
-from ...utils.errors import handle_graph_errors
 from ...core.context import GraphContext
+from ...utils import cache, pagination
+from ...utils.errors import handle_graph_errors
 
 
 @handle_graph_errors
@@ -53,7 +52,7 @@ async def download_drive_item(
         logger.debug(f"Entering folder: {current_path}")
         try:
             # Get all children of this folder (with pagination)
-            children = await collect_all(
+            children = await pagination.collect_all(
                 graph_client.drives.by_drive_id(drive_id)
                 .items.by_drive_item_id(item.id)
                 .children
@@ -206,7 +205,7 @@ async def download_drive(
         logger.info(f"Files will be saved to: {drive_folder}")
 
         # Start from root - use items with "root" as the item ID (with pagination)
-        root_children = await collect_all(
+        root_children = await pagination.collect_all(
             graph_client.drives.by_drive_id(drive_id)
             .items.by_drive_item_id("root")
             .children
@@ -266,28 +265,9 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         help="Disable resume mode. Re-download all files even if they already exist.",
     )
 
-    parser.add_argument(
-        "--max-size",
-        type=int,
-        default=None,
-        help="Skip files larger than this size (in MB). Default: no limit.",
-    )
-
-    parser.add_argument(
-        "--include",
-        type=str,
-        default=None,
-        help="Only download files matching this pattern (e.g., '*.pdf', '*.docx').",
-    )
-
-    parser.add_argument(
-        "--exclude",
-        type=str,
-        default=None,
-        help="Skip files matching this pattern (e.g., '*.tmp', '*.log').",
-    )
 
 
+@handle_graph_errors
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
 
     # If indices provided, download from cached search results
@@ -322,12 +302,12 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
 async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
     """Download specific items from the last cached search results."""
-    cached = load_results(key="sharepoint")
+    cached = cache.load_results(key="sharepoint")
     if not cached:
         logger.error("No cached search results. Run a search first.")
         return 1
 
-    indices = parse_indices(args.indices, len(cached))
+    indices = cache.parse_indices(args.indices, len(cached))
     if not indices:
         logger.error(
             f"Invalid indices: {args.indices} (cached results: 1-{len(cached)})"
