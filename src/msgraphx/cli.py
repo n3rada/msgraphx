@@ -267,7 +267,6 @@ def build_parser() -> argparse.ArgumentParser:
     # Generic Graph query subcommand
     graph_parser = subparsers.add_parser(
         "query",
-        aliases=["graph"],
         help="Raw Graph API query — call any endpoint and get JSON back.",
         parents=[parent_parser],
     )
@@ -559,7 +558,7 @@ async def _dispatch(args, context) -> int:
     if command in ("teams", "ms-teams"):
         return await _call_module(teams.run_with_arguments(context, args))
 
-    if command in ("query", "graph"):
+    if command == "query":
         return await _call_module(graph.run_with_arguments(context, args))
 
     logger.info("Authentication successful. Use a subcommand to perform actions.")
@@ -662,7 +661,7 @@ async def _main() -> int:
 
 
 _KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query", "graph"}
+    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query"}
 )
 
 
