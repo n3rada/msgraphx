@@ -167,7 +167,7 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    if not context.json_output:
+    if not context.json_output and not context.ndjson_output:
         console.print("[bold]Teams chat search results[/bold]")
         console.rule()
 
@@ -197,7 +197,7 @@ async def run_with_arguments(
             sent = created.strftime("%Y-%m-%d") if created else ""
             preview = body[:120] + "…" if len(body) > 120 else body
 
-            if not context.json_output:
+            if not context.json_output and not context.ndjson_output:
                 console.print(
                     f"  [dim]{count:>4}.[/dim]  "
                     f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
@@ -218,6 +218,9 @@ async def run_with_arguments(
                 }
             )
 
+            if context.ndjson_output:
+                output.print_ndjson_item(cached_items[-1])
+
     except KeyboardInterrupt:
         if count:
             logger.info(f"Interrupted — {count} result(s) cached.")
@@ -235,5 +238,6 @@ async def run_with_arguments(
 
     if context.json_output:
         output.print_json(cached_items)
+    # ndjson items streamed inline
 
     return 0

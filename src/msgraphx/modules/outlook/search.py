@@ -111,7 +111,7 @@ async def run_with_arguments(
     count = 0
     cached_items: list[dict] = []
 
-    if not context.json_output:
+    if not context.json_output and not context.ndjson_output:
         console.print("[bold]Mail search results[/bold]")
         console.rule()
 
@@ -152,7 +152,7 @@ async def run_with_arguments(
             subject = msg.subject or "(no subject)"
             attach_flag = " [+att]" if msg.has_attachments else ""
 
-            if not context.json_output:
+            if not context.json_output and not context.ndjson_output:
                 console.print(
                     f"  [dim]{count:>4}.[/dim]  {subject}{attach_flag}  "
                     f"[dim]{from_display}[/dim]  [cyan]{received}[/cyan]"
@@ -199,6 +199,9 @@ async def run_with_arguments(
                 }
             )
 
+            if context.ndjson_output:
+                output.print_ndjson_item(cached_items[-1])
+
     except KeyboardInterrupt:
         if count:
             logger.info(f"Interrupted — {count} result(s) cached.")
@@ -212,7 +215,8 @@ async def run_with_arguments(
             output.print_json([])
         return 0
 
-    if context.json_output and cached_items:
+    if context.json_output:
         output.print_json(cached_items)
+    # ndjson items streamed inline
 
     return 0

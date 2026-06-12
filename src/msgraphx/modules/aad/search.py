@@ -129,6 +129,7 @@ async def search_groups(
     contains: bool = False,
     show_synced_only: bool = False,
     results_collector: list | None = None,
+    odata_filter: str | None = None,
 ) -> int:
     """Search for groups matching the query."""
     logger.info(f"Searching for groups matching: {query}")
@@ -137,8 +138,18 @@ async def search_groups(
     all_results = []
 
     try:
-        # For contains search, get all groups and filter client-side
-        if contains:
+        if odata_filter:
+            logger.debug(f"Using custom OData filter: {odata_filter}")
+            query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+                filter=odata_filter,
+                top=999,
+            )
+            request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
+                query_parameters=query_params
+            )
+            all_results = await pagination.collect_all(graph_client.groups, request_config)
+        elif contains:
+            # For contains search, get all groups and filter client-side
             logger.debug("Using client-side 'contains' filter (fetching all groups)")
             all_results = await pagination.collect_all(graph_client.groups, None)
             # Filter client-side
@@ -222,6 +233,7 @@ async def search_users(
     tenant_id: str = None,
     output_dir: Path = None,
     results_collector: list | None = None,
+    odata_filter: str | None = None,
 ) -> int:
     """Search for users matching the query."""
     logger.info(f"Searching for users matching: {query}")
@@ -230,9 +242,15 @@ async def search_users(
     all_results = []
 
     try:
-        # Build filter for display name or userPrincipalName contains query
+        api_filter = (
+            odata_filter
+            if odata_filter
+            else f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}') or startswith(mail,'{query}')"
+        )
+        if odata_filter:
+            logger.debug(f"Using custom OData filter: {odata_filter}")
         query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
-            filter=f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}') or startswith(mail,'{query}')",
+            filter=api_filter,
             top=999,
         )
         request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfiguration(
@@ -287,6 +305,7 @@ async def search_devices(
     tenant_id: str = None,
     output_dir: Path = None,
     results_collector: list | None = None,
+    odata_filter: str | None = None,
 ) -> int:
     """Search for devices/computers matching the query."""
     logger.info(f"Searching for devices matching: {query}")
@@ -295,9 +314,11 @@ async def search_devices(
     all_results = []
 
     try:
-        # Build filter for display name contains query
+        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+        if odata_filter:
+            logger.debug(f"Using custom OData filter: {odata_filter}")
         query_params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
-            filter=f"startswith(displayName,'{query}')",
+            filter=api_filter,
             top=999,
         )
         request_config = (
@@ -358,6 +379,7 @@ async def search_service_principals(
     tenant_id: str = None,
     output_dir: Path = None,
     results_collector: list | None = None,
+    odata_filter: str | None = None,
 ) -> int:
     """Search for service principals matching the query."""
     logger.info(f"Searching for service principals matching: {query}")
@@ -366,8 +388,11 @@ async def search_service_principals(
     all_results = []
 
     try:
+        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+        if odata_filter:
+            logger.debug(f"Using custom OData filter: {odata_filter}")
         query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
-            filter=f"startswith(displayName,'{query}')",
+            filter=api_filter,
             top=999,
         )
         request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
@@ -422,6 +447,7 @@ async def search_applications(
     tenant_id: str = None,
     output_dir: Path = None,
     results_collector: list | None = None,
+    odata_filter: str | None = None,
 ) -> int:
     """Search for applications matching the query."""
     logger.info(f"Searching for applications matching: {query}")
@@ -430,9 +456,12 @@ async def search_applications(
     all_results = []
 
     try:
+        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+        if odata_filter:
+            logger.debug(f"Using custom OData filter: {odata_filter}")
         query_params = (
             ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
-                filter=f"startswith(displayName,'{query}')",
+                filter=api_filter,
                 top=999,
             )
         )
@@ -529,6 +558,15 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
     parser.add_argument(
+        "--filter",
+        dest="odata_filter",
+        type=str,
+        default=None,
+        metavar="EXPR",
+        help="Raw OData \\$filter expression passed directly to the API, e.g. \"accountEnabled eq true\". Overrides the default startswith filter.",
+    )
+
+    parser.add_argument(
         "--save-dir",
         dest="save_dir",
         type=str,
@@ -581,13 +619,16 @@ async def run_with_arguments(
         tenant_id = "unknown"
 
     total_found = 0
-    # Keyed by search_type, accumulates serialized results for --json output
-    json_results: dict[str, list] | None = {} if context.json_output else None
+    odata_filter: str | None = getattr(args, "odata_filter", None)
+
+    # Accumulate serialized results for structured output
+    needs_collector = context.json_output or context.ndjson_output
+    structured_results: dict[str, list] | None = {} if needs_collector else None
 
     # Execute searches
     for query in queries:
         for search_type in search_types:
-            collector: list | None = [] if json_results is not None else None
+            collector: list | None = [] if needs_collector else None
 
             if search_type == "groups":
                 total_found += await search_groups(
@@ -599,6 +640,7 @@ async def run_with_arguments(
                     contains=args.contains,
                     show_synced_only=args.synced_only,
                     results_collector=collector,
+                    odata_filter=odata_filter,
                 )
             elif search_type == "users":
                 total_found += await search_users(
@@ -608,6 +650,7 @@ async def run_with_arguments(
                     tenant_id,
                     output_dir,
                     results_collector=collector,
+                    odata_filter=odata_filter,
                 )
             elif search_type in ["devices", "computers"]:
                 total_found += await search_devices(
@@ -617,6 +660,7 @@ async def run_with_arguments(
                     tenant_id,
                     output_dir,
                     results_collector=collector,
+                    odata_filter=odata_filter,
                 )
             elif search_type == "service-principals":
                 total_found += await search_service_principals(
@@ -626,6 +670,7 @@ async def run_with_arguments(
                     tenant_id,
                     output_dir,
                     results_collector=collector,
+                    odata_filter=odata_filter,
                 )
             elif search_type == "applications":
                 total_found += await search_applications(
@@ -635,10 +680,11 @@ async def run_with_arguments(
                     tenant_id,
                     output_dir,
                     results_collector=collector,
+                    odata_filter=odata_filter,
                 )
 
-            if collector and json_results is not None:
-                json_results.setdefault(search_type, []).extend(collector)
+            if collector and structured_results is not None:
+                structured_results.setdefault(search_type, []).extend(collector)
 
             # Add separator between different searches
             if len(queries) > 1 or len(search_types) > 1:
@@ -646,7 +692,12 @@ async def run_with_arguments(
 
     logger.info(f"Total objects found: {total_found}")
 
-    if json_results is not None:
-        output.print_json(json_results)
+    if structured_results is not None:
+        if context.ndjson_output:
+            for items in structured_results.values():
+                for item in items:
+                    output.print_ndjson_item(item)
+        else:
+            output.print_json(structured_results)
 
     return 0

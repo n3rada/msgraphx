@@ -23,7 +23,7 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, me, outlook, sharepoint, teams
+from .modules import aad, graph, me, outlook, sharepoint, teams
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
@@ -110,6 +110,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output results as JSON to stdout. Suppresses console rendering; logs still go to stderr.",
     )
 
+    output_group.add_argument(
+        "--ndjson",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        dest="ndjson_output",
+        help="Stream results as NDJSON (one JSON object per line). Ideal for piping to jq or LLM tools.",
+    )
+
     parser = argparse.ArgumentParser(
         prog="msgraphx",
         add_help=True,
@@ -128,6 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
         fetch_all=False,
         save=None,
         json_output=False,
+        ndjson_output=False,
     )
 
     parser.add_argument(
@@ -253,6 +262,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     teams.add_arguments(teams_parser, parents=[parent_parser])
 
+    # Generic Graph query subcommand
+    graph_parser = subparsers.add_parser(
+        "graph",
+        help="Raw Graph API query — call any endpoint and get JSON back.",
+        parents=[parent_parser],
+    )
+    graph.add_arguments(graph_parser)
+
     return parser
 
 
@@ -342,20 +359,21 @@ def _load_token(args) -> tuple[str | None, str | None, str]:
 
 def _build_app_client(
     tenant_id: str, client_id: str, client_secret: str
-) -> "GraphServiceClient | None":
+) -> "tuple[GraphServiceClient | None, ClientSecretCredential | None]":
     try:
         credentials = ClientSecretCredential(
             tenant_id=tenant_id,
             client_id=client_id,
             client_secret=client_secret,
         )
-        return GraphServiceClient(
+        client = GraphServiceClient(
             credentials=credentials,
             scopes=["https://graph.microsoft.com/.default"],
         )
+        return client, credentials
     except Exception as exc:
         logger.exception("Failed to create Graph client with client credentials")
-        return None
+        return None, None
 
 
 def _classify_token(token) -> bool:
@@ -370,14 +388,14 @@ def _classify_token(token) -> bool:
 
 async def _authenticate(
     args,
-) -> tuple["GraphServiceClient | None", bool, frozenset[str], int]:
-    """Resolve auth method and return (client, is_app_only, token_scopes, exit_code)."""
+) -> tuple["GraphServiceClient | None", bool, frozenset[str], "callable | None", int]:
+    """Resolve auth method and return (client, is_app_only, token_scopes, token_getter, exit_code)."""
     if args.access_token and args.tenant_id:
         logger.error(
             "Cannot use both token-based authentication (--access-token) and "
             "client credentials (--tenant-id) simultaneously."
         )
-        return None, False, frozenset(), 1
+        return None, False, frozenset(), None, 1
 
     has_env_creds = all(
         os.environ.get(k) for k in ("TENANT_ID", "CLIENT_ID", "CLIENT_SECRET")
@@ -404,27 +422,32 @@ async def _authenticate(
             logger.info(f"Client ID: {client_id}")
 
         logger.info("Using client credentials authentication")
-        client = _build_app_client(tenant_id, client_id, client_secret)
-        return (
-            (client, True, frozenset(), 0) if client else (None, True, frozenset(), 1)
-        )
+        client, credentials = _build_app_client(tenant_id, client_id, client_secret)
+        if not client:
+            return None, True, frozenset(), None, 1
+
+        async def _app_token_getter():
+            t = await credentials.get_token("https://graph.microsoft.com/.default")
+            return t.token
+
+        return client, True, frozenset(), _app_token_getter, 0
 
     access_token, refresh_token, token_source = _load_token(args)
     if not access_token:
-        return None, False, frozenset(), 1
+        return None, False, frozenset(), None, 1
 
     token = tokens.TokenManager(access_token, refresh_token, source=token_source)
 
     if token.is_expired:
         logger.error("Token is expired.")
-        return None, False, frozenset(), 1
+        return None, False, frozenset(), None, 1
 
     if (
         token.audience != "00000003-0000-0000-c000-000000000000"
         and not token.audience.startswith("https://graph.microsoft.com")
     ):
         logger.error(f"JWT audience mismatch, got '{token.audience}'")
-        return None, False, frozenset(), 1
+        return None, False, frozenset(), None, 1
 
     is_app_only = _classify_token(token)
 
@@ -437,7 +460,11 @@ async def _authenticate(
         logger.debug(f"Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
 
     token.start_auto_refresh()
-    return GraphServiceClient(token), is_app_only, token_scopes, 0
+
+    async def _delegated_token_getter():
+        return token.access_token
+
+    return GraphServiceClient(token), is_app_only, token_scopes, _delegated_token_getter, 0
 
 
 async def _verify_connection(
@@ -529,6 +556,9 @@ async def _dispatch(args, context) -> int:
     if command in ("teams", "ms-teams"):
         return await _call_module(teams.run_with_arguments(context, args))
 
+    if command == "graph":
+        return await _call_module(graph.run_with_arguments(context, args))
+
     logger.info("Authentication successful. Use a subcommand to perform actions.")
     return 0
 
@@ -557,6 +587,7 @@ def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--all", dest="fetch_all", action="store_true", default=False)
     p.add_argument("--save", "--output", "-o", type=str, default=None)
     p.add_argument("--json", dest="json_output", action="store_true", default=False)
+    p.add_argument("--ndjson", dest="ndjson_output", action="store_true", default=False)
     ns, _ = p.parse_known_args(argv)
     return ns
 
@@ -601,7 +632,7 @@ async def _main() -> int:
     if args.drive_id:
         logger.info(f"Drive ID: {args.drive_id}")
 
-    graph_client, is_app_only, token_scopes, err = await _authenticate(args)
+    graph_client, is_app_only, token_scopes, token_getter, err = await _authenticate(args)
     if err:
         return err
 
@@ -620,6 +651,8 @@ async def _main() -> int:
         cached_user=cached_user,
         token_scopes=token_scopes,
         json_output=getattr(args, "json_output", False),
+        ndjson_output=getattr(args, "ndjson_output", False),
+        token_getter=token_getter,
     )
 
     return await _dispatch(args, context)

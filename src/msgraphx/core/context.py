@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, Callable
 
 from msgraph.graph_service_client import GraphServiceClient
 from msgraph.generated.models.user import User
@@ -26,10 +27,19 @@ class GraphContext:
     cached_user: User | None = None
     token_scopes: frozenset[str] = field(default_factory=frozenset)
     json_output: bool = False
+    ndjson_output: bool = False
+    # Async callable returning the current bearer token (for raw HTTP requests)
+    token_getter: Any = field(default=None, repr=False, compare=False)
 
     def has_scope(self, *required: str) -> bool:
         """Return True if all required scopes are present in the delegated token."""
         return all(s in self.token_scopes for s in required)
+
+    async def get_access_token(self) -> str | None:
+        """Return the current bearer token, refreshing if necessary."""
+        if self.token_getter is None:
+            return None
+        return await self.token_getter()
 
     @property
     def is_delegated(self) -> bool:

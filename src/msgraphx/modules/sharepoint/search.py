@@ -252,7 +252,7 @@ async def run_with_arguments(
                 else ""
             )
             # Cache full DriveItem metadata for later download by index
-            if not save_dir and not context.json_output:
+            if not save_dir and not context.json_output and not context.ndjson_output:
                 console.print(
                     f"  [dim]{count:>4}.[/dim]  {drive_item.name}  "
                     f"[dim]{author}[/dim]  [cyan]{size_str}[/cyan]  [dim]{created}[/dim]"
@@ -365,6 +365,9 @@ async def run_with_arguments(
                     ),
                 }
             )
+
+            if context.ndjson_output:
+                output.print_ndjson_item(cached_items[-1])
 
             # Download file if --save is specified
             if save_dir:
@@ -543,7 +546,8 @@ async def run_with_arguments(
         if failed > 0:
             logger.warning(f"Failed: {failed}")
 
-    if context.json_output and cached_items:
+    if context.json_output:
         output.print_json(cached_items)
+    # ndjson items streamed inline
 
     return 0
