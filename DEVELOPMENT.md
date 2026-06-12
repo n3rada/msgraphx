@@ -126,8 +126,10 @@ from ...utils.errors import handle_graph_errors
 
 ### 3. Error handling and logging
 
-- Avoid broad `except Exception` unless you are re-raising, translating to a domain error, or intentionally degrading behavior with a logged warning.
-- Use `logger.exception(...)` (loguru) inside exception handlers when traceback context matters.
+- Avoid broad `except Exception` unless you are re-raising, translating to a domain error, or intentionally degrading behavior.
+- In `except Exception` handlers, choose based on whether the tool stops or continues:
+  - **Tool stops** (re-raise / fatal failure): `logger.exception("...")` — ERROR level with full traceback, no need to interpolate `{exc}` in the message.
+  - **Tool continues** (recoverable / per-item failure): `logger.error(f"...: {exc}")` — message only, no traceback.
 - Use `logger.trace(...)` for deep developer-facing logs (request parameters, intermediate values, per-iteration data); `logger.debug(...)` for general internal state; `logger.success(...)` for completed operations; `logger.warning(...)` for recoverable issues; `logger.error(...)` for non-recoverable ones that do not halt the process.
 - Never use `except Exception: pass` — silent swallowing masks real failures.
 

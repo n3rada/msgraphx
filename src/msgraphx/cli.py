@@ -345,7 +345,7 @@ def _build_app_client(
             scopes=["https://graph.microsoft.com/.default"],
         )
     except Exception as exc:
-        logger.error(f"Failed to create Graph client with client credentials: {exc}")
+        logger.exception("Failed to create Graph client with client credentials")
         return None
 
 
@@ -461,7 +461,7 @@ async def _verify_connection(
         logger.error("Connection timeout. Check your network connection.")
         return None, 1
     except Exception as exc:
-        logger.error(f"Unexpected error while connecting to Graph API: {exc}")
+        logger.exception("Unexpected error while connecting to Graph API")
         return None, 1
 
 
@@ -479,7 +479,7 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         if sps and sps.value:
             logger.info(f"Application: {sps.value[0].display_name}")
     except Exception as exc:
-        logger.debug(f"Failed to log service principal details: {exc}")
+        logger.error("Failed to log service principal details")
 
 
 async def _call_module(coro) -> int:

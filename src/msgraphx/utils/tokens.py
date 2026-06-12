@@ -48,7 +48,7 @@ class TokenManager:
         try:
             self._header, self._payload, self._signature = parse_jwt(access_token)
         except Exception as e:
-            logger.error(f"Failed to parse JWT: {e}")
+            logger.exception("Failed to parse JWT")
             raise
 
         self._expires_on = self._payload.get("exp")

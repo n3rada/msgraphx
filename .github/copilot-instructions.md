@@ -81,7 +81,7 @@ Never use `print()` for operational output. Use `logger` (loguru) or the shared 
 - Python 3.12+. Use `X | Y` and `X | None` union syntax throughout.
 - Annotate all function signatures.
 - Avoid broad `except Exception` unless re-raising or translating to a domain error.
-- Use `logger.exception(...)` when traceback context matters inside a handler.
+- In `except Exception` handlers: if the tool stops (re-raise / fatal), use `logger.exception("...")` (ERROR + traceback, no `{exc}` interpolation needed). If the tool continues (recoverable), use `logger.error(f"...: {exc}")`.
 - All Graph SDK calls are async. Use `asyncio.gather()` for independent concurrent calls.
 
 ## Definition of Done

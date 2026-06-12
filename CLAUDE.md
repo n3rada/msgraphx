@@ -93,7 +93,11 @@ When adding or changing a module:
 | `INFO` | Normal operator-visible progress |
 | `SUCCESS` | Confirmed completed operation |
 | `WARNING` | Recoverable degradation |
-| `ERROR` | Non-recoverable failure that does not halt the process |
+| `ERROR` | Recoverable failure — tool continues after logging |
+
+In `except Exception` handlers, choose based on whether the tool stops:
+- **Tool stops** (re-raise / fatal): `logger.exception("...")` — ERROR level + full traceback, no need to interpolate `{exc}`.
+- **Tool continues** (recoverable / per-item): `logger.error(f"...: {exc}")` — message only, no traceback.
 
 Logs go to stderr (colored) and rotate to `~/.local/state/msgraphx/logs/msgraphx.log`. The operator controls the level via `--trace`, `--debug`, or `--log-level`. Never use `print()` for operational output — use `logger` or the shared `console` (Rich) instance from `utils/console.py`.
 

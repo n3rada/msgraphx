@@ -38,10 +38,8 @@ async def _fetch_group_site(context: "GraphContext", group_id: str) -> tuple | N
                 site.display_name or site.name or "(unnamed site)",
                 site.web_url or "",
             )
-    except Exception as exc:
-        logger.debug(
-            f"Failed to fetch site for group {group_id}: {type(exc).__name__}: {exc}"
-        )
+    except Exception:
+        logger.error(f"Failed to fetch site for group {group_id}: {exc}")
         raise  # Let gather collect the exception
     return None
 
@@ -116,7 +114,7 @@ async def run_with_arguments(
             followed_rows.append((site.display_name or "", site.web_url or ""))
             logger.debug(f"  Followed: {site.display_name} | {site.web_url}")
     except Exception as exc:
-        logger.debug(f"Failed to fetch followed sites: {exc}")
+        logger.error(f"Failed to fetch followed sites: {exc}")
 
     # -------------------------------------------------------------------------
     # Display
