@@ -665,23 +665,24 @@ _KNOWN_COMMANDS: frozenset[str] = frozenset(
 )
 
 
-def _inject_graph_subcommand(argv: list[str]) -> list[str]:
-    """If the first non-flag positional looks like a Graph path, prepend 'graph'.
+def _inject_query_subcommand(argv: list[str]) -> list[str]:
+    """Make 'query' the default subcommand.
 
-    Allows `msgraphx /users --select id,displayName` as shorthand for
-    `msgraphx graph /users --select id,displayName`.
+    If the first non-flag positional is not a known subcommand, prepend 'query'
+    so that e.g. `msgraphx /users` and `msgraphx me/messages` work without
+    an explicit subcommand name.
     """
     for i, tok in enumerate(argv):
         if tok.startswith("-"):
             continue
-        if tok.startswith("/"):
-            return argv[:i] + ["graph"] + argv[i:]
-        break  # first non-flag positional is a known command or other — don't inject
+        if tok not in _KNOWN_COMMANDS:
+            return argv[:i] + ["query"] + argv[i:]
+        break
     return argv
 
 
 def main() -> None:
-    sys.argv[1:] = _inject_graph_subcommand(sys.argv[1:])
+    sys.argv[1:] = _inject_query_subcommand(sys.argv[1:])
 
     try:
         raise SystemExit(asyncio.run(_main()))
