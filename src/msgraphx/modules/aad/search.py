@@ -57,7 +57,7 @@ def serialize_object(obj):
         return None
 
     # Handle datetime objects
-    if isinstance(obj, datetime):
+    if isinstance(obj, datetime.datetime):
         return obj.isoformat()
 
     # Handle objects with __dict__ (common in msgraph SDK)
@@ -192,7 +192,21 @@ async def search_groups(
             save_results_to_json(tenant_id, "groups", query, all_results, output_dir)
 
         if results_collector is not None:
-            results_collector.extend([serialize_object(obj) for obj in all_results])
+            results_collector.extend([
+                {
+                    "id": g.id,
+                    "display_name": g.display_name,
+                    "description": g.description,
+                    "mail": g.mail,
+                    "mail_nickname": g.mail_nickname,
+                    "security_enabled": g.security_enabled,
+                    "mail_enabled": g.mail_enabled,
+                    "on_premises_sync_enabled": g.on_premises_sync_enabled,
+                    "visibility": g.visibility,
+                    "group_types": g.group_types,
+                }
+                for g in all_results
+            ])
 
     except Exception as e:
         logger.error(f"Failed to search groups: {e}")
@@ -246,7 +260,18 @@ async def search_users(
             save_results_to_json(tenant_id, "users", query, all_results, output_dir)
 
         if results_collector is not None:
-            results_collector.extend([serialize_object(obj) for obj in all_results])
+            results_collector.extend([
+                {
+                    "id": u.id,
+                    "display_name": u.display_name,
+                    "user_principal_name": u.user_principal_name,
+                    "mail": u.mail,
+                    "account_enabled": u.account_enabled,
+                    "job_title": u.job_title,
+                    "department": u.department,
+                }
+                for u in all_results
+            ])
 
     except Exception as e:
         logger.error(f"Failed to search users: {e}")
@@ -306,7 +331,18 @@ async def search_devices(
             save_results_to_json(tenant_id, "devices", query, all_results, output_dir)
 
         if results_collector is not None:
-            results_collector.extend([serialize_object(obj) for obj in all_results])
+            results_collector.extend([
+                {
+                    "id": d.id,
+                    "display_name": d.display_name,
+                    "account_enabled": d.account_enabled,
+                    "operating_system": d.operating_system,
+                    "operating_system_version": d.operating_system_version,
+                    "trust_type": d.trust_type,
+                    "on_premises_sync_enabled": d.on_premises_sync_enabled,
+                }
+                for d in all_results
+            ])
 
     except Exception as e:
         logger.error(f"Failed to search devices: {e}")
@@ -361,7 +397,16 @@ async def search_service_principals(
             )
 
         if results_collector is not None:
-            results_collector.extend([serialize_object(obj) for obj in all_results])
+            results_collector.extend([
+                {
+                    "id": sp.id,
+                    "display_name": sp.display_name,
+                    "app_id": sp.app_id,
+                    "account_enabled": sp.account_enabled,
+                    "service_principal_type": sp.service_principal_type,
+                }
+                for sp in all_results
+            ])
 
     except Exception as e:
         logger.error(f"Failed to search service principals: {e}")
@@ -417,7 +462,16 @@ async def search_applications(
             )
 
         if results_collector is not None:
-            results_collector.extend([serialize_object(obj) for obj in all_results])
+            results_collector.extend([
+                {
+                    "id": app.id,
+                    "display_name": app.display_name,
+                    "app_id": app.app_id,
+                    "sign_in_audience": app.sign_in_audience,
+                    "created_date_time": app.created_date_time.isoformat() if app.created_date_time else None,
+                }
+                for app in all_results
+            ])
 
     except Exception as e:
         logger.error(f"Failed to search applications: {e}")
