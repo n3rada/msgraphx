@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import channel, chat, contacts, send, show
+from . import channel, chat, contacts, meetings, send, show
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -46,6 +46,11 @@ def add_arguments(
     )
     show.add_arguments(show_parser)
 
+    meetings_parser = subparsers.add_parser(
+        "meetings", parents=parents, help="List online meetings and fetch transcripts."
+    )
+    meetings.add_arguments(meetings_parser)
+
 
 @handle_graph_errors
 async def run_with_arguments(
@@ -63,5 +68,7 @@ async def run_with_arguments(
         return await send.run_with_arguments(context, args)
     if subcommand == "show":
         return await show.run_with_arguments(context, args)
+    if subcommand == "meetings":
+        return await meetings.run_with_arguments(context, args)
 
     return 1
