@@ -658,8 +658,31 @@ async def _main() -> int:
     return await _dispatch(args, context)
 
 
+_KNOWN_COMMANDS: frozenset[str] = frozenset(
+    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "graph"}
+)
+
+
+def _inject_graph_subcommand(argv: list[str]) -> list[str]:
+    """If the first non-flag positional looks like a Graph path, prepend 'graph'.
+
+    Allows `msgraphx /users --select id,displayName` as shorthand for
+    `msgraphx graph /users --select id,displayName`.
+    """
+    for i, tok in enumerate(argv):
+        if tok.startswith("-"):
+            continue
+        if tok.startswith("/"):
+            return argv[:i] + ["graph"] + argv[i:]
+        break  # first non-flag positional is a known command or other — don't inject
+    return argv
+
+
 def main() -> None:
     import asyncio
+    import sys
+
+    sys.argv[1:] = _inject_graph_subcommand(sys.argv[1:])
 
     try:
         raise SystemExit(asyncio.run(_main()))
