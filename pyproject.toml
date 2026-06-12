@@ -6,7 +6,7 @@ build-backend = "uv_build"
 [project]
 name = "msgraphx"
 version = "0.1.0"
-description = "Python Microsoft Graph exploitation toolkit for red team recon of SharePoint, Outlook, Teams, and Microsoft 365."
+description = "Python Microsoft Graph eXploitation (msgraphX) toolkit for red team recon of SharePoint, Outlook, Teams, and Microsoft 365."
 authors = [
     {name = "n3rada",email = "72791564+n3rada@users.noreply.github.com"}
 ]

@@ -1,4 +1,4 @@
-# 🔭 msgraphx
+# 🔭 msgraphX
 
 Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/overview) SDK to search and harvest SharePoint files, Outlook mail, Teams messages and Microsoft 365 data during red team operations and penetration tests.
 
