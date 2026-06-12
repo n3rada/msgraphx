@@ -221,7 +221,7 @@ async def search_users(
         )
 
         # Collect all pages of results
-        all_results = await collect_all(graph_client.users, request_config)
+        all_results = await pagination.collect_all(graph_client.users, request_config)
 
         if all_results:
             for user in all_results:
@@ -273,7 +273,7 @@ async def search_devices(
         )
 
         # Collect all pages of results
-        all_results = await collect_all(graph_client.devices, request_config)
+        all_results = await pagination.collect_all(graph_client.devices, request_config)
 
         if all_results:
             for device in all_results:

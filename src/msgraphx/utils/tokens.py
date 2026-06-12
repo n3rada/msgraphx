@@ -121,7 +121,7 @@ class TokenManager:
             "tokenType": "Bearer",
             "tenantId": self._tenant_id,
             "expiresOn": self.expiration_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            "_cliendId": "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
+            "_clientId": "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
             "accessToken": self._access_token,
             "refreshToken": self._refresh_token,
             "originheader": "https://developer.microsoft.com",

@@ -204,6 +204,3 @@ def handle_graph_errors(func: Callable) -> Callable:
 
     return sync_wrapper
 
-
-# Backwards compatibility alias
-handle_graph_errors = handle_graph_errors
