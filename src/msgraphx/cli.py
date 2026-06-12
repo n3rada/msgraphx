@@ -2,9 +2,11 @@
 
 # Built-in imports
 import argparse
+import asyncio
 import json
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -679,9 +681,6 @@ def _inject_graph_subcommand(argv: list[str]) -> list[str]:
 
 
 def main() -> None:
-    import asyncio
-    import sys
-
     sys.argv[1:] = _inject_graph_subcommand(sys.argv[1:])
 
     try:
