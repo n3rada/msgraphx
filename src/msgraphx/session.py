@@ -14,6 +14,7 @@ import threading
 
 # Local library imports
 from .core.context import GraphContext
+from .core.factory import create_context
 from .modules.aad import ca as _aad_ca
 from .modules.aad import enrich as _aad_enrich
 from .modules.aad import pim as _aad_pim
@@ -335,10 +336,6 @@ class Session:
                 tenant_id="...", client_id="...", client_secret="..."
             )
         """
-        # Lazy: __init__.py imports Session at module level, so importing
-        # create_context here avoids a circular import at load time.
-        from . import create_context
-
         ctx = await create_context(
             access_token=access_token,
             refresh_token=refresh_token,
