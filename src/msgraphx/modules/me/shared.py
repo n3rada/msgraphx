@@ -77,8 +77,8 @@ async def run_with_arguments(
         shared_by = ""
         shared_date = ""
         if item.last_shared:
-            if item.last_shared.shared_by and item.last_shared.shared_by.user:
-                shared_by = item.last_shared.shared_by.user.display_name or ""
+            if item.last_shared.shared_by:
+                shared_by = item.last_shared.shared_by.display_name or ""
             if item.last_shared.shared_date_time:
                 shared_date = item.last_shared.shared_date_time.strftime("%Y-%m-%d")
 

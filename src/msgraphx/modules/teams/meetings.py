@@ -13,11 +13,7 @@ from __future__ import annotations
 import argparse
 
 # External library imports
-from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
-from msgraph.generated.users.item.online_meetings.online_meetings_request_builder import (
-    OnlineMeetingsRequestBuilder,
-)
 from rich.table import Table
 
 # Local library imports
@@ -62,17 +58,10 @@ async def run_with_arguments(
 async def _list_meetings(context: "GraphContext", top: int) -> int:
     logger.info("Fetching online meetings")
 
-    query_params = OnlineMeetingsRequestBuilder.OnlineMeetingsRequestBuilderGetQueryParameters(
-        top=min(top, 999),
-        select=["id", "subject", "startDateTime", "endDateTime", "participants"],
-        orderby=["startDateTime desc"],
-    )
-    config = RequestConfiguration(query_parameters=query_params)
-
     rows = []
     try:
         async for meeting in GraphPaginator(
-            context.graph_client.me.online_meetings, config
+            context.graph_client.me.online_meetings
         ):
             start = ""
             end = ""
