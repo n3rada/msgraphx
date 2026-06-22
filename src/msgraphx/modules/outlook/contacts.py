@@ -58,7 +58,7 @@ async def fetch(
 
     `after` / `before` are ISO 8601 strings. `only` is 'sent', 'received', or None (both).
     Returns {'sent': [...], 'received': [...]}.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     select_fields = ["toRecipients", "ccRecipients", "sentDateTime"]
 
@@ -299,12 +299,12 @@ async def run_with_arguments(
                             _build_table(
                                 to_counter,
                                 names,
-                                f"Top {args.top or len(to_counter)} — sent To ({total:,} scanned)",
+                                f"Top {args.top or len(to_counter)} : sent To ({total:,} scanned)",
                             ),
                             _build_table(
                                 cc_counter,
                                 names,
-                                f"Top {args.top or len(cc_counter)} — sent CC",
+                                f"Top {args.top or len(cc_counter)} : sent CC",
                             ),
                         )
                     )
@@ -398,12 +398,12 @@ async def run_with_arguments(
                             _build_table(
                                 recv_to_counter,
                                 recv_names,
-                                f"Top {args.top or len(recv_to_counter)} — received as To ({total_recv:,} scanned)",
+                                f"Top {args.top or len(recv_to_counter)} : received as To ({total_recv:,} scanned)",
                             ),
                             _build_table(
                                 recv_cc_counter,
                                 recv_names,
-                                f"Top {args.top or len(recv_cc_counter)} — received as CC",
+                                f"Top {args.top or len(recv_cc_counter)} : received as CC",
                             ),
                         )
                     )

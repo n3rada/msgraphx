@@ -213,7 +213,7 @@ class _TeamsNamespace:
 class Session:
     """Library entry point for msgraphx.
 
-    All methods return plain dicts and raise on API errors — callers handle
+    All methods return plain dicts and raise on API errors; callers handle
     exceptions. The underlying GraphContext is private; external code should
     never need to import it.
 

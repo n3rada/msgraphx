@@ -31,7 +31,7 @@ from ...utils.pagination import GraphPaginator
 async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[dict]:
     """Return directory role assignments as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     query_params = RoleAssignmentsRequestBuilder.RoleAssignmentsRequestBuilderGetQueryParameters(
         expand=["roleDefinition", "principal"],

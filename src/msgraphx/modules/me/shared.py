@@ -1,7 +1,7 @@
 # msgraphx/modules/me/shared.py
 #
 # List documents shared with the current user via the Insights API.
-# Complements 'me trending' — shows files others explicitly shared with you
+# Complements 'me trending': shows files others explicitly shared with you
 # rather than items Microsoft infers are relevant.
 #
 # NOTE: This API is deprecated and will stop returning data after 2028-01-01.
@@ -44,7 +44,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
     """Return documents shared with the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     query_params = SharedRequestBuilder.SharedRequestBuilderGetQueryParameters(
         top=min(top, 100),

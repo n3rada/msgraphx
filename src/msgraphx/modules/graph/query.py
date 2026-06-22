@@ -184,8 +184,8 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
             first_page = False
 
             if resp.status_code == 204:
-                # No content — success for DELETE/POST with no response body
-                logger.success(f"{method} {path} — {resp.status_code} No Content")
+                # No content: success for DELETE/POST with no response body
+                logger.success(f"{method} {path} ({resp.status_code} No Content)")
                 return 0
 
             if not resp.is_success:
@@ -202,7 +202,7 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
                 page_items = data["value"]
                 collected.extend(page_items)
 
-                # Stream items as they arrive (NDJSON only — others batch after the loop)
+                # Stream items as they arrive (NDJSON only; others batch after the loop)
                 if context.ndjson_output:
                     _render(page_items, context, trace)
 

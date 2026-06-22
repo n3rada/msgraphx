@@ -109,7 +109,7 @@ async def fetch_groups(
 ) -> list[dict]:
     """Return groups matching query as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
@@ -165,7 +165,7 @@ async def fetch_users(
 ) -> list[dict]:
     """Return users matching query as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     api_filter = (
         odata_filter
@@ -204,7 +204,7 @@ async def fetch_devices(
 ) -> list[dict]:
     """Return devices matching query as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:
@@ -239,7 +239,7 @@ async def fetch_service_principals(
 ) -> list[dict]:
     """Return service principals matching query as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:
@@ -274,7 +274,7 @@ async def fetch_applications(
 ) -> list[dict]:
     """Return applications matching query as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:

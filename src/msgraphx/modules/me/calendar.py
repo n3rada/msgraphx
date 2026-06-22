@@ -51,7 +51,7 @@ async def fetch(
     """Return calendar events for the current user as plain dicts.
 
     `after` and `before` accept ISO 8601 datetime strings for OData filtering.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     filter_parts: list[str] = []
     if after:

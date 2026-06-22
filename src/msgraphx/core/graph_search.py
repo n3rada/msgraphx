@@ -140,7 +140,7 @@ async def search_entities(
             for hit in hits:
                 resource = hit.resource
                 # Graph Search does not populate resource.id for Message (and some
-                # other entity types) — hit.hit_id is the canonical source.
+                # other entity types); hit.hit_id is the canonical source.
                 if resource is not None and not resource.id and hit.hit_id:
                     resource.id = hit.hit_id
                 yield resource

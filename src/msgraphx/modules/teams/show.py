@@ -1,8 +1,8 @@
 # msgraphx/modules/teams/show.py
 #
 # Two modes, auto-detected from the positional argument:
-#   teams show 3          — cached result with surrounding context (numeric index)
-#   teams show alice      — last N messages from the chat matching that name
+#   teams show 3          (cached result with surrounding context, numeric index)
+#   teams show alice      (last N messages from the chat matching that name)
 #
 # Required delegated permission: Chat.Read
 

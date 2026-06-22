@@ -86,7 +86,7 @@ async def run_with_arguments(
             continue
 
         try:
-            # GET /me/messages/{id}/$value — raw MIME (RFC 2822) bytes
+            # GET /me/messages/{id}/$value: raw MIME (RFC 2822) bytes
             mime_content = await context.graph_client.me.messages.by_message_id(
                 message_id
             ).content.get()

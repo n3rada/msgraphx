@@ -113,7 +113,7 @@ class TokenManager:
             )
             return
 
-        # source == "file" — write back to .roadtools_auth
+        # source == "file": write back to .roadtools_auth
         output_file = Path(".roadtools_auth")
         output_file.unlink(missing_ok=True)
 
@@ -172,7 +172,7 @@ class TokenManager:
         refresh token is available.
         """
         if not self._refresh_token:
-            logger.debug("No refresh token — auto-refresh disabled.")
+            logger.debug("No refresh token. Auto-refresh disabled.")
             return None
 
         def _refresher() -> None:
@@ -191,7 +191,7 @@ class TokenManager:
                         if ok:
                             self.update_output_file()
                         else:
-                            logger.error("Token refresh failed — auto-refresh stopped.")
+                            logger.error("Token refresh failed. Auto-refresh stopped.")
                             break
                     except Exception as exc:
                         logger.error(f"Token refresh error: {exc}")

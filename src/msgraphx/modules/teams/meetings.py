@@ -44,7 +44,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
     """Return online meetings for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     rows = []
     async for meeting in GraphPaginator(context.graph_client.me.online_meetings):
@@ -80,7 +80,7 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
 async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict]:
     """Return transcripts for a meeting as plain dicts with VTT content.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     result = await context.graph_client.me.online_meetings.by_online_meeting_id(
         meeting_id

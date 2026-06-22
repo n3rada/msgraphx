@@ -6,8 +6,8 @@ Stores the most recent search results so users can download specific
 items by index without re-querying the API.
 
 Each search domain writes its own cache file:
-  last_sharepoint.json  — sp search results
-  last_mail.json        — outlook search results
+  last_sharepoint.json  (sp search results)
+  last_mail.json        (outlook search results)
 """
 
 from __future__ import annotations

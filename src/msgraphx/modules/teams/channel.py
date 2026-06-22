@@ -1,7 +1,7 @@
 # msgraphx/modules/teams/channel.py
 #
 # Search Teams channel messages via the Microsoft Graph Search API.
-# Channels are shared topic spaces inside a Team workspace — all team
+# Channels are shared topic spaces inside a Team workspace. All team
 # members can see them.  The Graph Search API searches across all channels
 # the caller has access to in a single request.
 #
@@ -38,7 +38,7 @@ from ...utils.html import strip_html
 async def fetch_teams(context: GraphContext) -> list[dict]:
     """Return joined Teams for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     response = await context.graph_client.me.joined_teams.get()
     teams = (response.value or []) if response else []
@@ -58,7 +58,7 @@ async def fetch_search(
     """Return Teams channel messages matching a search query as plain dicts.
 
     `after` and `before` accept ISO 8601 date strings.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     parts: list[str] = []
     if query and query != "*":
@@ -232,7 +232,7 @@ async def run_with_arguments(
 
     except KeyboardInterrupt:
         if cached_items:
-            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
+            logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="teams")

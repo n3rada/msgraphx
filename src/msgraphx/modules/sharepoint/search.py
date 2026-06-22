@@ -98,7 +98,7 @@ async def fetch(
 
     `after` and `before` accept ISO 8601 date strings.
     `group_ids` scopes the search to specific M365 group drives.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     search_query = query
 
@@ -427,7 +427,7 @@ async def run_with_arguments(
 
     except KeyboardInterrupt:
         if cached_items:
-            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
+            logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="sharepoint")

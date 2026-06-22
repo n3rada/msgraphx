@@ -28,7 +28,7 @@ async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
     """Return conditional access policies as plain dicts.
 
     `state` accepts 'enabled', 'disabled', or 'report'.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     policies = await collect_all(context.graph_client.policies.conditional_access_policies)
 

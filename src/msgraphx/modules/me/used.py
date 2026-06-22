@@ -43,7 +43,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
     """Return recently used documents for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     query_params = UsedRequestBuilder.UsedRequestBuilderGetQueryParameters(
         top=min(top, 100),

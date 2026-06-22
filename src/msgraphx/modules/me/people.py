@@ -51,7 +51,7 @@ async def fetch(
 ) -> list[dict]:
     """Return the current user's people graph as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     query_params = PeopleRequestBuilder.PeopleRequestBuilderGetQueryParameters(
         top=min(top, 1000),

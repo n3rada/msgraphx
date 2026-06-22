@@ -39,7 +39,7 @@ from ...utils.pagination import GraphPaginator
 async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
     """Return recent chats for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     chat_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
         top=top,
@@ -90,7 +90,7 @@ async def fetch_search(
     """Return Teams chat messages matching a search query as plain dicts.
 
     `after` and `before` accept ISO 8601 date strings.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     parts: list[str] = []
     if query and query != "*":
@@ -254,7 +254,7 @@ async def run_with_arguments(
 
     except KeyboardInterrupt:
         if cached_items:
-            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
+            logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="teams")

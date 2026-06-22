@@ -89,7 +89,7 @@ class GraphPaginator:
                 status = getattr(exc, "response_status_code", None)
                 if status in _TRANSIENT_STATUS_CODES:
                     logger.error(
-                        f"HTTP {status} from Graph API — aborting pagination"
+                        f"HTTP {status} from Graph API, aborting pagination"
                     )
                     raise StopAsyncIteration from exc
                 raise
@@ -126,7 +126,7 @@ class GraphPaginator:
         except ODataError as exc:
             status = getattr(exc, "response_status_code", None)
             if status in _TRANSIENT_STATUS_CODES:
-                logger.error(f"HTTP {status} from Graph API — aborting pagination")
+                logger.error(f"HTTP {status} from Graph API, aborting pagination")
                 raise StopAsyncIteration from exc
             raise
 

@@ -4,7 +4,7 @@
 # Required delegated permission: Mail.Read (or Mail.ReadBasic)
 #
 # Exchange limitation: from + size <= 1000, so at most 2 pages of 500.
-# Sorting is not supported for Message — the API ignores sortProperties.
+# Sorting is not supported for Message; the API ignores sortProperties.
 #
 # Tip: prototype queries in Graph Explorer
 # https://developer.microsoft.com/en-us/graph/graph-explorer
@@ -40,7 +40,7 @@ async def fetch(
     """Return mail search results as plain dicts.
 
     `after` and `before` accept ISO 8601 date strings (YYYY-MM-DD or full datetime).
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     parts: list[str] = []
 
@@ -213,7 +213,7 @@ async def run_with_arguments(
 
     except KeyboardInterrupt:
         if cached_items:
-            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
+            logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="mail")

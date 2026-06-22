@@ -288,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Generic Graph query subcommand
     graph_parser = subparsers.add_parser(
         "query",
-        help="Raw Graph API query — call any endpoint and get JSON back.",
+        help="Raw Graph API query: call any endpoint and get JSON back.",
         parents=[parent_parser],
     )
     graph.add_arguments(graph_parser)
@@ -296,7 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Token refresh daemon subcommand (runs before auth, no GraphContext needed)
     refresh_parser = subparsers.add_parser(
         "refresh",
-        help="Background token refresh daemon — keep delegated sessions alive.",
+        help="Background token refresh daemon to keep delegated sessions alive.",
     )
     refresh.add_arguments(refresh_parser)
 
@@ -359,7 +359,7 @@ def _load_token(args) -> tuple[str | None, str | None, str]:
     """Resolve access/refresh tokens from args → env → .roadtools_auth.
 
     Returns (access_token, refresh_token, source) where source is one of
-    "arg", "env", or "file" — used to persist refreshed tokens back to the
+    "arg", "env", or "file"; used to persist refreshed tokens back to the
     same origin.
     """
     if args.access_token:
@@ -554,7 +554,7 @@ async def _call_module(coro) -> int:
         return await coro
     except ForbiddenGraphError as exc:
         console = Console(stderr=True, width=shutil.get_terminal_size().columns)
-        console.print("\n[bold red]Access denied — 403 Forbidden[/bold red]")
+        console.print("\n[bold red]Access denied (403 Forbidden)[/bold red]")
         if exc.required:
             console.print(f"  [bold]Required:[/bold]  {exc.required}")
         if exc.granted:
@@ -633,7 +633,7 @@ async def _main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     # Merge globals back: only override values that were explicitly passed
-    # (non-None for strings, True for store_true flags — never False, never None).
+    # (non-None for strings, True for store_true flags; never False, never None).
     for key, value in vars(globals_ns).items():
         if value is not None and value is not False:
             setattr(args, key, value)

@@ -5,7 +5,7 @@
 # Required delegated permissions: Chat.Read, Chat.ReadBasic
 #
 # GET /me/chats?$expand=members gives all chats + their members in one call.
-# For message frequency, use GET /me/chats/{id}/messages (expensive — opt-in via --count).
+# For message frequency, use GET /me/chats/{id}/messages (expensive, opt-in via --count).
 #
 # Tip: prototype in Graph Explorer
 # https://developer.microsoft.com/en-us/graph/graph-explorer
@@ -51,7 +51,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--count",
         action="store_true",
-        help="Fetch message counts per chat (slower — makes one extra API call per chat).",
+        help="Fetch message counts per chat (slower, makes one extra API call per chat).",
     )
 
 
@@ -119,11 +119,11 @@ async def run_with_arguments(
                     Group(
                         _build_table(
                             dm_counter,
-                            f"Top {args.top or len(dm_counter)} — Direct message partners ({total:,} scanned)",
+                            f"Top {args.top or len(dm_counter)} : Direct message partners ({total:,} scanned)",
                         ),
                         _build_table(
                             group_counter,
-                            f"Top {args.top or len(group_counter)} — Group chat participants",
+                            f"Top {args.top or len(group_counter)} : Group chat participants",
                         ),
                     )
                 )

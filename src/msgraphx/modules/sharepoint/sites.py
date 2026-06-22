@@ -49,7 +49,7 @@ async def fetch(context: GraphContext, show_public: bool = False) -> dict:
     """Return SharePoint sites accessible to the current user as plain dicts.
 
     Returns a dict with keys 'private_sites', 'public_sites', 'followed_sites'.
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     m365_groups = await get_user_m365_groups(context.graph_client)
     private_groups = [g for g in m365_groups if g.visibility == "Private"]

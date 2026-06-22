@@ -37,7 +37,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 async def fetch(context: GraphContext, top: int = 50) -> list[dict]:
     """Return Planner tasks for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     tasks = await collect_all(context.graph_client.me.planner.tasks)
     tasks = tasks[:top]

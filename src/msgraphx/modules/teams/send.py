@@ -2,9 +2,9 @@
 #
 # Send a Teams message to a user (1:1 chat) or a channel.
 # Required delegated permissions:
-#   Chat.ReadWrite   — create/use 1:1 chats
-#   ChatMessage.Send — send to chats
-#   ChannelMessage.Send — send to channels
+#   Chat.ReadWrite: create/use 1:1 chats
+#   ChatMessage.Send: send to chats
+#   ChannelMessage.Send: send to channels
 #
 # Usage:
 #   teams send alice@corp.com "Hey, lunch today?"
@@ -56,7 +56,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         metavar="TEAM_ID",
         type=str,
         default=None,
-        help="Team ID — required when --channel is specified.",
+        help="Team ID, required when --channel is specified.",
     )
 
     parser.add_argument(
@@ -103,7 +103,7 @@ async def _send_dm(
     recipient = args.to
     logger.info(f"Resolving user: {recipient}")
 
-    # Accept either UPN or object ID — the by_user_id call works for both
+    # Accept either UPN or object ID; the by_user_id call works for both
     try:
         target_user = await context.graph_client.users.by_user_id(recipient).get()
     except (ValueError, RuntimeError, OSError) as exc:

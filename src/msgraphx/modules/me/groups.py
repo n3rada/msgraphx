@@ -18,7 +18,7 @@ from ...utils.errors import handle_graph_errors
 async def fetch(context: GraphContext, visibility: str | None = None) -> list[dict]:
     """Return groups the current user belongs to (transitive) as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     result = await context.graph_client.me.transitive_member_of.graph_group.get()
     groups = result.value if result and result.value else []

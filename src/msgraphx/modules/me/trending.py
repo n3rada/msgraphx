@@ -33,7 +33,7 @@ async def fetch(
 ) -> list[dict]:
     """Return trending documents for the current user as plain dicts.
 
-    Raises on API error — callers are responsible for handling exceptions.
+    Raises on API error. Callers are responsible for handling exceptions.
     """
     query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
         top=min(top, 100),

@@ -45,7 +45,7 @@ async def create_context(
             tenant_id="...", client_id="...", client_secret="..."
         )
 
-    For library integration use the Session API — no internal paths needed:
+    For library integration use the Session API (no internal paths needed):
 
         from msgraphx import Session
 

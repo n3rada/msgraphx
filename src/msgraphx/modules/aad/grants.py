@@ -6,7 +6,7 @@
 #
 # Required delegated permissions:
 #   DelegatedPermissionGrant.Read.All  (admin consent required)
-#   — or — Directory.Read.All
+#   or: Directory.Read.All
 
 # Built-in imports
 from __future__ import annotations
@@ -73,7 +73,7 @@ async def run_with_arguments(
 
     # Apply client-side filter if provided
     if args.odata_filter:
-        logger.warning("Client-side filter applied — OData syntax is not evaluated, filtering by simple substring match on scope.")
+        logger.warning("Client-side filter applied. OData syntax is not evaluated; filtering by simple substring match on scope.")
         q = args.odata_filter.lower()
         rows = [r for r in rows if q in str(r).lower()]
 

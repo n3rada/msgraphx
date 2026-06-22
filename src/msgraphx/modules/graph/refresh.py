@@ -69,7 +69,7 @@ def _load_tokens(token_file: str | None) -> tuple[str | None, str | None, str]:
 
 
 def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
-    """Refresh loop — runs until a refresh fails, then removes the PID file."""
+    """Refresh loop. Runs until a refresh fails, then removes the PID file."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -83,7 +83,7 @@ def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
             if ok:
                 token.update_output_file()
             else:
-                logger.error("Token refresh failed — stopping.")
+                logger.error("Token refresh failed. Stopping.")
                 break
     except Exception as exc:
         logger.error(f"Refresh loop error: {exc}")
@@ -163,7 +163,7 @@ def run_command(args: argparse.Namespace) -> int:
         logger.error("No access token found. Provide --token-file or set ACCESS_TOKEN.")
         return 1
     if not refresh_token:
-        logger.error("No refresh token available — cannot refresh without one.")
+        logger.error("No refresh token available. Cannot refresh without one.")
         return 1
 
     if args.daemon:
