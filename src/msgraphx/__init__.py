@@ -21,7 +21,7 @@ except PackageNotFoundError:
 # ---------------------------------------------------------------------------
 
 from .core.context import GraphContext
-from .core.factory import create_context
+from .core.auth import create_context
 from .session import Session
 
 __all__ = ["__version__", "GraphContext", "Session", "create_context"]

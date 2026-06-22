@@ -14,7 +14,7 @@ import threading
 
 # Local library imports
 from .core.context import GraphContext
-from .core.factory import create_context
+from .core.auth import create_context
 from .modules.aad import ca as _aad_ca
 from .modules.aad import enrich as _aad_enrich
 from .modules.aad import pim as _aad_pim

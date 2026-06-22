@@ -1,4 +1,4 @@
-# msgraphx/core/factory.py
+# msgraphx/core/auth.py
 #
 # Authenticated GraphContext factory. Lives here so both __init__.py
 # and session.py can import it at module level without a circular dependency.
