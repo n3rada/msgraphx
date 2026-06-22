@@ -1,167 +1,127 @@
 # msgraphx/modules/sharepoint/sites.py
 #
-# List SharePoint sites the current user has access to via M365 group membership.
-# Fetches the user's groups, filters for M365 (Unified) groups, then resolves
-# each group's root SharePoint site URL in parallel.
+# Enumerate SharePoint sites accessible to the current user.
 #
-# Also shows sites the user is directly following (GET /me/followedSites).
+# Approach: POST /search/query with EntityType.Site
+# --------------------------------------------------
+# The Graph Search API with EntityType.Site returns every site the calling
+# user can reach, regardless of *how* they got access:
 #
-# Required delegated permissions: Sites.Read.All, Group.Read.All
+#   - Via M365 Unified group membership (direct or nested/transitive)
+#   - Via direct sharing (a site shared with the user individually)
+#   - Via link sharing (a site URL shared with them)
+#   - Sites the user is explicitly following
+#
+# This is a single API call and is more complete than the previous approach,
+# which enumerated group membership then resolved each group's site one by one
+# (N+1 calls, missing directly shared sites entirely).
+#
+# For app-only tokens the search returns all tenant sites — useful for
+# organisation-wide recon.
+#
+# Required delegated permissions: Sites.Read.All
+# Required application permissions: Sites.Read.All + region set
 
-# Built-in imports
 from __future__ import annotations
 
 import argparse
-import asyncio
 
-# External library imports
 from loguru import logger
+from msgraph.generated.models.entity_type import EntityType
+from msgraph.generated.models.site import Site
 from rich.table import Table
 
-# Local library imports
-from .groups import get_user_m365_groups
+from ...core import graph_search
 from ...core.context import GraphContext
 from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
 
-async def _fetch_group_site(context: "GraphContext", group_id: str) -> tuple | None:
-    """Fetch root SharePoint site for a group. Returns (site_name, web_url) or None."""
-    try:
-        site = (
-            await context.graph_client.groups.by_group_id(group_id)
-            .sites.by_site_id("root")
-            .get()
-        )
-        if site:
-            return (
-                site.display_name or site.name or "(unnamed site)",
-                site.web_url or "",
-            )
-    except Exception as exc:
-        logger.error(f"Failed to fetch site for group {group_id}: {exc}")
-        raise
-    return None
+async def fetch(context: GraphContext) -> list[dict]:
+    """Return SharePoint sites accessible to the current user.
 
+    Uses POST /search/query (EntityType.Site) — one call that covers all
+    access paths: group membership, direct sharing, followed sites, and
+    public sites the user has visited.
 
-async def fetch(context: GraphContext, show_public: bool = False) -> dict:
-    """Return SharePoint sites accessible to the current user as plain dicts.
-
-    Returns a dict with keys 'private_sites', 'public_sites', 'followed_sites'.
-    Raises on API error. Callers are responsible for handling exceptions.
+    For app-only tokens this returns all sites in the tenant.
     """
-    m365_groups = await get_user_m365_groups(context.graph_client)
-    private_groups = [g for g in m365_groups if g.visibility == "Private"]
-    public_groups = [g for g in m365_groups if g.visibility != "Private"]
+    options = graph_search.SearchOptions(
+        query_string="*",
+        # Site search does not support sorting by createdDateTime in all
+        # tenants; disable to avoid API errors.
+        sort_by=None,
+        page_size=500,
+        region=context.region if context.is_app_only else None,
+    )
 
-    target_groups = m365_groups if show_public else private_groups
-    tasks = [_fetch_group_site(context, g.id) for g in target_groups]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    private_sites: list[dict] = []
-    public_sites: list[dict] = []
-
-    for group, result in zip(target_groups, results):
-        if isinstance(result, Exception):
+    sites: list[dict] = []
+    async for raw in graph_search.search_entities(
+        context.graph_client,
+        entity_types=[EntityType.Site],
+        options=options,
+    ):
+        if not isinstance(raw, Site):
             continue
-        if result is None:
-            continue
-        site_name, web_url = result
-        visibility = group.visibility or "Public"
-        entry = {"group": group.display_name or "(unnamed)", "site": site_name, "url": web_url}
-        if visibility == "Private":
-            private_sites.append(entry)
-        else:
-            public_sites.append(entry)
 
-    followed_sites: list[dict] = []
-    followed_resp = await context.graph_client.me.followed_sites.get()
-    followed = followed_resp.value if followed_resp and followed_resp.value else []
-    for site in followed:
-        followed_sites.append({"site": site.display_name or "", "url": site.web_url or ""})
+        sites.append({
+            "id": raw.id,
+            "name": raw.display_name or raw.name or "",
+            "description": raw.description or "",
+            "web_url": raw.web_url or "",
+            "created_datetime": (
+                raw.created_date_time.isoformat() if raw.created_date_time else None
+            ),
+            "last_modified_datetime": (
+                raw.last_modified_date_time.isoformat()
+                if raw.last_modified_date_time
+                else None
+            ),
+        })
 
-    return {
-        "private_sites": private_sites,
-        "public_sites": public_sites if show_public else [],
-        "followed_sites": followed_sites,
-    }
+    return sites
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    pass
 
 
 @handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
+async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    logger.info("Enumerating accessible SharePoint sites via search index")
 
-    show_all = getattr(args, "all_visibility", False)
-    logger.info("Fetching SharePoint sites")
+    sites = await fetch(context)
 
-    data = await fetch(context, show_public=show_all)
-
-    private_rows = [(s["group"], s["site"], s["url"]) for s in data["private_sites"]]
-    public_rows = [(s["group"], s["site"], s["url"]) for s in data["public_sites"]]
-    followed_rows = [(s["site"], s["url"]) for s in data["followed_sites"]]
-    total = len(private_rows) + len(public_rows) + len(followed_rows)
+    if not sites:
+        logger.info("No sites found.")
+        if context.json_output:
+            output.print_json([])
+        return 0
 
     if context.json_output:
-        output.print_json(data)
+        output.print_json(sites)
         return 0
 
     if context.ndjson_output:
-        output.print_ndjson_item(data)
+        for site in sites:
+            output.print_ndjson_item(site)
         return 0
 
-    def _print_table(title: str, columns: list[str], rows: list[tuple]) -> None:
-        if not rows:
-            return
-        table = Table(
-            title=title,
-            show_header=True,
-            header_style="bold",
-            box=None,
-            padding=(0, 1),
-        )
-        for col in columns:
-            table.add_column(col)
-        for row in rows:
-            table.add_row(*row)
-        console.print(table)
-        console.print()
-
-    _print_table(
-        f"Private sites ({len(private_rows)}) - via group membership",
-        ["Group", "Site", "URL"],
-        private_rows,
+    table = Table(
+        title=f"Accessible SharePoint sites ({len(sites)})",
+        show_header=True,
+        header_style="bold",
+        box=None,
+        padding=(0, 1),
     )
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Site")
+    table.add_column("URL")
 
-    if show_all:
-        _print_table(
-            f"Public sites ({len(public_rows)}) - via group membership",
-            ["Group", "Site", "URL"],
-            public_rows,
-        )
+    for idx, site in enumerate(sites, 1):
+        table.add_row(str(idx), site["name"] or "(unnamed)", site["web_url"])
 
-    _print_table(
-        f"Followed sites ({len(followed_rows)})",
-        ["Site", "URL"],
-        followed_rows,
-    )
-
-    if total == 0:
-        logger.info("No sites found")
-    else:
-        logger.success(f"{total} site(s) listed")
-
+    console.print(table)
+    logger.success(f"{len(sites)} site(s) found")
     return 0
-
-
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
-    parser.add_argument(
-        "--public",
-        dest="all_visibility",
-        action="store_true",
-        help="Also show public group sites (default: private only).",
-    )

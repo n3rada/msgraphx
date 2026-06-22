@@ -156,16 +156,19 @@ async def run_with_arguments(
 
     group_ids: list[str] | None = None
     if getattr(args, "my_groups", False):
+        # Fetch ALL M365 Unified groups, not just Teams-provisioned ones.
+        # Every Unified group owns a SharePoint site regardless of whether
+        # a Teams workspace was ever added on top of it.
         groups = await get_user_m365_groups(
             context.graph_client,
             visibility=getattr(args, "visibility", None),
-            teams_only=True,
+            teams_only=False,
         )
         if not groups:
-            logger.warning("No Microsoft 365 groups found.")
+            logger.warning("No M365 Unified groups found.")
             return 0
         group_ids = [g.id for g in groups]
-        logger.info(f"Scoping search to {len(group_ids)} user groups")
+        logger.info(f"Scoping search to {len(group_ids)} M365 Unified groups")
 
     args._group_ids = group_ids
     args._resolved_scope = resolved_scope
