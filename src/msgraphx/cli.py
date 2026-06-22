@@ -25,13 +25,13 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, graph, me, mfa, outlook, sharepoint, teams
+from .modules import aad, graph, me, mfa, onedrive, outlook, sharepoint, teams
 from .modules.graph import refresh
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 _KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
+    {"sharepoint", "sp", "onedrive", "od", "aad", "ad", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
 )
 
 
@@ -249,6 +249,15 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     sharepoint.add_arguments(sp_parser, parents=[parent_parser])
+
+    # OneDrive subcommand
+    od_parser = subparsers.add_parser(
+        "onedrive",
+        aliases=["od"],
+        help="Personal OneDrive drive commands",
+        parents=[parent_parser],
+    )
+    onedrive.add_arguments(od_parser, parents=[parent_parser])
 
     # Entra ID subcommand
     aad_parser = subparsers.add_parser(
@@ -581,6 +590,9 @@ async def _dispatch(args, context) -> int:
 
     if command in ("sharepoint", "sp"):
         return await _call_module(sharepoint.run_with_arguments(context, args))
+
+    if command in ("onedrive", "od"):
+        return await _call_module(onedrive.run_with_arguments(context, args))
 
     if command in ("aad", "ad"):
         return await _call_module(aad.run_with_arguments(context, args))

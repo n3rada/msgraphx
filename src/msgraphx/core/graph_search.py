@@ -15,6 +15,7 @@ from msgraph.generated.models.search_query import SearchQuery
 from msgraph.generated.models.sort_property import SortProperty
 from msgraph.generated.search.query.query_post_request_body import QueryPostRequestBody
 from msgraph.generated.models.entity_type import EntityType
+from msgraph.generated.models.share_point_one_drive_options import SharePointOneDriveOptions
 
 # Local library imports
 from ..utils.errors import raise_if_forbidden
@@ -32,6 +33,7 @@ class SearchOptions:
     max_pages: int | None = (
         None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
     )
+    share_point_one_drive_options: SharePointOneDriveOptions | None = None
 
 
 async def search_entities(
@@ -122,6 +124,7 @@ async def search_entities(
             size=page_size,
             fields=options.fields,
             region=options.region,
+            share_point_one_drive_options=options.share_point_one_drive_options,
         )
 
         try:

@@ -11,6 +11,8 @@ from pathlib import Path
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.generated.models.entity_type import EntityType
+from msgraph.generated.models.search_content import SearchContent
+from msgraph.generated.models.share_point_one_drive_options import SharePointOneDriveOptions
 from rich.table import Table
 
 # Local library imports
@@ -82,6 +84,9 @@ HUNT_QUERIES = {
 }
 
 
+_SP_ONLY = SharePointOneDriveOptions(include_content=SearchContent.SharedContent)
+
+
 async def fetch(
     context: GraphContext,
     query: str = "*",
@@ -121,6 +126,7 @@ async def fetch(
         page_size=page_size,
         region=region,
         drive_id=drive_id,
+        share_point_one_drive_options=_SP_ONLY,
     )
 
     items: list[dict] = []
