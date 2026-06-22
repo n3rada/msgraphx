@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .core.context import GraphContext
+    from .utils.tokens import TokenManager
 
 
 class _MeNamespace:
@@ -230,8 +232,13 @@ class Session:
         )
     """
 
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(
+        self,
+        context: "GraphContext",
+        token_manager: "TokenManager | None" = None,
+    ) -> None:
         self._ctx = context
+        self._token_manager = token_manager
         self.me = _MeNamespace(context)
         self.aad = _AadNamespace(context)
         self.outlook = _OutlookNamespace(context)
@@ -245,6 +252,19 @@ class Session:
     @property
     def region(self) -> str:
         return self._ctx.region
+
+    def start_refresh(self) -> threading.Thread | None:
+        """Start a background token refresh thread.
+
+        Returns the thread if a refresh token is available, None otherwise.
+        Call once after Session.create() to keep delegated sessions alive::
+
+            session = await Session.create(access_token="...", refresh_token="...")
+            session.start_refresh()
+        """
+        if self._token_manager is None:
+            return None
+        return self._token_manager.start_auto_refresh()
 
     @classmethod
     async def create(
@@ -260,7 +280,8 @@ class Session:
 
         Delegated::
 
-            session = await Session.create(access_token="eyJ...")
+            session = await Session.create(access_token="eyJ...", refresh_token="0.A...")
+            session.start_refresh()  # keep alive for multi-hour ops
 
         App-only::
 
@@ -278,4 +299,13 @@ class Session:
             client_secret=client_secret,
             region=region,
         )
-        return cls(ctx)
+
+        token_manager = None
+        if access_token and not tenant_id:
+            from .utils.tokens import TokenManager
+            try:
+                token_manager = TokenManager(access_token, refresh_token)
+            except Exception:
+                pass
+
+        return cls(ctx, token_manager=token_manager)

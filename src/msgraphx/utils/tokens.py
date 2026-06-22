@@ -165,39 +165,44 @@ class TokenManager:
         logger.success("Access token refreshed successfully.")
         return True
 
-    def start_auto_refresh(self) -> None:
+    def start_auto_refresh(self) -> threading.Thread | None:
+        """Start a background daemon thread that silently refreshes the token.
+
+        Refreshes 5 minutes before expiry. Returns the thread, or None if no
+        refresh token is available.
+        """
         if not self._refresh_token:
-            logger.info(
-                "ℹAuto-refresh disabled - no refresh token available. You'll need to re-authenticate when the token expires."
-            )
-            return
+            logger.debug("No refresh token — auto-refresh disabled.")
+            return None
 
-        def refresher():
-            while True:
-                sleep_duration = (
-                    self.expires_in() - 300
-                )  # Refresh 5 minutes before expiration
-                if sleep_duration > 0:
-                    logger.debug(f"Sleeping {sleep_duration:.1f}s until refresh.")
-                    time.sleep(sleep_duration)
-
-                logger.debug("Time to refresh token.")
-                try:
-                    success = asyncio.run(
-                        self.refresh_access_token(self._refresh_token)
-                    )
-                    if success:
-                        self.update_output_file()
-                    else:
-                        logger.error("Token refresh failed, stopping auto-refresh.")
+        def _refresher() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                while True:
+                    sleep_for = max(0, self.expires_in() - 300)
+                    if sleep_for > 0:
+                        logger.debug(f"Token refresh in {sleep_for}s.")
+                        time.sleep(sleep_for)
+                    try:
+                        ok = loop.run_until_complete(
+                            self.refresh_access_token(self._refresh_token)
+                        )
+                        if ok:
+                            self.update_output_file()
+                        else:
+                            logger.error("Token refresh failed — auto-refresh stopped.")
+                            break
+                    except Exception as exc:
+                        logger.error(f"Token refresh error: {exc}")
                         break
-                except Exception as exc:
-                    logger.error(f"Failed to refresh token: {exc}")
-                    break
+            finally:
+                loop.close()
 
-        thread = threading.Thread(target=refresher, daemon=True, name="Token Refresher")
-        thread.start()
-        logger.info("Auto token refresher thread started.")
+        t = threading.Thread(target=_refresher, daemon=True, name="token-refresh")
+        t.start()
+        logger.info("Background token refresh started.")
+        return t
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
         return AccessToken(self._access_token, self._expires_on)

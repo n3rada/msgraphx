@@ -26,11 +26,12 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from . import __version__
 from .core.context import GraphContext
 from .modules import aad, graph, me, outlook, sharepoint, teams
+from .modules.graph import refresh
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 _KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query"}
+    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
 )
 
 
@@ -291,6 +292,13 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     graph.add_arguments(graph_parser)
+
+    # Token refresh daemon subcommand (runs before auth, no GraphContext needed)
+    refresh_parser = subparsers.add_parser(
+        "refresh",
+        help="Background token refresh daemon — keep delegated sessions alive.",
+    )
+    refresh.add_arguments(refresh_parser)
 
     return parser
 
@@ -634,6 +642,9 @@ async def _main(argv: list[str]) -> int:
     logger.trace(
         f"debug={args.debug!r}  trace={args.trace!r}  log_level={args.log_level!r}"
     )
+
+    if args.command == "refresh":
+        return refresh.run_command(args)
 
     if _apply_proxy(getattr(args, "proxy", None)):
         return 1
