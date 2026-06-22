@@ -44,30 +44,23 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
+async def fetch(
+    context: GraphContext,
+    top: int = 25,
+    search: str | None = None,
+) -> list[dict]:
+    """Return the current user's people graph as plain dicts.
 
-    logger.info("Fetching people graph")
-
+    Raises on API error — callers are responsible for handling exceptions.
+    """
     query_params = PeopleRequestBuilder.PeopleRequestBuilderGetQueryParameters(
-        top=min(args.top, 1000),
-        search=f'"{args.search}"' if args.search else None,
+        top=min(top, 1000),
+        search=f'"{search}"' if search else None,
     )
     config = RequestConfiguration(query_parameters=query_params)
 
     result = await context.graph_client.me.people.get(request_configuration=config)
     people = (result.value or []) if result else []
-
-    if not people:
-        logger.info("No people found.")
-        if context.json_output:
-            output.print_json([])
-        return 0
 
     rows = []
     for person in people:
@@ -75,7 +68,6 @@ async def run_with_arguments(
         phones_list = person.phones or []
         phone = phones_list[0].number if phones_list else ""
 
-        # Scored email addresses — pick first
         scored_emails = person.scored_email_addresses or []
         if scored_emails:
             email = scored_emails[0].address or ""
@@ -90,6 +82,27 @@ async def run_with_arguments(
             "company": person.company_name,
             "office": person.office_location,
         })
+
+    return rows
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    if context.is_app_only:
+        logger.error("This module requires delegated authentication (user context).")
+        return 1
+
+    logger.info("Fetching people graph")
+
+    rows = await fetch(context, top=args.top, search=args.search)
+
+    if not rows:
+        logger.info("No people found.")
+        if context.json_output:
+            output.print_json([])
+        return 0
 
     if context.json_output:
         output.print_json(rows)

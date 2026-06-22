@@ -22,6 +22,7 @@ except PackageNotFoundError:
 
 # Re-export GraphContext so callers can type-hint without digging into core.
 from .core.context import GraphContext  # noqa: E402
+from .session import Session  # noqa: E402
 
 
 async def create_context(
@@ -44,8 +45,15 @@ async def create_context(
             tenant_id="...", client_id="...", client_secret="..."
         )
 
-    Pass the returned context to any module's run_with_arguments(), or
-    use ctx.graph_client directly for raw SDK calls.
+    For library integration use the Session API — no internal paths needed:
+
+        from msgraphx import Session
+
+        session = await Session.create(access_token="eyJ...")
+        people  = await session.me.people(top=25)
+        events  = await session.me.calendar(top=50, after="2025-01-01T00:00:00")
+        users   = await session.aad.users(query="admin")
+        files   = await session.sharepoint.search("filetype:xlsx credentials")
     """
     # External library imports
     from msgraph.graph_service_client import GraphServiceClient
@@ -114,4 +122,4 @@ async def create_context(
     )
 
 
-__all__ = ["__version__", "GraphContext", "create_context"]
+__all__ = ["__version__", "GraphContext", "Session", "create_context"]

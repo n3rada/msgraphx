@@ -18,7 +18,7 @@ keywords = [
     "microsoft-graph", "graph-api", "microsoft-365", "m365", "azure-ad", "entra-id",
     "sharepoint", "outlook", "teams",
     "red-team", "pentesting", "offensive-security", "post-exploitation",
-    "recon", "data-harvesting", "oauth", "pkce",
+    "recon", "data-harvesting", "oauth",
     "python",
 ]
 
@@ -40,8 +40,6 @@ dependencies = [
     "loguru>=0.7.3",
     "markdownify>=0.14.1",
     "msgraph-sdk>=1.57.0",
-    "pkce>=1.0.3",
-    "prompt-toolkit>=3.0.52",
     "rich>=15.0.0",
 ]
 

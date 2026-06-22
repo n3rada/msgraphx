@@ -41,7 +41,6 @@ HUNT_GROUPS = {
 
 
 def matches_query(text: str, query: str, exact: bool = False) -> bool:
-    """Check if text matches query (case-insensitive)."""
     if not text:
         return False
     text_lower = text.lower()
@@ -52,15 +51,10 @@ def matches_query(text: str, query: str, exact: bool = False) -> bool:
 
 
 def serialize_object(obj):
-    """Convert Graph API objects to JSON-serializable format."""
     if obj is None:
         return None
-
-    # Handle datetime objects
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
-
-    # Handle objects with __dict__ (common in msgraph SDK)
     if hasattr(obj, "__dict__"):
         result = {}
         for key, value in obj.__dict__.items():
@@ -75,34 +69,23 @@ def serialize_object(obj):
             else:
                 result[key] = value
         return result
-
     return obj
 
 
 def save_results_to_json(
     tenant_id: str, search_type: str, query: str, results: list, output_dir: Path = None
 ):
-    """Save search results to JSON file."""
     if not results:
         return None
-
-    # Create output directory structure
     if output_dir is None:
         output_dir = Path.cwd()
-
     tenant_dir = output_dir / tenant_id
     tenant_dir.mkdir(parents=True, exist_ok=True)
-
-    # Generate filename with timestamp
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_query = "".join(c if c.isalnum() else "_" for c in query)
     filename = f"{search_type}_{safe_query}_{timestamp}.json"
     filepath = tenant_dir / filename
-
-    # Serialize results
     serialized_results = [serialize_object(obj) for obj in results]
-
-    # Save to file
     data = {
         "tenant_id": tenant_id,
         "search_type": search_type,
@@ -111,401 +94,212 @@ def save_results_to_json(
         "count": len(results),
         "results": serialized_results,
     }
-
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-
     logger.success(f"Saved {len(results)} results to: {filepath}")
     return filepath
 
 
-@handle_graph_errors
-async def search_groups(
-    graph_client: "GraphServiceClient",
+async def fetch_groups(
+    context: GraphContext,
     query: str,
-    save_json: bool = False,
-    tenant_id: str = None,
-    output_dir: Path = None,
     contains: bool = False,
-    show_synced_only: bool = False,
-    results_collector: list | None = None,
+    synced_only: bool = False,
     odata_filter: str | None = None,
-) -> int:
-    """Search for groups matching the query."""
-    logger.info(f"Searching for groups matching: {query}")
+) -> list[dict]:
+    """Return groups matching query as plain dicts.
 
-    count = 0
-    all_results = []
-
-    try:
-        if odata_filter:
-            logger.debug(f"Using custom OData filter: {odata_filter}")
-            query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
-                filter=odata_filter,
-                top=999,
-            )
-            request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-                query_parameters=query_params
-            )
-            all_results = await pagination.collect_all(graph_client.groups, request_config)
-        elif contains:
-            # For contains search, get all groups and filter client-side
-            logger.debug("Using client-side 'contains' filter (fetching all groups)")
-            all_results = await pagination.collect_all(graph_client.groups, None)
-            # Filter client-side
-            all_results = [
-                g
-                for g in all_results
-                if matches_query(g.display_name, query)
-                or matches_query(g.mail_nickname, query)
-            ]
-        else:
-            # API-side startswith filter
-            query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
-                filter=f"startswith(displayName,'{query}') or startswith(mailNickname,'{query}')",
-                top=999,
-            )
-            request_config = (
-                GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-                    query_parameters=query_params
-                )
-            )
-            all_results = await pagination.collect_all(
-                graph_client.groups, request_config
-            )
-
-        # Filter for synced groups if requested
-        if show_synced_only:
-            all_results = [g for g in all_results if g.on_premises_sync_enabled]
-            logger.debug(
-                f"Filtered to {len(all_results)} synced from on-premises AD"
-            )
-
-        if all_results:
-            for group in all_results:
-                group_type = "Security" if group.security_enabled else "Distribution"
-                if group.group_types and "Unified" in group.group_types:
-                    group_type = "Microsoft 365"
-
-                sync_indicator = "Synced" if group.on_premises_sync_enabled else ""
-                logger.success(
-                    f"{group.display_name} | Type: {group_type} {sync_indicator} | ID: {group.id}"
-                )
-                if group.description:
-                    logger.info(f"   Description: {group.description}")
-                if group.mail:
-                    logger.info(f"   Email: {group.mail}")
-                count += 1
-
-        if count == 0:
-            logger.info("No groups found")
-        elif save_json and tenant_id:
-            save_results_to_json(tenant_id, "groups", query, all_results, output_dir)
-
-        if results_collector is not None:
-            results_collector.extend([
-                {
-                    "id": g.id,
-                    "display_name": g.display_name,
-                    "description": g.description,
-                    "mail": g.mail,
-                    "mail_nickname": g.mail_nickname,
-                    "security_enabled": g.security_enabled,
-                    "mail_enabled": g.mail_enabled,
-                    "on_premises_sync_enabled": g.on_premises_sync_enabled,
-                    "visibility": g.visibility,
-                    "group_types": g.group_types,
-                }
-                for g in all_results
-            ])
-
-    except Exception as e:
-        logger.error(f"Failed to search groups: {e}")
-
-    return count
-
-
-@handle_graph_errors
-async def search_users(
-    graph_client: "GraphServiceClient",
-    query: str,
-    save_json: bool = False,
-    tenant_id: str = None,
-    output_dir: Path = None,
-    results_collector: list | None = None,
-    odata_filter: str | None = None,
-) -> int:
-    """Search for users matching the query."""
-    logger.info(f"Searching for users matching: {query}")
-
-    count = 0
-    all_results = []
-
-    try:
-        api_filter = (
-            odata_filter
-            if odata_filter
-            else f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}') or startswith(mail,'{query}')"
-        )
-        if odata_filter:
-            logger.debug(f"Using custom OData filter: {odata_filter}")
-        query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
-            filter=api_filter,
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    if odata_filter:
+        logger.debug(f"Using custom OData filter: {odata_filter}")
+        query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+            filter=odata_filter,
             top=999,
         )
-        request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfiguration(
+        request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
             query_parameters=query_params
         )
-
-        # Collect all pages of results
-        all_results = await pagination.collect_all(graph_client.users, request_config)
-
-        if all_results:
-            for user in all_results:
-                status = "Enabled" if user.account_enabled else "Disabled"
-                logger.success(
-                    f"{user.display_name} ({user.user_principal_name}) | {status} | ID: {user.id}"
-                )
-                if user.job_title:
-                    logger.info(f"   Title: {user.job_title}")
-                if user.department:
-                    logger.info(f"   Department: {user.department}")
-                count += 1
-
-        if count == 0:
-            logger.info("No users found")
-        elif save_json and tenant_id:
-            save_results_to_json(tenant_id, "users", query, all_results, output_dir)
-
-        if results_collector is not None:
-            results_collector.extend([
-                {
-                    "id": u.id,
-                    "display_name": u.display_name,
-                    "user_principal_name": u.user_principal_name,
-                    "mail": u.mail,
-                    "account_enabled": u.account_enabled,
-                    "job_title": u.job_title,
-                    "department": u.department,
-                }
-                for u in all_results
-            ])
-
-    except Exception as e:
-        logger.error(f"Failed to search users: {e}")
-
-    return count
-
-
-@handle_graph_errors
-async def search_devices(
-    graph_client: "GraphServiceClient",
-    query: str,
-    save_json: bool = False,
-    tenant_id: str = None,
-    output_dir: Path = None,
-    results_collector: list | None = None,
-    odata_filter: str | None = None,
-) -> int:
-    """Search for devices/computers matching the query."""
-    logger.info(f"Searching for devices matching: {query}")
-
-    count = 0
-    all_results = []
-
-    try:
-        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
-        if odata_filter:
-            logger.debug(f"Using custom OData filter: {odata_filter}")
-        query_params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
-            filter=api_filter,
+        all_results = await pagination.collect_all(context.graph_client.groups, request_config)
+    elif contains:
+        logger.debug("Using client-side 'contains' filter (fetching all groups)")
+        all_results = await pagination.collect_all(context.graph_client.groups, None)
+        all_results = [
+            g for g in all_results
+            if matches_query(g.display_name, query) or matches_query(g.mail_nickname, query)
+        ]
+    else:
+        query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+            filter=f"startswith(displayName,'{query}') or startswith(mailNickname,'{query}')",
             top=999,
         )
-        request_config = (
-            DevicesRequestBuilder.DevicesRequestBuilderGetRequestConfiguration(
-                query_parameters=query_params
-            )
-        )
-
-        # Collect all pages of results
-        all_results = await pagination.collect_all(graph_client.devices, request_config)
-
-        if all_results:
-            for device in all_results:
-                status = "Enabled" if device.account_enabled else "Disabled"
-                os_info = (
-                    f"{device.operating_system} {device.operating_system_version}"
-                    if device.operating_system
-                    else "Unknown OS"
-                )
-
-                logger.success(
-                    f"{device.display_name} | {os_info} | {status} | ID: {device.id}"
-                )
-                if device.trust_type:
-                    logger.info(f"   Trust Type: {device.trust_type}")
-                count += 1
-
-        if count == 0:
-            logger.info("No devices found")
-        elif save_json and tenant_id:
-            save_results_to_json(tenant_id, "devices", query, all_results, output_dir)
-
-        if results_collector is not None:
-            results_collector.extend([
-                {
-                    "id": d.id,
-                    "display_name": d.display_name,
-                    "account_enabled": d.account_enabled,
-                    "operating_system": d.operating_system,
-                    "operating_system_version": d.operating_system_version,
-                    "trust_type": d.trust_type,
-                    "on_premises_sync_enabled": d.on_premises_sync_enabled,
-                }
-                for d in all_results
-            ])
-
-    except Exception as e:
-        logger.error(f"Failed to search devices: {e}")
-
-    return count
-
-
-@handle_graph_errors
-async def search_service_principals(
-    graph_client: "GraphServiceClient",
-    query: str,
-    save_json: bool = False,
-    tenant_id: str = None,
-    output_dir: Path = None,
-    results_collector: list | None = None,
-    odata_filter: str | None = None,
-) -> int:
-    """Search for service principals matching the query."""
-    logger.info(f"Searching for service principals matching: {query}")
-
-    count = 0
-    all_results = []
-
-    try:
-        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
-        if odata_filter:
-            logger.debug(f"Using custom OData filter: {odata_filter}")
-        query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
-            filter=api_filter,
-            top=999,
-        )
-        request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
+        request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
             query_parameters=query_params
         )
+        all_results = await pagination.collect_all(context.graph_client.groups, request_config)
 
-        # Collect all pages of results
-        all_results = await pagination.collect_all(
-            graph_client.service_principals, request_config
-        )
+    if synced_only:
+        all_results = [g for g in all_results if g.on_premises_sync_enabled]
 
-        if all_results:
-            for sp in all_results:
-                status = "Enabled" if sp.account_enabled else "Disabled"
-                logger.success(
-                    f"{sp.display_name} | App ID: {sp.app_id} | {status} | ID: {sp.id}"
-                )
-                if sp.service_principal_type:
-                    logger.info(f"   Type: {sp.service_principal_type}")
-                count += 1
-
-        if count == 0:
-            logger.info("No service principals found")
-        elif save_json and tenant_id:
-            save_results_to_json(
-                tenant_id, "service_principals", query, all_results, output_dir
-            )
-
-        if results_collector is not None:
-            results_collector.extend([
-                {
-                    "id": sp.id,
-                    "display_name": sp.display_name,
-                    "app_id": sp.app_id,
-                    "account_enabled": sp.account_enabled,
-                    "service_principal_type": sp.service_principal_type,
-                }
-                for sp in all_results
-            ])
-
-    except Exception as e:
-        logger.error(f"Failed to search service principals: {e}")
-
-    return count
+    return [
+        {
+            "id": g.id,
+            "display_name": g.display_name,
+            "description": g.description,
+            "mail": g.mail,
+            "mail_nickname": g.mail_nickname,
+            "security_enabled": g.security_enabled,
+            "mail_enabled": g.mail_enabled,
+            "on_premises_sync_enabled": g.on_premises_sync_enabled,
+            "visibility": g.visibility,
+            "group_types": g.group_types,
+        }
+        for g in all_results
+    ]
 
 
-@handle_graph_errors
-async def search_applications(
-    graph_client: "GraphServiceClient",
+async def fetch_users(
+    context: GraphContext,
     query: str,
-    save_json: bool = False,
-    tenant_id: str = None,
-    output_dir: Path = None,
-    results_collector: list | None = None,
     odata_filter: str | None = None,
-) -> int:
-    """Search for applications matching the query."""
-    logger.info(f"Searching for applications matching: {query}")
+) -> list[dict]:
+    """Return users matching query as plain dicts.
 
-    count = 0
-    all_results = []
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    api_filter = (
+        odata_filter
+        if odata_filter
+        else f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}') or startswith(mail,'{query}')"
+    )
+    if odata_filter:
+        logger.debug(f"Using custom OData filter: {odata_filter}")
+    query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
+        filter=api_filter,
+        top=999,
+    )
+    request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfiguration(
+        query_parameters=query_params
+    )
+    all_results = await pagination.collect_all(context.graph_client.users, request_config)
 
-    try:
-        api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
-        if odata_filter:
-            logger.debug(f"Using custom OData filter: {odata_filter}")
-        query_params = (
-            ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
-                filter=api_filter,
-                top=999,
-            )
-        )
-        request_config = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetRequestConfiguration(
-            query_parameters=query_params
-        )
+    return [
+        {
+            "id": u.id,
+            "display_name": u.display_name,
+            "user_principal_name": u.user_principal_name,
+            "mail": u.mail,
+            "account_enabled": u.account_enabled,
+            "job_title": u.job_title,
+            "department": u.department,
+        }
+        for u in all_results
+    ]
 
-        # Collect all pages of results
-        all_results = await pagination.collect_all(
-            graph_client.applications, request_config
-        )
 
-        if all_results:
-            for app in all_results:
-                logger.success(
-                    f"{app.display_name} | App ID: {app.app_id} | Audience: {app.sign_in_audience} | ID: {app.id}"
-                )
-                if app.created_date_time:
-                    logger.info(f"   Created: {app.created_date_time}")
-                count += 1
+async def fetch_devices(
+    context: GraphContext,
+    query: str,
+    odata_filter: str | None = None,
+) -> list[dict]:
+    """Return devices matching query as plain dicts.
 
-        if count == 0:
-            logger.info("No applications found")
-        elif save_json and tenant_id:
-            save_results_to_json(
-                tenant_id, "applications", query, all_results, output_dir
-            )
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+    if odata_filter:
+        logger.debug(f"Using custom OData filter: {odata_filter}")
+    query_params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
+        filter=api_filter,
+        top=999,
+    )
+    request_config = DevicesRequestBuilder.DevicesRequestBuilderGetRequestConfiguration(
+        query_parameters=query_params
+    )
+    all_results = await pagination.collect_all(context.graph_client.devices, request_config)
 
-        if results_collector is not None:
-            results_collector.extend([
-                {
-                    "id": app.id,
-                    "display_name": app.display_name,
-                    "app_id": app.app_id,
-                    "sign_in_audience": app.sign_in_audience,
-                    "created_date_time": app.created_date_time.isoformat() if app.created_date_time else None,
-                }
-                for app in all_results
-            ])
+    return [
+        {
+            "id": d.id,
+            "display_name": d.display_name,
+            "account_enabled": d.account_enabled,
+            "operating_system": d.operating_system,
+            "operating_system_version": d.operating_system_version,
+            "trust_type": d.trust_type,
+            "on_premises_sync_enabled": d.on_premises_sync_enabled,
+        }
+        for d in all_results
+    ]
 
-    except Exception as e:
-        logger.error(f"Failed to search applications: {e}")
 
-    return count
+async def fetch_service_principals(
+    context: GraphContext,
+    query: str,
+    odata_filter: str | None = None,
+) -> list[dict]:
+    """Return service principals matching query as plain dicts.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+    if odata_filter:
+        logger.debug(f"Using custom OData filter: {odata_filter}")
+    query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
+        filter=api_filter,
+        top=999,
+    )
+    request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
+        query_parameters=query_params
+    )
+    all_results = await pagination.collect_all(
+        context.graph_client.service_principals, request_config
+    )
+
+    return [
+        {
+            "id": sp.id,
+            "display_name": sp.display_name,
+            "app_id": sp.app_id,
+            "account_enabled": sp.account_enabled,
+            "service_principal_type": sp.service_principal_type,
+        }
+        for sp in all_results
+    ]
+
+
+async def fetch_applications(
+    context: GraphContext,
+    query: str,
+    odata_filter: str | None = None,
+) -> list[dict]:
+    """Return applications matching query as plain dicts.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
+    if odata_filter:
+        logger.debug(f"Using custom OData filter: {odata_filter}")
+    query_params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
+        filter=api_filter,
+        top=999,
+    )
+    request_config = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetRequestConfiguration(
+        query_parameters=query_params
+    )
+    all_results = await pagination.collect_all(
+        context.graph_client.applications, request_config
+    )
+
+    return [
+        {
+            "id": app.id,
+            "display_name": app.display_name,
+            "app_id": app.app_id,
+            "sign_in_audience": app.sign_in_audience,
+            "created_date_time": app.created_date_time.isoformat() if app.created_date_time else None,
+        }
+        for app in all_results
+    ]
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):
@@ -575,129 +369,141 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
+def _log_groups(results: list[dict]) -> None:
+    for g in results:
+        group_type = "Security" if g["security_enabled"] else "Distribution"
+        if g["group_types"] and "Unified" in g["group_types"]:
+            group_type = "Microsoft 365"
+        sync_indicator = "Synced" if g["on_premises_sync_enabled"] else ""
+        logger.success(f"{g['display_name']} | Type: {group_type} {sync_indicator} | ID: {g['id']}")
+        if g["description"]:
+            logger.info(f"   Description: {g['description']}")
+        if g["mail"]:
+            logger.info(f"   Email: {g['mail']}")
+
+
+def _log_users(results: list[dict]) -> None:
+    for u in results:
+        status = "Enabled" if u["account_enabled"] else "Disabled"
+        logger.success(f"{u['display_name']} ({u['user_principal_name']}) | {status} | ID: {u['id']}")
+        if u["job_title"]:
+            logger.info(f"   Title: {u['job_title']}")
+        if u["department"]:
+            logger.info(f"   Department: {u['department']}")
+
+
+def _log_devices(results: list[dict]) -> None:
+    for d in results:
+        status = "Enabled" if d["account_enabled"] else "Disabled"
+        os_info = (
+            f"{d['operating_system']} {d['operating_system_version']}"
+            if d["operating_system"]
+            else "Unknown OS"
+        )
+        logger.success(f"{d['display_name']} | {os_info} | {status} | ID: {d['id']}")
+        if d["trust_type"]:
+            logger.info(f"   Trust Type: {d['trust_type']}")
+
+
+def _log_service_principals(results: list[dict]) -> None:
+    for sp in results:
+        status = "Enabled" if sp["account_enabled"] else "Disabled"
+        logger.success(f"{sp['display_name']} | App ID: {sp['app_id']} | {status} | ID: {sp['id']}")
+        if sp["service_principal_type"]:
+            logger.info(f"   Type: {sp['service_principal_type']}")
+
+
+def _log_applications(results: list[dict]) -> None:
+    for app in results:
+        logger.success(f"{app['display_name']} | App ID: {app['app_id']} | Audience: {app['sign_in_audience']} | ID: {app['id']}")
+        if app["created_date_time"]:
+            logger.info(f"   Created: {app['created_date_time']}")
+
+
 @handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
-
-    # Determine the search query
     if args.hunt:
-        # Use hunt preset
-        hunt_keywords = HUNT_GROUPS[args.hunt]
+        queries = HUNT_GROUPS[args.hunt]
         logger.info(f"Hunt mode: {args.hunt}")
-        logger.info(f"Keywords: {', '.join(hunt_keywords)}")
-        queries = hunt_keywords
+        logger.info(f"Keywords: {', '.join(queries)}")
     elif args.query:
         queries = [args.query]
     else:
         logger.error("Please provide a search query or use --hunt")
         return 1
 
-    # Determine which types to search
     search_types = []
     if args.type == "all":
-        search_types = [
-            "groups",
-            "users",
-            "devices",
-            "service-principals",
-            "applications",
-        ]
+        search_types = ["groups", "users", "devices", "service-principals", "applications"]
     elif args.type == "computers":
-        search_types = ["devices"]  # Alias for devices
+        search_types = ["devices"]
     else:
         search_types = [args.type]
 
-    # Get tenant ID and output settings
     tenant_id = getattr(args, "tenant_id", None)
     save_dir = getattr(args, "save_dir", None)
     save_json = save_dir is not None
     output_dir = Path(save_dir) if save_dir else Path.cwd()
+    odata_filter: str | None = getattr(args, "odata_filter", None)
 
     if save_json and not tenant_id:
         logger.warning("Tenant ID not available, using 'unknown' for directory name")
         tenant_id = "unknown"
 
     total_found = 0
-    odata_filter: str | None = getattr(args, "odata_filter", None)
+    structured_results: dict[str, list] = {}
 
-    # Accumulate serialized results for structured output
-    needs_collector = context.json_output or context.ndjson_output
-    structured_results: dict[str, list] | None = {} if needs_collector else None
-
-    # Execute searches
     for query in queries:
         for search_type in search_types:
-            collector: list | None = [] if needs_collector else None
+            try:
+                if search_type == "groups":
+                    results = await fetch_groups(
+                        context, query,
+                        contains=args.contains,
+                        synced_only=args.synced_only,
+                        odata_filter=odata_filter,
+                    )
+                    _log_groups(results)
+                elif search_type == "users":
+                    results = await fetch_users(context, query, odata_filter=odata_filter)
+                    _log_users(results)
+                elif search_type in ("devices", "computers"):
+                    results = await fetch_devices(context, query, odata_filter=odata_filter)
+                    _log_devices(results)
+                elif search_type == "service-principals":
+                    results = await fetch_service_principals(context, query, odata_filter=odata_filter)
+                    _log_service_principals(results)
+                elif search_type == "applications":
+                    results = await fetch_applications(context, query, odata_filter=odata_filter)
+                    _log_applications(results)
+                else:
+                    results = []
 
-            if search_type == "groups":
-                total_found += await search_groups(
-                    context.graph_client,
-                    query,
-                    save_json,
-                    tenant_id,
-                    output_dir,
-                    contains=args.contains,
-                    show_synced_only=args.synced_only,
-                    results_collector=collector,
-                    odata_filter=odata_filter,
-                )
-            elif search_type == "users":
-                total_found += await search_users(
-                    context.graph_client,
-                    query,
-                    save_json,
-                    tenant_id,
-                    output_dir,
-                    results_collector=collector,
-                    odata_filter=odata_filter,
-                )
-            elif search_type in ["devices", "computers"]:
-                total_found += await search_devices(
-                    context.graph_client,
-                    query,
-                    save_json,
-                    tenant_id,
-                    output_dir,
-                    results_collector=collector,
-                    odata_filter=odata_filter,
-                )
-            elif search_type == "service-principals":
-                total_found += await search_service_principals(
-                    context.graph_client,
-                    query,
-                    save_json,
-                    tenant_id,
-                    output_dir,
-                    results_collector=collector,
-                    odata_filter=odata_filter,
-                )
-            elif search_type == "applications":
-                total_found += await search_applications(
-                    context.graph_client,
-                    query,
-                    save_json,
-                    tenant_id,
-                    output_dir,
-                    results_collector=collector,
-                    odata_filter=odata_filter,
-                )
+            except Exception as exc:
+                logger.error(f"Failed to search {search_type}: {exc}")
+                results = []
 
-            if collector and structured_results is not None:
-                structured_results.setdefault(search_type, []).extend(collector)
+            if not results:
+                logger.info(f"No {search_type} found for query: {query!r}")
 
-            # Add separator between different searches
+            if results and save_json and tenant_id:
+                save_results_to_json(tenant_id, search_type, query, results, output_dir)
+
+            total_found += len(results)
+            structured_results.setdefault(search_type, []).extend(results)
+
             if len(queries) > 1 or len(search_types) > 1:
                 logger.info("─" * 80)
 
     logger.info(f"Total objects found: {total_found}")
 
-    if structured_results is not None:
-        if context.ndjson_output:
-            for items in structured_results.values():
-                for item in items:
-                    output.print_ndjson_item(item)
-        else:
-            output.print_json(structured_results)
+    if context.ndjson_output:
+        for items in structured_results.values():
+            for item in items:
+                output.print_ndjson_item(item)
+    elif context.json_output:
+        output.print_json(structured_results)
 
     return 0

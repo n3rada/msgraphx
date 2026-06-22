@@ -39,10 +39,53 @@ async def _fetch_group_site(context: "GraphContext", group_id: str) -> tuple | N
                 site.display_name or site.name or "(unnamed site)",
                 site.web_url or "",
             )
-    except Exception:
+    except Exception as exc:
         logger.error(f"Failed to fetch site for group {group_id}: {exc}")
-        raise  # Let gather collect the exception
+        raise
     return None
+
+
+async def fetch(context: GraphContext, show_public: bool = False) -> dict:
+    """Return SharePoint sites accessible to the current user as plain dicts.
+
+    Returns a dict with keys 'private_sites', 'public_sites', 'followed_sites'.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    m365_groups = await get_user_m365_groups(context.graph_client)
+    private_groups = [g for g in m365_groups if g.visibility == "Private"]
+    public_groups = [g for g in m365_groups if g.visibility != "Private"]
+
+    target_groups = m365_groups if show_public else private_groups
+    tasks = [_fetch_group_site(context, g.id) for g in target_groups]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    private_sites: list[dict] = []
+    public_sites: list[dict] = []
+
+    for group, result in zip(target_groups, results):
+        if isinstance(result, Exception):
+            continue
+        if result is None:
+            continue
+        site_name, web_url = result
+        visibility = group.visibility or "Public"
+        entry = {"group": group.display_name or "(unnamed)", "site": site_name, "url": web_url}
+        if visibility == "Private":
+            private_sites.append(entry)
+        else:
+            public_sites.append(entry)
+
+    followed_sites: list[dict] = []
+    followed_resp = await context.graph_client.me.followed_sites.get()
+    followed = followed_resp.value if followed_resp and followed_resp.value else []
+    for site in followed:
+        followed_sites.append({"site": site.display_name or "", "url": site.web_url or ""})
+
+    return {
+        "private_sites": private_sites,
+        "public_sites": public_sites if show_public else [],
+        "followed_sites": followed_sites,
+    }
 
 
 @handle_graph_errors
@@ -54,84 +97,23 @@ async def run_with_arguments(
         return 1
 
     show_all = getattr(args, "all_visibility", False)
+    logger.info("Fetching SharePoint sites")
 
+    data = await fetch(context, show_public=show_all)
 
-    # -------------------------------------------------------------------------
-    # 1. Fetch user's M365 group memberships
-    # -------------------------------------------------------------------------
-    m365_groups = await get_user_m365_groups(context.graph_client)
-    private_groups = [g for g in m365_groups if g.visibility == "Private"]
-    public_groups = [g for g in m365_groups if g.visibility != "Private"]
-
-    # -------------------------------------------------------------------------
-    # 2. Resolve SharePoint site URLs for target groups (in parallel)
-    # -------------------------------------------------------------------------
-    target_groups = m365_groups if show_all else private_groups
-    logger.info(f"Resolving SharePoint sites for {len(target_groups)} groups")
-
-    # Fetch all group sites concurrently
-    tasks = [_fetch_group_site(context, g.id) for g in target_groups]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    private_rows: list[tuple] = []
-    public_rows: list[tuple] = []
-    errors = 0
-
-    for group, result in zip(target_groups, results):
-        if isinstance(result, Exception):
-            errors += 1
-            if errors == 1:
-                logger.warning(
-                    f"Failed to fetch site for '{group.display_name}': {result}"
-                )
-            continue
-        if result is None:
-            logger.debug(f"  No site for group: {group.display_name}")
-            continue
-
-        site_name, web_url = result
-        visibility = group.visibility or "Public"
-        row = (group.display_name or "(unnamed)", site_name, web_url)
-
-        logger.debug(f"  {visibility}: {group.display_name} -> {web_url}")
-
-        if visibility == "Private":
-            private_rows.append(row)
-        else:
-            public_rows.append(row)
-
-    if errors:
-        logger.warning(f"{errors}/{len(target_groups)} group site lookups failed")
-
-    # -------------------------------------------------------------------------
-    # 3. Followed sites
-    # -------------------------------------------------------------------------
-    logger.info("Fetching followed sites")
-    followed_rows: list[tuple] = []
-    try:
-        followed_resp = await context.graph_client.me.followed_sites.get()
-        followed = followed_resp.value if followed_resp and followed_resp.value else []
-        for site in followed:
-            followed_rows.append((site.display_name or "", site.web_url or ""))
-            logger.debug(f"  Followed: {site.display_name} | {site.web_url}")
-    except Exception as exc:
-        logger.error(f"Failed to fetch followed sites: {exc}")
-
-    total = (
-        len(private_rows) + (len(public_rows) if show_all else 0) + len(followed_rows)
-    )
+    private_rows = [(s["group"], s["site"], s["url"]) for s in data["private_sites"]]
+    public_rows = [(s["group"], s["site"], s["url"]) for s in data["public_sites"]]
+    followed_rows = [(s["site"], s["url"]) for s in data["followed_sites"]]
+    total = len(private_rows) + len(public_rows) + len(followed_rows)
 
     if context.json_output:
-        output.print_json({
-            "private_sites": [{"group": r[0], "site": r[1], "url": r[2]} for r in private_rows],
-            "public_sites": [{"group": r[0], "site": r[1], "url": r[2]} for r in public_rows] if show_all else [],
-            "followed_sites": [{"site": r[0], "url": r[1]} for r in followed_rows],
-        })
+        output.print_json(data)
         return 0
 
-    # -------------------------------------------------------------------------
-    # Display
-    # -------------------------------------------------------------------------
+    if context.ndjson_output:
+        output.print_ndjson_item(data)
+        return 0
+
     def _print_table(title: str, columns: list[str], rows: list[tuple]) -> None:
         if not rows:
             return

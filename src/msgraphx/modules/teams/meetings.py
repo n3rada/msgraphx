@@ -41,6 +41,79 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
+async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
+    """Return online meetings for the current user as plain dicts.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    rows = []
+    async for meeting in GraphPaginator(context.graph_client.me.online_meetings):
+        start = ""
+        end = ""
+        if meeting.start_date_time:
+            start = meeting.start_date_time.strftime("%Y-%m-%d %H:%M")
+        if meeting.end_date_time:
+            end = meeting.end_date_time.strftime("%H:%M")
+
+        organizer = ""
+        if meeting.participants and meeting.participants.organizer:
+            org = meeting.participants.organizer
+            if org.upn:
+                organizer = org.upn
+            elif org.identity and org.identity.user:
+                organizer = org.identity.user.display_name or ""
+
+        rows.append({
+            "id": meeting.id,
+            "subject": meeting.subject,
+            "start": start,
+            "end": end,
+            "organizer": organizer,
+        })
+
+        if len(rows) >= top:
+            break
+
+    return rows
+
+
+async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict]:
+    """Return transcripts for a meeting as plain dicts with VTT content.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    result = await context.graph_client.me.online_meetings.by_online_meeting_id(
+        meeting_id
+    ).transcripts.get()
+
+    transcripts = (result.value or []) if result else []
+
+    items = []
+    for transcript in transcripts:
+        created = ""
+        if transcript.created_date_time:
+            created = transcript.created_date_time.strftime("%Y-%m-%d %H:%M")
+
+        vtt_bytes = await (
+            context.graph_client.me.online_meetings.by_online_meeting_id(meeting_id)
+            .transcripts.by_call_transcript_id(transcript.id)
+            .content.get()
+        )
+
+        vtt_text = ""
+        if vtt_bytes:
+            vtt_text = vtt_bytes.decode("utf-8", errors="replace")
+
+        items.append({
+            "transcript_id": transcript.id,
+            "meeting_id": transcript.meeting_id,
+            "created": created,
+            "content": vtt_text,
+        })
+
+    return items
+
+
 @handle_graph_errors
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
@@ -50,47 +123,17 @@ async def run_with_arguments(
         return 1
 
     if args.transcript:
-        return await _fetch_transcript(context, args.transcript)
+        return await _render_transcripts(context, args.transcript)
 
-    return await _list_meetings(context, args.top)
+    return await _render_meetings(context, args.top)
 
 
-async def _list_meetings(context: "GraphContext", top: int) -> int:
+async def _render_meetings(context: GraphContext, top: int) -> int:
     logger.info("Fetching online meetings")
 
-    rows = []
     try:
-        async for meeting in GraphPaginator(
-            context.graph_client.me.online_meetings
-        ):
-            start = ""
-            end = ""
-            if meeting.start_date_time:
-                start = meeting.start_date_time.strftime("%Y-%m-%d %H:%M")
-            if meeting.end_date_time:
-                end = meeting.end_date_time.strftime("%H:%M")
-
-            organizer = ""
-            if meeting.participants and meeting.participants.organizer:
-                org = meeting.participants.organizer
-                if org.upn:
-                    organizer = org.upn
-                elif org.identity and org.identity.user:
-                    organizer = org.identity.user.display_name or ""
-
-            rows.append({
-                "id": meeting.id,
-                "subject": meeting.subject,
-                "start": start,
-                "end": end,
-                "organizer": organizer,
-            })
-
-            if len(rows) >= top:
-                break
-
+        rows = await fetch(context, top=top)
     except Exception as exc:
-        # onlineMeetings list requires special permissions; surface useful guidance
         logger.error(f"Failed to list online meetings: {exc}")
         logger.info("Tip: OnlineMeetings.Read scope required, and meetings must have been created via Graph API or Teams.")
         return 1
@@ -133,41 +176,14 @@ async def _list_meetings(context: "GraphContext", top: int) -> int:
     return 0
 
 
-async def _fetch_transcript(context: "GraphContext", meeting_id: str) -> int:
+async def _render_transcripts(context: GraphContext, meeting_id: str) -> int:
     logger.info(f"Fetching transcripts for meeting: {meeting_id}")
 
-    result = await context.graph_client.me.online_meetings.by_online_meeting_id(
-        meeting_id
-    ).transcripts.get()
+    all_content = await fetch_transcripts(context, meeting_id)
 
-    transcripts = (result.value or []) if result else []
-
-    if not transcripts:
+    if not all_content:
         logger.info("No transcripts found for this meeting.")
         return 0
-
-    all_content = []
-    for transcript in transcripts:
-        created = ""
-        if transcript.created_date_time:
-            created = transcript.created_date_time.strftime("%Y-%m-%d %H:%M")
-
-        vtt_bytes = await (
-            context.graph_client.me.online_meetings.by_online_meeting_id(meeting_id)
-            .transcripts.by_call_transcript_id(transcript.id)
-            .content.get()
-        )
-
-        vtt_text = ""
-        if vtt_bytes:
-            vtt_text = vtt_bytes.decode("utf-8", errors="replace")
-
-        all_content.append({
-            "transcript_id": transcript.id,
-            "meeting_id": transcript.meeting_id,
-            "created": created,
-            "content": vtt_text,
-        })
 
     if context.json_output:
         output.print_json(all_content)

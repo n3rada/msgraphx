@@ -82,6 +82,157 @@ HUNT_QUERIES = {
 }
 
 
+async def fetch(
+    context: GraphContext,
+    query: str = "*",
+    sort_by: str = "createdDateTime",
+    descending: bool = True,
+    page_size: int = 500,
+    region: str | None = None,
+    drive_id: str | None = None,
+    group_ids: list[str] | None = None,
+    after: str | None = None,
+    before: str | None = None,
+) -> list[dict]:
+    """Return SharePoint search results as plain dicts.
+
+    `after` and `before` accept ISO 8601 date strings.
+    `group_ids` scopes the search to specific M365 group drives.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    search_query = query
+
+    filters = []
+    if before:
+        filters.append(f"created<={before}")
+    if after:
+        filters.append(f"created>={after}")
+    if filters:
+        search_query += " " + " ".join(filters)
+
+    if group_ids:
+        group_filter = " OR ".join([f"GroupId:{gid}" for gid in group_ids])
+        search_query = f"({search_query}) AND ({group_filter})"
+
+    search_options = graph_search.SearchOptions(
+        query_string=search_query,
+        sort_by=sort_by,
+        descending=descending,
+        page_size=page_size,
+        region=region,
+        drive_id=drive_id,
+    )
+
+    items: list[dict] = []
+    async for _item in graph_search.search_entities(
+        context.graph_client,
+        entity_types=[EntityType.DriveItem],
+        options=search_options,
+    ):
+        drive_item = _item if isinstance(_item, DriveItem) else None
+        if drive_item is None:
+            continue
+
+        author = (
+            drive_item.created_by.user.display_name
+            if drive_item.created_by and drive_item.created_by.user
+            else "?"
+        )
+        size_bytes = drive_item.size or 0
+        if size_bytes >= 1_048_576:
+            size_str = f"{size_bytes / 1_048_576:.1f} MB"
+        elif size_bytes >= 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes} B"
+        created = (
+            drive_item.created_date_time.strftime("%Y-%m-%d")
+            if drive_item.created_date_time
+            else ""
+        )
+
+        items.append({
+            "drive_id": (
+                drive_item.parent_reference.drive_id if drive_item.parent_reference else None
+            ),
+            "item_id": drive_item.id,
+            "name": drive_item.name,
+            "size": drive_item.size,
+            "size_str": size_str,
+            "web_url": drive_item.web_url,
+            "e_tag": drive_item.e_tag,
+            "c_tag": drive_item.c_tag,
+            "description": drive_item.description,
+            "created_datetime": (
+                drive_item.created_date_time.isoformat() if drive_item.created_date_time else None
+            ),
+            "last_modified_datetime": (
+                drive_item.last_modified_date_time.isoformat()
+                if drive_item.last_modified_date_time
+                else None
+            ),
+            "created": created,
+            "last_modified": (
+                drive_item.last_modified_date_time.strftime("%Y-%m-%d")
+                if drive_item.last_modified_date_time
+                else None
+            ),
+            "author": author,
+            "created_by_email": (
+                drive_item.created_by.user.additional_data.get("email")
+                if drive_item.created_by and drive_item.created_by.user
+                else None
+            ),
+            "created_by_id": (
+                drive_item.created_by.user.id
+                if drive_item.created_by and drive_item.created_by.user
+                else None
+            ),
+            "last_modified_by": (
+                drive_item.last_modified_by.user.display_name
+                if drive_item.last_modified_by and drive_item.last_modified_by.user
+                else None
+            ),
+            "last_modified_by_email": (
+                drive_item.last_modified_by.user.additional_data.get("email")
+                if drive_item.last_modified_by and drive_item.last_modified_by.user
+                else None
+            ),
+            "last_modified_by_id": (
+                drive_item.last_modified_by.user.id
+                if drive_item.last_modified_by and drive_item.last_modified_by.user
+                else None
+            ),
+            "parent_id": (
+                drive_item.parent_reference.id if drive_item.parent_reference else None
+            ),
+            "parent_name": (
+                drive_item.parent_reference.name if drive_item.parent_reference else None
+            ),
+            "parent_path": (
+                drive_item.parent_reference.path if drive_item.parent_reference else None
+            ),
+            "site_id": (
+                drive_item.parent_reference.site_id if drive_item.parent_reference else None
+            ),
+            "drive_type": (
+                drive_item.parent_reference.drive_type if drive_item.parent_reference else None
+            ),
+            "mime_type": (drive_item.file.mime_type if drive_item.file else None),
+            "is_folder": drive_item.folder is not None,
+            "child_count": (
+                drive_item.folder.child_count if drive_item.folder else None
+            ),
+            "download_url": (
+                drive_item.additional_data.get("@microsoft.graph.downloadUrl")
+                if drive_item.additional_data
+                else None
+            ),
+        })
+
+    return items
+
+
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -134,261 +285,95 @@ async def run_with_arguments(
     search_query = args.query
 
     if args.filetype:
-        # Add filetype filter to the query
         search_query = f"filetype:{args.filetype} {search_query}".strip()
-
     elif args.hunt:
-        # Use predefined hunt query
         search_query = HUNT_QUERIES[args.hunt]
         logger.info("Hunt mode")
 
-    filters = []
+    after_iso: str | None = None
+    before_iso: str | None = None
 
     if args.before:
         try:
-            iso_date = parse_date_string(args.before)
-            filters.append(f"created<={iso_date}")
+            before_iso = parse_date_string(args.before)
         except ValueError as e:
             logger.error(str(e))
             return 1
 
     if args.after:
         try:
-            iso_date = parse_date_string(args.after)
-            filters.append(f"created>={iso_date}")
+            after_iso = parse_date_string(args.after)
         except ValueError as e:
             logger.error(str(e))
             return 1
 
-    if filters:
-        search_query += " " + " ".join(filters)
-        logger.info(f"Date filters applied: {' and '.join(filters)}")
-
-    logger.info(f"Search query: {search_query}")
-
-    # Region is required for application permissions, optional for delegated
     region = args.region if getattr(args, "is_app_only", False) else None
+    drive_id = getattr(args, "drive_id", None)
 
-    # Handle --my-groups: search only in user's groups
-    group_ids = None
+    group_ids: list[str] | None = None
     if args.my_groups:
         groups = await get_user_m365_groups(
             context.graph_client, visibility=args.visibility, teams_only=True
         )
         if not groups:
-            logger.warning(
-                "No Microsoft 365 groups found, no results will be returned"
-            )
+            logger.warning("No Microsoft 365 groups found, no results will be returned")
             return 0
-
         group_ids = [g.id for g in groups]
         logger.info(f"Scoping search to {len(group_ids)} user groups")
 
-    # Get drive_id if provided to scope search
-    drive_id = getattr(args, "drive_id", None)
     if drive_id:
         logger.info(f"Scoping search to Drive ID: {drive_id}")
 
-    # Build search query with group filter if needed
-    if group_ids:
-        # Add filter to search only in these groups' drives
-        group_filter = " OR ".join([f"GroupId:{gid}" for gid in group_ids])
-        search_query = f"({search_query}) AND ({group_filter})"
-        logger.debug(f"Modified query: {search_query}")
+    logger.info(f"Search query: {search_query}")
 
-    search_options = graph_search.SearchOptions(
-        query_string=search_query,
-        sort_by="createdDateTime",
-        descending=True,
-        page_size=500,
-        region=region,
-        drive_id=drive_id,
-    )
-
-    # Create save directory if specified
     save_dir = None
     if args.save:
         save_dir = Path(args.save)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-    count = 0
+    cached_items: list[dict] = []
     downloaded = 0
     failed = 0
-    cached_items: list[dict[str, str | int | None]] = []
-
 
     if not save_dir and not context.json_output:
         console.print("[bold]Search results[/bold]")
         console.rule()
 
     try:
-        async for _item in graph_search.search_entities(
-            context.graph_client,
-            entity_types=[EntityType.DriveItem],
-            options=search_options,
-        ):
-            drive_item = _item if isinstance(_item, DriveItem) else None
-            if drive_item is None:
-                continue
+        cached_items = await fetch(
+            context,
+            query=search_query,
+            region=region,
+            drive_id=drive_id,
+            group_ids=group_ids,
+            after=after_iso,
+            before=before_iso,
+        )
 
-            logger.trace(drive_item.__dict__)
-
-            count += 1
-            author = (
-                drive_item.created_by.user.display_name
-                if drive_item.created_by and drive_item.created_by.user
-                else "?"
-            )
-            size_bytes = drive_item.size or 0
-            if size_bytes >= 1_048_576:
-                size_str = f"{size_bytes / 1_048_576:.1f} MB"
-            elif size_bytes >= 1024:
-                size_str = f"{size_bytes / 1024:.1f} KB"
-            else:
-                size_str = f"{size_bytes} B"
-            created = (
-                drive_item.created_date_time.strftime("%Y-%m-%d")
-                if drive_item.created_date_time
-                else ""
-            )
-            # Cache full DriveItem metadata for later download by index
+        for count, item in enumerate(cached_items, 1):
             if not save_dir and not context.json_output and not context.ndjson_output:
                 console.print(
-                    f"  [dim]{count:>4}.[/dim]  {drive_item.name}  "
-                    f"[dim]{author}[/dim]  [cyan]{size_str}[/cyan]  [dim]{created}[/dim]"
+                    f"  [dim]{count:>4}.[/dim]  {item['name']}  "
+                    f"[dim]{item['author']}[/dim]  [cyan]{item['size_str']}[/cyan]  [dim]{item['created']}[/dim]"
                 )
 
-            cached_items.append(
-                {
-                    # Identifiers (top-level for download.py)
-                    "drive_id": (
-                        drive_item.parent_reference.drive_id
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "item_id": drive_item.id,
-                    # Core
-                    "name": drive_item.name,
-                    "size": drive_item.size,
-                    "web_url": drive_item.web_url,
-                    "e_tag": drive_item.e_tag,
-                    "c_tag": drive_item.c_tag,
-                    "description": drive_item.description,
-                    # Dates (ISO strings)
-                    "created_datetime": (
-                        drive_item.created_date_time.isoformat()
-                        if drive_item.created_date_time
-                        else None
-                    ),
-                    "last_modified_datetime": (
-                        drive_item.last_modified_date_time.isoformat()
-                        if drive_item.last_modified_date_time
-                        else None
-                    ),
-                    # Formatted dates (for display)
-                    "created": created,
-                    "last_modified": (
-                        drive_item.last_modified_date_time.strftime("%Y-%m-%d")
-                        if drive_item.last_modified_date_time
-                        else None
-                    ),
-                    # Created by
-                    "author": author,
-                    "created_by_email": (
-                        drive_item.created_by.user.additional_data.get("email")
-                        if drive_item.created_by and drive_item.created_by.user
-                        else None
-                    ),
-                    "created_by_id": (
-                        drive_item.created_by.user.id
-                        if drive_item.created_by and drive_item.created_by.user
-                        else None
-                    ),
-                    # Last modified by
-                    "last_modified_by": (
-                        drive_item.last_modified_by.user.display_name
-                        if drive_item.last_modified_by
-                        and drive_item.last_modified_by.user
-                        else None
-                    ),
-                    "last_modified_by_email": (
-                        drive_item.last_modified_by.user.additional_data.get("email")
-                        if drive_item.last_modified_by
-                        and drive_item.last_modified_by.user
-                        else None
-                    ),
-                    "last_modified_by_id": (
-                        drive_item.last_modified_by.user.id
-                        if drive_item.last_modified_by
-                        and drive_item.last_modified_by.user
-                        else None
-                    ),
-                    # Parent reference
-                    "parent_id": (
-                        drive_item.parent_reference.id
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "parent_name": (
-                        drive_item.parent_reference.name
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "parent_path": (
-                        drive_item.parent_reference.path
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "site_id": (
-                        drive_item.parent_reference.site_id
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    "drive_type": (
-                        drive_item.parent_reference.drive_type
-                        if drive_item.parent_reference
-                        else None
-                    ),
-                    # File / folder
-                    "mime_type": (
-                        drive_item.file.mime_type if drive_item.file else None
-                    ),
-                    "is_folder": drive_item.folder is not None,
-                    "child_count": (
-                        drive_item.folder.child_count if drive_item.folder else None
-                    ),
-                    # Pre-authenticated direct download URL (present in search results)
-                    "download_url": (
-                        drive_item.additional_data.get("@microsoft.graph.downloadUrl")
-                        if drive_item.additional_data
-                        else None
-                    ),
-                }
-            )
-
             if context.ndjson_output:
-                output.print_ndjson_item(cached_items[-1])
+                output.print_ndjson_item(item)
 
-            # Download file if --save is specified
-            if save_dir:
+            if save_dir and item["drive_id"] and item["item_id"]:
                 try:
-                    # Sanitize filename to avoid path traversal
-                    safe_filename = drive_item.name.replace("/", "_").replace("..", "_")
+                    safe_filename = (item["name"] or "unknown").replace("/", "_").replace("..", "_")
                     file_path = save_dir / safe_filename
                     info_path = save_dir / f"{safe_filename}_info.json"
 
-                    # Check if file already exists - skip download if it does
                     if file_path.exists() and info_path.exists():
                         logger.debug(f" Skipping (already exists): {file_path.name}")
                         downloaded += 1
                         continue
 
-                    # Get file content stream only if file doesn't exist
                     file_stream = (
-                        await context.graph_client.drives.by_drive_id(
-                            drive_item.parent_reference.drive_id
-                        )
-                        .items.by_drive_item_id(drive_item.id)
+                        await context.graph_client.drives.by_drive_id(item["drive_id"])
+                        .items.by_drive_item_id(item["item_id"])
                         .content.get()
                     )
 
@@ -397,123 +382,35 @@ async def run_with_arguments(
                             f.write(file_stream)
 
                         metadata = {
-                            "id": drive_item.id,
-                            "name": drive_item.name,
-                            "size": drive_item.size,
-                            "created_datetime": (
-                                drive_item.created_date_time.isoformat()
-                                if drive_item.created_date_time
-                                else None
-                            ),
-                            "last_modified_datetime": (
-                                drive_item.last_modified_date_time.isoformat()
-                                if drive_item.last_modified_date_time
-                                else None
-                            ),
-                            "web_url": drive_item.web_url,
-                            "created_by": (
-                                {
-                                    "user": {
-                                        "display_name": (
-                                            drive_item.created_by.user.display_name
-                                            if drive_item.created_by
-                                            and drive_item.created_by.user
-                                            else None
-                                        ),
-                                        "email": (
-                                            drive_item.created_by.user.additional_data.get(
-                                                "email"
-                                            )
-                                            if drive_item.created_by
-                                            and drive_item.created_by.user
-                                            else None
-                                        ),
-                                        "id": (
-                                            drive_item.created_by.user.id
-                                            if drive_item.created_by
-                                            and drive_item.created_by.user
-                                            else None
-                                        ),
-                                    }
+                            "id": item["item_id"],
+                            "name": item["name"],
+                            "size": item["size"],
+                            "created_datetime": item["created_datetime"],
+                            "last_modified_datetime": item["last_modified_datetime"],
+                            "web_url": item["web_url"],
+                            "created_by": {
+                                "user": {
+                                    "display_name": item["author"],
+                                    "email": item["created_by_email"],
+                                    "id": item["created_by_id"],
                                 }
-                                if drive_item.created_by
-                                else None
-                            ),
-                            "last_modified_by": (
-                                {
-                                    "user": {
-                                        "display_name": (
-                                            drive_item.last_modified_by.user.display_name
-                                            if drive_item.last_modified_by
-                                            and drive_item.last_modified_by.user
-                                            else None
-                                        ),
-                                        "email": (
-                                            drive_item.last_modified_by.user.additional_data.get(
-                                                "email"
-                                            )
-                                            if drive_item.last_modified_by
-                                            and drive_item.last_modified_by.user
-                                            else None
-                                        ),
-                                        "id": (
-                                            drive_item.last_modified_by.user.id
-                                            if drive_item.last_modified_by
-                                            and drive_item.last_modified_by.user
-                                            else None
-                                        ),
-                                    }
+                            } if item["author"] else None,
+                            "last_modified_by": {
+                                "user": {
+                                    "display_name": item["last_modified_by"],
+                                    "email": item["last_modified_by_email"],
+                                    "id": item["last_modified_by_id"],
                                 }
-                                if drive_item.last_modified_by
-                                else None
-                            ),
-                            "parent_reference": (
-                                {
-                                    "drive_id": (
-                                        drive_item.parent_reference.drive_id
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                    "drive_type": (
-                                        drive_item.parent_reference.drive_type
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                    "id": (
-                                        drive_item.parent_reference.id
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                    "name": (
-                                        drive_item.parent_reference.name
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                    "path": (
-                                        drive_item.parent_reference.path
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                    "site_id": (
-                                        drive_item.parent_reference.site_id
-                                        if drive_item.parent_reference
-                                        else None
-                                    ),
-                                }
-                                if drive_item.parent_reference
-                                else None
-                            ),
-                            "file": (
-                                {
-                                    "mime_type": (
-                                        drive_item.file.mime_type
-                                        if drive_item.file
-                                        else None
-                                    ),
-                                }
-                                if drive_item.file
-                                else None
-                            ),
+                            } if item["last_modified_by"] else None,
+                            "parent_reference": {
+                                "drive_id": item["drive_id"],
+                                "drive_type": item["drive_type"],
+                                "id": item["parent_id"],
+                                "name": item["parent_name"],
+                                "path": item["parent_path"],
+                                "site_id": item["site_id"],
+                            },
+                            "file": {"mime_type": item["mime_type"]} if item["mime_type"] else None,
                         }
 
                         with open(info_path, "w", encoding="utf-8") as f:
@@ -522,20 +419,20 @@ async def run_with_arguments(
                         logger.debug(f"Saved: {file_path.name}")
                         downloaded += 1
                     else:
-                        logger.warning(f"Empty file: {drive_item.name}")
+                        logger.warning(f"Empty file: {item['name']}")
 
                 except Exception as e:
-                    logger.error(f"Failed to download {drive_item.name}: {e}")
+                    logger.error(f"Failed to download {item['name']}: {e}")
                     failed += 1
 
     except KeyboardInterrupt:
-        if count:
-            logger.info(f"Interrupted — {count} result(s) cached.")
+        if cached_items:
+            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="sharepoint")
 
-    if count == 0:
+    if not cached_items:
         logger.info("No results found.")
         if context.json_output:
             output.print_json([])

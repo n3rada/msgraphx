@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -41,37 +42,26 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
+async def fetch(
+    context: GraphContext,
+    top: int = 50,
+    after: str | None = None,
+    before: str | None = None,
+) -> list[dict]:
+    """Return calendar events for the current user as plain dicts.
 
+    `after` and `before` accept ISO 8601 datetime strings for OData filtering.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
     filter_parts: list[str] = []
-
-    if args.after:
-        try:
-            iso = parse_date_string(args.after)
-            filter_parts.append(f"start/dateTime ge '{iso}'")
-        except ValueError as e:
-            logger.error(str(e))
-            return 1
-
-    if args.before:
-        try:
-            iso = parse_date_string(args.before)
-            filter_parts.append(f"end/dateTime le '{iso}'")
-        except ValueError as e:
-            logger.error(str(e))
-            return 1
-
+    if after:
+        filter_parts.append(f"start/dateTime ge '{after}'")
+    if before:
+        filter_parts.append(f"end/dateTime le '{before}'")
     odata_filter = " and ".join(filter_parts) if filter_parts else None
-    logger.info(f"Fetching calendar events (filter: {odata_filter!r})")
 
     query_params = EventsRequestBuilder.EventsRequestBuilderGetQueryParameters(
-        top=min(args.top, 999),
+        top=min(top, 999),
         filter=odata_filter,
         orderby=["start/dateTime desc"],
         select=["subject", "start", "end", "organizer", "attendees", "location",
@@ -85,14 +75,12 @@ async def run_with_arguments(
         end = ""
         if event.start and event.start.date_time:
             try:
-                from datetime import datetime
                 dt = datetime.fromisoformat(event.start.date_time.rstrip("Z"))
                 start = dt.strftime("%Y-%m-%d %H:%M")
             except ValueError:
                 start = event.start.date_time[:16]
         if event.end and event.end.date_time:
             try:
-                from datetime import datetime
                 dt = datetime.fromisoformat(event.end.date_time.rstrip("Z"))
                 end = dt.strftime("%H:%M")
             except ValueError:
@@ -128,8 +116,40 @@ async def run_with_arguments(
             "web_link": event.web_link,
         })
 
-        if len(rows) >= args.top:
+        if len(rows) >= top:
             break
+
+    return rows
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    if context.is_app_only:
+        logger.error("This module requires delegated authentication (user context).")
+        return 1
+
+    after_iso: str | None = None
+    before_iso: str | None = None
+
+    if args.after:
+        try:
+            after_iso = parse_date_string(args.after)
+        except ValueError as e:
+            logger.error(str(e))
+            return 1
+
+    if args.before:
+        try:
+            before_iso = parse_date_string(args.before)
+        except ValueError as e:
+            logger.error(str(e))
+            return 1
+
+    logger.info(f"Fetching calendar events (filter: after={after_iso!r} before={before_iso!r})")
+
+    rows = await fetch(context, top=args.top, after=after_iso, before=before_iso)
 
     if not rows:
         logger.info("No events found.")

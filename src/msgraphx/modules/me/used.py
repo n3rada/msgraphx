@@ -40,18 +40,13 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
+async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
+    """Return recently used documents for the current user as plain dicts.
 
-    logger.info("Fetching recently used documents")
-
+    Raises on API error — callers are responsible for handling exceptions.
+    """
     query_params = UsedRequestBuilder.UsedRequestBuilderGetQueryParameters(
-        top=min(args.top, 100),
+        top=min(top, 100),
     )
     config = RequestConfiguration(query_parameters=query_params)
 
@@ -62,12 +57,6 @@ async def run_with_arguments(
         )
 
     items = (result.value or []) if result else []
-
-    if not items:
-        logger.info("No recently used items found.")
-        if context.json_output:
-            output.print_json([])
-        return 0
 
     rows = []
     for item in items:
@@ -85,6 +74,27 @@ async def run_with_arguments(
             "url": (ref.web_url if ref else None),
             "id": (ref.id if ref else None),
         })
+
+    return rows
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    if context.is_app_only:
+        logger.error("This module requires delegated authentication (user context).")
+        return 1
+
+    logger.info("Fetching recently used documents")
+
+    rows = await fetch(context, top=args.top)
+
+    if not rows:
+        logger.info("No recently used items found.")
+        if context.json_output:
+            output.print_json([])
+        return 0
 
     if context.json_output:
         output.print_json(rows)

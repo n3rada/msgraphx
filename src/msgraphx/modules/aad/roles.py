@@ -28,25 +28,14 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
-    parser.add_argument(
-        "--filter",
-        dest="odata_filter",
-        metavar="EXPR",
-        default=None,
-        help="OData $filter expression (e.g. \"principalId eq 'GUID'\").",
-    )
+async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[dict]:
+    """Return directory role assignments as plain dicts.
 
-
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    logger.info("Fetching role assignments")
-
+    Raises on API error — callers are responsible for handling exceptions.
+    """
     query_params = RoleAssignmentsRequestBuilder.RoleAssignmentsRequestBuilderGetQueryParameters(
         expand=["roleDefinition", "principal"],
-        filter=args.odata_filter or None,
+        filter=odata_filter or None,
         top=999,
     )
     config = RequestConfiguration(query_parameters=query_params)
@@ -77,6 +66,27 @@ async def run_with_arguments(
             "principal_type": principal_type,
             "scope": scope,
         })
+
+    return rows
+
+
+def add_arguments(parser: "argparse.ArgumentParser") -> None:
+    parser.add_argument(
+        "--filter",
+        dest="odata_filter",
+        metavar="EXPR",
+        default=None,
+        help="OData $filter expression (e.g. \"principalId eq 'GUID'\").",
+    )
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    logger.info("Fetching role assignments")
+
+    rows = await fetch(context, odata_filter=args.odata_filter)
 
     if not rows:
         logger.info("No role assignments found.")

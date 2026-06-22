@@ -24,38 +24,21 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
 
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
-    parser.add_argument(
-        "--state",
-        choices=["enabled", "disabled", "report"],
-        default=None,
-        help="Filter by policy state: enabled, disabled, or report (reporting only).",
-    )
+async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
+    """Return conditional access policies as plain dicts.
 
-
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    logger.info("Fetching conditional access policies")
-
-    policies = await collect_all(
-        context.graph_client.policies.conditional_access_policies
-    )
-
-    if not policies:
-        logger.info("No conditional access policies found.")
-        if context.json_output:
-            output.print_json([])
-        return 0
+    `state` accepts 'enabled', 'disabled', or 'report'.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    policies = await collect_all(context.graph_client.policies.conditional_access_policies)
 
     state_map = {
         "enabled": "enabled",
         "disabled": "disabled",
         "report": "enabledForReportingButNotEnforced",
     }
-    if args.state:
-        target_state = state_map[args.state]
+    if state:
+        target_state = state_map.get(state, state)
         policies = [
             p for p in policies
             if str(p.state).split(".")[-1].lower() == target_state.lower()
@@ -65,7 +48,6 @@ async def run_with_arguments(
     for p in policies:
         state_str = str(p.state).split(".")[-1] if p.state else "unknown"
 
-        # Summarise conditions
         included_users = []
         excluded_users = []
         included_apps = []
@@ -73,14 +55,12 @@ async def run_with_arguments(
             if p.conditions.users:
                 included_users = p.conditions.users.include_users or []
                 excluded_users = p.conditions.users.exclude_users or []
-                # Merge groups as "groups:N"
                 inc_groups = p.conditions.users.include_groups or []
                 if inc_groups:
                     included_users = included_users + [f"groups:{len(inc_groups)}"]
             if p.conditions.applications:
                 included_apps = p.conditions.applications.include_applications or []
 
-        # Summarise grant controls
         grant_controls: list[str] = []
         if p.grant_controls and p.grant_controls.built_in_controls:
             grant_controls = [
@@ -96,14 +76,38 @@ async def run_with_arguments(
             "include_apps": included_apps,
             "grant_controls": grant_controls,
             "created": (
-                p.created_date_time.strftime("%Y-%m-%d")
-                if p.created_date_time else ""
+                p.created_date_time.strftime("%Y-%m-%d") if p.created_date_time else ""
             ),
             "modified": (
-                p.modified_date_time.strftime("%Y-%m-%d")
-                if p.modified_date_time else ""
+                p.modified_date_time.strftime("%Y-%m-%d") if p.modified_date_time else ""
             ),
         })
+
+    return rows
+
+
+def add_arguments(parser: "argparse.ArgumentParser") -> None:
+    parser.add_argument(
+        "--state",
+        choices=["enabled", "disabled", "report"],
+        default=None,
+        help="Filter by policy state: enabled, disabled, or report (reporting only).",
+    )
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    logger.info("Fetching conditional access policies")
+
+    rows = await fetch(context, state=args.state)
+
+    if not rows:
+        logger.info("No conditional access policies found.")
+        if context.json_output:
+            output.print_json([])
+        return 0
 
     if context.json_output:
         output.print_json(rows)

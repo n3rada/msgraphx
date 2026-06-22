@@ -34,25 +34,13 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
-@handle_graph_errors
-async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
-) -> int:
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
+async def fetch(context: GraphContext, top: int = 50) -> list[dict]:
+    """Return Planner tasks for the current user as plain dicts.
 
-    logger.info("Fetching Planner tasks")
-
+    Raises on API error — callers are responsible for handling exceptions.
+    """
     tasks = await collect_all(context.graph_client.me.planner.tasks)
-
-    if not tasks:
-        logger.info("No Planner tasks found.")
-        if context.json_output:
-            output.print_json([])
-        return 0
-
-    tasks = tasks[: args.top]
+    tasks = tasks[:top]
 
     rows = []
     for task in tasks:
@@ -64,17 +52,36 @@ async def run_with_arguments(
         if task.created_date_time:
             created = task.created_date_time.strftime("%Y-%m-%d")
 
-        percent = task.percent_complete or 0
-
         rows.append({
             "id": task.id,
             "title": task.title,
             "plan_id": task.plan_id,
             "bucket_id": task.bucket_id,
-            "percent_complete": percent,
+            "percent_complete": task.percent_complete or 0,
             "due": due,
             "created": created,
         })
+
+    return rows
+
+
+@handle_graph_errors
+async def run_with_arguments(
+    context: "GraphContext", args: "argparse.Namespace"
+) -> int:
+    if context.is_app_only:
+        logger.error("This module requires delegated authentication (user context).")
+        return 1
+
+    logger.info("Fetching Planner tasks")
+
+    rows = await fetch(context, top=args.top)
+
+    if not rows:
+        logger.info("No Planner tasks found.")
+        if context.json_output:
+            output.print_json([])
+        return 0
 
     if context.json_output:
         output.print_json(rows)
@@ -93,8 +100,13 @@ async def run_with_arguments(
     table.add_column("Plan ID", style="dim", width=38)
 
     for i, row in enumerate(rows, 1):
-        pct = str(row["percent_complete"])
-        table.add_row(str(i), row["title"] or "", pct, row["due"], row["plan_id"] or "")
+        table.add_row(
+            str(i),
+            row["title"] or "",
+            str(row["percent_complete"]),
+            row["due"],
+            row["plan_id"] or "",
+        )
 
     console.print("[bold]Planner tasks[/bold]")
     console.rule()

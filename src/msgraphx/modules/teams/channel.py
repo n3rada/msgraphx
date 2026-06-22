@@ -35,6 +35,97 @@ from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 
 
+async def fetch_teams(context: GraphContext) -> list[dict]:
+    """Return joined Teams for the current user as plain dicts.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    response = await context.graph_client.me.joined_teams.get()
+    teams = (response.value or []) if response else []
+    return [
+        {"id": t.id, "display_name": t.display_name, "description": t.description}
+        for t in teams
+    ]
+
+
+async def fetch_search(
+    context: GraphContext,
+    query: str = "*",
+    from_addr: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
+) -> list[dict]:
+    """Return Teams channel messages matching a search query as plain dicts.
+
+    `after` and `before` accept ISO 8601 date strings.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    parts: list[str] = []
+    if query and query != "*":
+        parts.append(query)
+    if from_addr:
+        parts.append(f"from:{from_addr}")
+    if after:
+        parts.append(f"sent>={after.split('T')[0]}")
+    if before:
+        parts.append(f"sent<={before.split('T')[0]}")
+
+    query_string = " ".join(parts) if parts else "*"
+
+    search_options = graph_search.SearchOptions(
+        query_string=query_string,
+        sort_by=None,
+        page_size=25,
+    )
+
+    items: list[dict] = []
+    async for _item in graph_search.search_entities(
+        context.graph_client,
+        entity_types=[EntityType.ChatMessage],
+        options=search_options,
+    ):
+        msg = _item if isinstance(_item, ChatMessage) else None
+        if msg is None:
+            continue
+
+        body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
+        sender = "?"
+        sender_id = None
+        if msg.from_ and msg.from_.user:
+            sender = msg.from_.user.display_name or "?"
+            sender_id = msg.from_.user.id
+
+        sent = (
+            msg.created_date_time.strftime("%Y-%m-%d") if msg.created_date_time else ""
+        )
+        team_id = None
+        channel_id = None
+        if msg.channel_identity:
+            team_id = msg.channel_identity.team_id
+            channel_id = msg.channel_identity.channel_id
+
+        preview = body[:120] + "…" if len(body) > 120 else body
+
+        items.append({
+            "message_id": msg.id,
+            "chat_id": msg.chat_id,
+            "team_id": team_id,
+            "channel_id": channel_id,
+            "body": body,
+            "body_preview": preview,
+            "web_url": msg.web_url,
+            "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
+            "sent_datetime": (
+                msg.created_date_time.isoformat() if msg.created_date_time else None
+            ),
+            "sent": sent,
+            "sender": sender,
+            "sender_id": sender_id,
+        })
+
+    return items
+
+
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -54,14 +145,15 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 async def _list_teams(context: "GraphContext") -> int:
-    response = await context.graph_client.me.joined_teams.get()
-    teams = (response.value or []) if response else []
+    rows = await fetch_teams(context)
 
     if context.json_output:
-        output.print_json([
-            {"id": t.id, "display_name": t.display_name, "description": t.description}
-            for t in teams
-        ])
+        output.print_json(rows)
+        return 0
+
+    if context.ndjson_output:
+        for row in rows:
+            output.print_ndjson_item(row)
         return 0
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
@@ -69,13 +161,13 @@ async def _list_teams(context: "GraphContext") -> int:
     table.add_column("Team", min_width=30)
     table.add_column("Description", style="dim")
 
-    for i, team in enumerate(teams, 1):
-        table.add_row(str(i), team.display_name or "", team.description or "")
+    for i, row in enumerate(rows, 1):
+        table.add_row(str(i), row["display_name"] or "", row["description"] or "")
 
     console.print("[bold]Joined Teams[/bold]")
     console.rule()
     console.print(table)
-    logger.success(f"{len(teams)} team(s) found.")
+    logger.success(f"{len(rows)} team(s) found.")
     return 0
 
 
@@ -97,40 +189,24 @@ async def run_with_arguments(
         )
         return 1
 
-    parts: list[str] = []
-
-    if args.query and args.query != "*":
-        parts.append(args.query)
-
-    if args.from_addr:
-        parts.append(f"from:{args.from_addr}")
+    after_iso: str | None = None
+    before_iso: str | None = None
 
     if args.after:
         try:
-            iso = parse_date_string(args.after)
-            parts.append(f"sent>={iso.split('T')[0]}")
+            after_iso = parse_date_string(args.after)
         except ValueError as e:
             logger.error(str(e))
             return 1
 
     if args.before:
         try:
-            iso = parse_date_string(args.before)
-            parts.append(f"sent<={iso.split('T')[0]}")
+            before_iso = parse_date_string(args.before)
         except ValueError as e:
             logger.error(str(e))
             return 1
 
-    query_string = " ".join(parts) if parts else "*"
-    logger.info(f"Channel search: {query_string!r}")
-
-    search_options = graph_search.SearchOptions(
-        query_string=query_string,
-        sort_by=None,
-        page_size=25,
-    )
-
-    count = 0
+    logger.info(f"Channel search: {args.query!r}")
     cached_items: list[dict] = []
 
     if not context.json_output and not context.ndjson_output:
@@ -138,73 +214,25 @@ async def run_with_arguments(
         console.rule()
 
     try:
-        async for _item in graph_search.search_entities(
-            context.graph_client,
-            entity_types=[EntityType.ChatMessage],
-            options=search_options,
-        ):
-            msg = _item if isinstance(_item, ChatMessage) else None
-            if msg is None:
-                continue
-
-            logger.trace(msg.__dict__)
-
-            body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
-            count += 1
-
-            sender = "?"
-            sender_id = None
-            if msg.from_ and msg.from_.user:
-                sender = msg.from_.user.display_name or "?"
-                sender_id = msg.from_.user.id
-
-            sent = (
-                msg.created_date_time.strftime("%Y-%m-%d")
-                if msg.created_date_time
-                else ""
-            )
-
-            team_id = None
-            channel_id = None
-            if msg.channel_identity:
-                team_id = msg.channel_identity.team_id
-                channel_id = msg.channel_identity.channel_id
-
-            preview = body[:120] + "…" if len(body) > 120 else body
-
+        cached_items = await fetch_search(
+            context,
+            query=args.query or "*",
+            from_addr=args.from_addr,
+            after=after_iso,
+            before=before_iso,
+        )
+        for count, item in enumerate(cached_items, 1):
             if not context.json_output and not context.ndjson_output:
                 console.print(
                     f"  [dim]{count:>4}.[/dim]  "
-                    f"{preview}  [dim]{sender}[/dim]  [cyan]{sent}[/cyan]"
+                    f"{item['body_preview']}  [dim]{item['sender']}[/dim]  [cyan]{item['sent']}[/cyan]"
                 )
-
-            cached_items.append(
-                {
-                    "message_id": msg.id,
-                    "chat_id": msg.chat_id,
-                    "team_id": team_id,
-                    "channel_id": channel_id,
-                    "body": body,
-                    "body_preview": preview,
-                    "web_url": msg.web_url,
-                    "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
-                    "sent_datetime": (
-                        msg.created_date_time.isoformat()
-                        if msg.created_date_time
-                        else None
-                    ),
-                    "sent": sent,
-                    "sender": sender,
-                    "sender_id": sender_id,
-                }
-            )
-
             if context.ndjson_output:
-                output.print_ndjson_item(cached_items[-1])
+                output.print_ndjson_item(item)
 
     except KeyboardInterrupt:
-        if count:
-            logger.info(f"Interrupted — {count} result(s) cached.")
+        if cached_items:
+            logger.info(f"Interrupted — {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
             cache.save_results(cached_items, key="teams")
@@ -212,10 +240,10 @@ async def run_with_arguments(
     if not context.json_output:
         console.rule()
 
-    if count == 0:
+    if not cached_items:
         logger.info("No results found.")
     else:
-        logger.success(f"{count} message(s) found.")
+        logger.success(f"{len(cached_items)} message(s) found.")
 
     if context.json_output:
         output.print_json(cached_items)

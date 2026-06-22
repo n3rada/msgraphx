@@ -26,6 +26,48 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
 
+async def fetch(
+    context: GraphContext,
+    top: int = 25,
+    type_filter: str | None = None,
+) -> list[dict]:
+    """Return trending documents for the current user as plain dicts.
+
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
+        top=min(top, 100),
+    )
+    config = RequestConfiguration(query_parameters=query_params)
+
+    result = await context.graph_client.me.insights.trending.get(
+        request_configuration=config
+    )
+    items = result.value if result and result.value else []
+
+    if type_filter:
+        low = type_filter.lower()
+        items = [
+            i for i in items
+            if i.resource_visualization
+            and i.resource_visualization.type
+            and low in i.resource_visualization.type.lower()
+        ]
+
+    return [
+        {
+            "rank": i,
+            "type": (item.resource_visualization.type if item.resource_visualization else None),
+            "title": (item.resource_visualization.title if item.resource_visualization else None),
+            "site": (item.resource_visualization.container_display_name if item.resource_visualization else None),
+            "weight": item.weight,
+            "url": (item.resource_reference.web_url if item.resource_reference else None),
+            "id": (item.resource_reference.id if item.resource_reference else None),
+        }
+        for i, item in enumerate(items, 1)
+    ]
+
+
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -56,45 +98,21 @@ async def run_with_arguments(
 
     logger.info("Fetching trending documents")
 
-    query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
-        top=min(args.top, 100),
-    )
-    config = RequestConfiguration(query_parameters=query_params)
+    rows = await fetch(context, top=args.top, type_filter=args.type)
 
-    result = await context.graph_client.me.insights.trending.get(
-        request_configuration=config
-    )
-
-    items = result.value if result and result.value else []
-
-    if not items:
+    if not rows:
         logger.info("No trending items found.")
+        if context.json_output:
+            output.print_json([])
         return 0
 
-    # Client-side type filter
-    type_filter = args.type.lower() if args.type else None
-    if type_filter:
-        items = [
-            i
-            for i in items
-            if i.resource_visualization
-            and i.resource_visualization.type
-            and type_filter in i.resource_visualization.type.lower()
-        ]
-
     if context.json_output:
-        output.print_json([
-            {
-                "rank": i,
-                "type": (item.resource_visualization.type if item.resource_visualization else None),
-                "title": (item.resource_visualization.title if item.resource_visualization else None),
-                "site": (item.resource_visualization.container_display_name if item.resource_visualization else None),
-                "weight": item.weight,
-                "url": (item.resource_reference.web_url if item.resource_reference else None),
-                "id": (item.resource_reference.id if item.resource_reference else None),
-            }
-            for i, item in enumerate(items, 1)
-        ])
+        output.print_json(rows)
+        return 0
+
+    if context.ndjson_output:
+        for row in rows:
+            output.print_ndjson_item(row)
         return 0
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
@@ -104,22 +122,16 @@ async def run_with_arguments(
     table.add_column("Site", style="dim", max_width=30)
     table.add_column("Weight", style="yellow", justify="right", width=8)
 
-    for i, item in enumerate(items, 1):
-        viz = item.resource_visualization
-
-        title = (viz.title if viz else None) or "(untitled)"
-        file_type = (viz.type if viz else None) or "?"
-        site = (viz.container_display_name if viz else None) or ""
-        weight = f"{item.weight:.3f}" if item.weight else ""
-
+    for row in rows:
+        title = row["title"] or "(untitled)"
         if len(title) > 80:
             title = title[:77] + "..."
-
-        table.add_row(str(i), file_type, title, site, weight)
+        weight = f"{row['weight']:.3f}" if row["weight"] else ""
+        table.add_row(str(row["rank"]), row["type"] or "?", title, row["site"] or "", weight)
 
     console.print("[bold]Trending around you[/bold]")
     console.rule()
     console.print(table)
-    logger.success(f"{len(items)} trending item(s).")
+    logger.success(f"{len(rows)} trending item(s).")
 
     return 0

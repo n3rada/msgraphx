@@ -15,23 +15,36 @@ from ...utils import output
 from ...utils.errors import handle_graph_errors
 
 
-@handle_graph_errors
-async def fetch_user_groups(context: "GraphContext") -> list:
-    """
-    Fetch all groups the current user is a member of (transitive).
+async def fetch(context: GraphContext, visibility: str | None = None) -> list[dict]:
+    """Return groups the current user belongs to (transitive) as plain dicts.
 
-    Args:
-        context: Graph context with authenticated client
-
-    Returns:
-        List of group objects
+    Raises on API error — callers are responsible for handling exceptions.
     """
-    try:
-        result = await context.graph_client.me.transitive_member_of.graph_group.get()
-        return result.value if result and result.value else []
-    except Exception as e:
-        logger.error(f"Failed to fetch user groups: {e}")
-        return []
+    result = await context.graph_client.me.transitive_member_of.graph_group.get()
+    groups = result.value if result and result.value else []
+
+    if visibility:
+        groups = [g for g in groups if g.visibility == visibility]
+
+    groups.sort(
+        key=lambda g: g.created_date_time or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    return [
+        {
+            "id": g.id,
+            "display_name": g.display_name,
+            "description": g.description,
+            "mail": g.mail,
+            "security_identifier": g.security_identifier,
+            "security_enabled": g.security_enabled,
+            "mail_enabled": g.mail_enabled,
+            "visibility": g.visibility,
+            "created_date_time": g.created_date_time.isoformat() if g.created_date_time else None,
+        }
+        for g in groups
+    ]
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):
@@ -50,64 +63,45 @@ async def run_with_arguments(
 ) -> int:
     logger.info("Microsoft 365 Groups")
 
-    groups = await fetch_user_groups(context)
+    rows = await fetch(context, visibility=args.visibility)
 
-    # Apply filters
-    if args.visibility:
-        groups = [g for g in groups if g.visibility == args.visibility]
-
-    if not groups:
+    if not rows:
         logger.info("No groups found")
+        if context.json_output:
+            output.print_json([])
         return 0
-
-    # Sort by creation date (newest first)
-    groups.sort(
-        key=lambda g: g.created_date_time
-        or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
 
     if context.json_output:
-        output.print_json([
-            {
-                "id": g.id,
-                "display_name": g.display_name,
-                "description": g.description,
-                "mail": g.mail,
-                "security_identifier": g.security_identifier,
-                "security_enabled": g.security_enabled,
-                "mail_enabled": g.mail_enabled,
-                "visibility": g.visibility,
-                "created_date_time": g.created_date_time.isoformat() if g.created_date_time else None,
-            }
-            for g in groups
-        ])
+        output.print_json(rows)
         return 0
 
-    for group in groups:
-        logger.success(f"{group.display_name}")
+    if context.ndjson_output:
+        for row in rows:
+            output.print_ndjson_item(row)
+        return 0
 
-        if group.description:
-            logger.info(f"Description: {group.description}")
+    for row in rows:
+        logger.success(f"{row['display_name']}")
 
-        logger.info(f"ID: {group.id}")
+        if row["description"]:
+            logger.info(f"Description: {row['description']}")
 
-        if group.mail:
-            logger.info(f"Email: {group.mail}")
+        logger.info(f"ID: {row['id']}")
 
-        if group.security_identifier:
-            logger.info(f"Security Identifier: {group.security_identifier}")
+        if row["mail"]:
+            logger.info(f"Email: {row['mail']}")
 
-        logger.info(f"Security Enabled: {group.security_enabled}")
-        logger.info(f"Mail Enabled: {group.mail_enabled}")
+        if row["security_identifier"]:
+            logger.info(f"Security Identifier: {row['security_identifier']}")
 
-        if group.visibility:
-            logger.info(f"Visibility: {group.visibility}")
+        logger.info(f"Security Enabled: {row['security_enabled']}")
+        logger.info(f"Mail Enabled: {row['mail_enabled']}")
 
-        if group.created_date_time:
-            logger.info(
-                f"Created: {group.created_date_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
-            )
+        if row["visibility"]:
+            logger.info(f"Visibility: {row['visibility']}")
 
-    logger.info(f"Total: {len(groups)} groups")
+        if row["created_date_time"]:
+            logger.info(f"Created: {row['created_date_time']}")
+
+    logger.info(f"Total: {len(rows)} groups")
     return 0

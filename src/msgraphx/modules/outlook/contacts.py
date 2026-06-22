@@ -47,6 +47,163 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 
 
+async def fetch(
+    context: GraphContext,
+    after: str | None = None,
+    before: str | None = None,
+    only: str | None = None,
+    top: int | None = None,
+) -> dict:
+    """Analyse mail to build a communication graph. Returns sent/received contact counts.
+
+    `after` / `before` are ISO 8601 strings. `only` is 'sent', 'received', or None (both).
+    Returns {'sent': [...], 'received': [...]}.
+    Raises on API error — callers are responsible for handling exceptions.
+    """
+    select_fields = ["toRecipients", "ccRecipients", "sentDateTime"]
+
+    to_counter: Counter[str] = Counter()
+    cc_counter: Counter[str] = Counter()
+    names: dict[str, str] = {}
+    recv_to_counter: Counter[str] = Counter()
+    recv_cc_counter: Counter[str] = Counter()
+    recv_names: dict[str, str] = {}
+
+    if only != "received":
+        odata_filters: list[str] = []
+        if after:
+            odata_filters.append(f"sentDateTime ge {after}")
+        if before:
+            odata_filters.append(f"sentDateTime le {before}")
+
+        query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+            select=select_fields,
+            top=1000,
+        )
+        if odata_filters:
+            query_params.filter = " and ".join(odata_filters)
+
+        request_config = RequestConfiguration(query_parameters=query_params)
+        sent_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
+            "SentItems"
+        ).messages
+
+        async for msg in GraphPaginator(sent_builder, request_config):
+            for r in msg.to_recipients or []:
+                if r.email_address and r.email_address.address:
+                    addr = r.email_address.address.lower()
+                    to_counter[addr] += 1
+                    if r.email_address.name:
+                        names[addr] = r.email_address.name
+            for r in msg.cc_recipients or []:
+                if r.email_address and r.email_address.address:
+                    addr = r.email_address.address.lower()
+                    cc_counter[addr] += 1
+                    if r.email_address.name:
+                        names[addr] = r.email_address.name
+
+    if only != "sent":
+        user_email = ""
+        if context.cached_user:
+            user_email = (
+                getattr(context.cached_user, "mail", None)
+                or getattr(context.cached_user, "user_principal_name", None)
+                or ""
+            ).lower()
+
+        if user_email:
+            def _is_noisy(addr: str) -> bool:
+                local, _, domain = addr.partition("@")
+                normalised = local.replace("-", "").replace("_", "").lower()
+                return (
+                    any(domain == nd or domain.endswith("." + nd) for nd in _NOISE_DOMAINS)
+                    or normalised in _NOISE_LOCALS
+                    or "noreply" in normalised
+                )
+
+            recv_filter_parts: list[str] = []
+            if after:
+                recv_filter_parts.append(f"receivedDateTime ge {after}")
+            if before:
+                recv_filter_parts.append(f"receivedDateTime le {before}")
+
+            recv_qp = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+                select=["from", "toRecipients", "ccRecipients"],
+                top=50,
+            )
+            if recv_filter_parts:
+                recv_qp.filter = " and ".join(recv_filter_parts)
+
+            recv_cfg = RequestConfiguration(query_parameters=recv_qp)
+            inbox_builder = context.graph_client.me.mail_folders.by_mail_folder_id(
+                "Inbox"
+            ).messages
+
+            async for msg in GraphPaginator(inbox_builder, recv_cfg):
+                if not (
+                    msg.from_
+                    and msg.from_.email_address
+                    and msg.from_.email_address.address
+                ):
+                    continue
+
+                sender = msg.from_.email_address.address.lower()
+                if _is_noisy(sender):
+                    continue
+
+                if msg.from_.email_address.name:
+                    recv_names[sender] = msg.from_.email_address.name
+
+                to_addrs = {
+                    r.email_address.address.lower()
+                    for r in (msg.to_recipients or [])
+                    if r.email_address and r.email_address.address
+                }
+                cc_addrs = {
+                    r.email_address.address.lower()
+                    for r in (msg.cc_recipients or [])
+                    if r.email_address and r.email_address.address
+                }
+
+                if user_email in to_addrs:
+                    recv_to_counter[sender] += 1
+                elif user_email in cc_addrs:
+                    recv_cc_counter[sender] += 1
+
+    all_sent_addrs = set(to_counter) | set(cc_counter)
+    return {
+        "sent": [
+            {
+                "rank": rank,
+                "email": addr,
+                "name": names.get(addr),
+                "to_count": to_counter.get(addr, 0),
+                "cc_count": cc_counter.get(addr, 0),
+            }
+            for rank, (addr, _) in enumerate(
+                sorted(all_sent_addrs, key=lambda a: -to_counter.get(a, 0)),
+                1,
+            )
+        ][:top],
+        "received": [
+            {
+                "rank": rank,
+                "email": addr,
+                "name": recv_names.get(addr),
+                "to_count": recv_to_counter.get(addr, 0),
+                "cc_count": recv_cc_counter.get(addr, 0),
+            }
+            for rank, (addr, _) in enumerate(
+                sorted(
+                    set(recv_to_counter) | set(recv_cc_counter),
+                    key=lambda a: -recv_to_counter.get(a, 0),
+                ),
+                1,
+            )
+        ][:top],
+    }
+
+
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
