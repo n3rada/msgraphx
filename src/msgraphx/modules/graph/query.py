@@ -203,24 +203,21 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
 
     # Render results
     if raw_response is not None:
-        clean = _strip_odata(raw_response)
         if context.json_output:
-            output.print_json(clean)
+            output.print_json(_strip_odata(raw_response))
         elif context.ndjson_output:
-            output.print_ndjson_item(clean)
+            output.print_ndjson_item(_strip_odata(raw_response))
         else:
-            console.print(RichJSON(json.dumps(clean, default=str)))
+            console.print(RichJSON(json.dumps(raw_response, default=str)))
         return 0
 
     # Collection response
     logger.success(f"{len(collected)} item(s) returned.")
 
-    clean_items = [_strip_odata(item) for item in collected]
-
     if context.json_output:
-        output.print_json(clean_items)
+        output.print_json([_strip_odata(item) for item in collected])
     elif not context.ndjson_output:
-        # ndjson items already streamed above
-        console.print(RichJSON(json.dumps(clean_items, default=str)))
+        # ndjson items already streamed above; console gets raw
+        console.print(RichJSON(json.dumps(collected, default=str)))
 
     return 0
