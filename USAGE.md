@@ -172,11 +172,11 @@ msgraphx teams show "project phoenix" --last 50
 
 ---
 
-## aad / ad
+## aad / ad (Entra ID)
 
 ### search
 
-Enumerate Azure AD objects.
+Enumerate Entra ID objects.
 
 ```bash
 msgraphx aad search admin

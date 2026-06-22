@@ -5,7 +5,7 @@ Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](http
 - **SharePoint**: search across all sites, filter by filetype, use predefined hunt queries, bulk download
 - **Outlook**: build communication graphs from mailboxes, KQL keyword search, download emails as `.eml`
 - **Teams**: search DMs and channel messages, browse chats, inspect message context
-- **Azure AD**: enumerate users, groups, devices, apps, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
+- **Entra ID**: enumerate users, groups, devices, apps, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
 - **Me**: calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
 - **MFA backdoor**: register TOTP, phone, or email as secondary factor via `mysignins.microsoft.com`
 - **Output**: local caching of search results, JSON/NDJSON export, resumable downloads
@@ -73,10 +73,10 @@ msgraphx outlook contacts
 # Teams: search DMs for AWS keys
 msgraphx teams chat "aws key" --after 90d
 
-# Azure AD: enumerate admin accounts
+# Entra ID: enumerate admin accounts
 msgraphx aad search --hunt admins
 
-# Azure AD: list PIM assignments
+# Entra ID: list PIM assignments
 msgraphx aad pim
 
 # Me: dump OneNote pages

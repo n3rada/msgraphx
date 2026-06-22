@@ -18,7 +18,7 @@ def add_arguments(
     search_parser = subparsers.add_parser(
         "search",
         parents=parents,
-        help="Search Azure AD for groups, users, devices, and more.",
+        help="Search Entra ID for groups, users, devices, and more.",
     )
     search.add_arguments(search_parser)
 

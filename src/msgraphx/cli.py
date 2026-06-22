@@ -197,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--tenant-id",
         type=str,
         default=None,
-        help="Azure AD Tenant ID for client credentials auth. If not provided, checks TENANT_ID env var.",
+        help="Entra ID Tenant ID for client credentials auth. If not provided, checks TENANT_ID env var.",
     )
 
     # Supporting arguments for token auth
@@ -213,14 +213,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--client-id",
         type=str,
         default=None,
-        help="Azure AD Application (Client) ID (used with --tenant-id). If not provided, checks CLIENT_ID env var.",
+        help="Entra ID Application (Client) ID (used with --tenant-id). If not provided, checks CLIENT_ID env var.",
     )
 
     auth_group.add_argument(
         "--client-secret",
         type=str,
         default=None,
-        help="Azure AD Client Secret (used with --tenant-id). If not provided, checks CLIENT_SECRET env var.",
+        help="Entra ID Client Secret (used with --tenant-id). If not provided, checks CLIENT_SECRET env var.",
     )
 
     # Region for application permissions
@@ -250,11 +250,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sharepoint.add_arguments(sp_parser, parents=[parent_parser])
 
-    # Azure AD subcommand
+    # Entra ID subcommand
     aad_parser = subparsers.add_parser(
         "aad",
         aliases=["ad"],
-        help="Azure Active Directory commands",
+        help="Entra ID commands",
         parents=[parent_parser],
     )
     aad.add_arguments(aad_parser, parents=[parent_parser])

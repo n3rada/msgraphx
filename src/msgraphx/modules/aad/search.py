@@ -324,7 +324,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
             "all",
         ],
         default="groups",
-        help="Type of Azure AD object to search. Default: groups. Use 'all' to search everything.",
+        help="Type of Entra ID object to search. Default: groups. Use 'all' to search everything.",
     )
 
     parser.add_argument(
