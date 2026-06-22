@@ -39,6 +39,19 @@ def _clean(obj: dict, trace: bool) -> dict:
     return {k: v for k, v in obj.items() if not k.startswith("@odata.")}
 
 
+def _render(data: "dict | list[dict]", context: "GraphContext", trace: bool) -> None:
+    """Single dispatch point: clean and route to the right output channel."""
+    is_list = isinstance(data, list)
+    if context.json_output:
+        output.print_json([_clean(i, trace) for i in data] if is_list else _clean(data, trace))
+    elif context.ndjson_output:
+        for item in (data if is_list else [data]):
+            output.print_ndjson_item(_clean(item, trace))
+    else:
+        cleaned = [_clean(i, trace) for i in data] if is_list else _clean(data, trace)
+        console.print(RichJSON(json.dumps(cleaned, default=str)))
+
+
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "path",
@@ -189,10 +202,9 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
                 page_items = data["value"]
                 collected.extend(page_items)
 
-                # Stream NDJSON items as they arrive
+                # Stream items as they arrive (NDJSON only — others batch after the loop)
                 if context.ndjson_output:
-                    for item in page_items:
-                        output.print_ndjson_item(_clean(item, trace))
+                    _render(page_items, context, trace)
 
                 next_url = data.get("@odata.nextLink") if paginate else None
                 logger.debug(
@@ -206,21 +218,12 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
 
     # Render results
     if raw_response is not None:
-        if context.json_output:
-            output.print_json(_clean(raw_response, trace))
-        elif context.ndjson_output:
-            output.print_ndjson_item(_clean(raw_response, trace))
-        else:
-            console.print(RichJSON(json.dumps(_clean(raw_response, trace), default=str)))
+        _render(raw_response, context, trace)
         return 0
 
-    # Collection response
     logger.success(f"{len(collected)} item(s) returned.")
-
-    if context.json_output:
-        output.print_json([_clean(item, trace) for item in collected])
-    elif not context.ndjson_output:
-        # ndjson items already streamed above
-        console.print(RichJSON(json.dumps([_clean(item, trace) for item in collected], default=str)))
+    if not context.ndjson_output:
+        # ndjson was already streamed page-by-page in the loop above
+        _render(collected, context, trace)
 
     return 0
