@@ -33,6 +33,10 @@ from ...utils.errors import handle_graph_errors
 _GRAPH_BASE = "https://graph.microsoft.com"
 
 
+def _strip_odata(obj: dict) -> dict:
+    return {k: v for k, v in obj.items() if not k.startswith("@odata.")}
+
+
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "path",
@@ -185,7 +189,7 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
                 # Stream NDJSON items as they arrive
                 if context.ndjson_output:
                     for item in page_items:
-                        output.print_ndjson_item(item)
+                        output.print_ndjson_item(_strip_odata(item))
 
                 next_url = data.get("@odata.nextLink") if paginate else None
                 logger.debug(
@@ -199,22 +203,24 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
 
     # Render results
     if raw_response is not None:
-        # Single-object response
+        clean = _strip_odata(raw_response)
         if context.json_output:
-            output.print_json(raw_response)
+            output.print_json(clean)
         elif context.ndjson_output:
-            output.print_ndjson_item(raw_response)
+            output.print_ndjson_item(clean)
         else:
-            console.print(RichJSON(json.dumps(raw_response, default=str)))
+            console.print(RichJSON(json.dumps(clean, default=str)))
         return 0
 
     # Collection response
     logger.success(f"{len(collected)} item(s) returned.")
 
+    clean_items = [_strip_odata(item) for item in collected]
+
     if context.json_output:
-        output.print_json(collected)
+        output.print_json(clean_items)
     elif not context.ndjson_output:
         # ndjson items already streamed above
-        console.print(RichJSON(json.dumps(collected, default=str)))
+        console.print(RichJSON(json.dumps(clean_items, default=str)))
 
     return 0
