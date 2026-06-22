@@ -124,12 +124,36 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Filter groups by visibility (use with --my-groups).",
     )
+    parser.add_argument(
+        "--scope",
+        choices=["sharepoint", "onedrive"],
+        default=None,
+        help=(
+            "Restrict search to SharePoint team sites or personal OneDrive drives. "
+            "Requires app-only (client credentials) auth — the API ignores this for delegated tokens."
+        ),
+    )
 
 
 @handle_graph_errors
 async def run_with_arguments(
     context: GraphContext, args: argparse.Namespace
 ) -> int:
+    scope = getattr(args, "scope", None)
+    if scope and not context.is_app_only:
+        logger.error(
+            "--scope requires application permissions (app-only token). "
+            "The Graph API silently ignores SharePointOneDriveOptions for delegated tokens."
+        )
+        return 1
+
+    _SCOPE_MAP = {
+        "sharepoint": SharePointOneDriveOptions(include_content=SearchContent.SharedContent),
+        "onedrive": SharePointOneDriveOptions(include_content=SearchContent.PrivateContent),
+    }
+    resolved_scope = _SCOPE_MAP.get(scope) if scope else None
+    resolved_label = {"sharepoint": "SharePoint", "onedrive": "OneDrive"}.get(scope, "SharePoint / OneDrive")
+
     group_ids: list[str] | None = None
     if getattr(args, "my_groups", False):
         groups = await get_user_m365_groups(
@@ -143,8 +167,9 @@ async def run_with_arguments(
         group_ids = [g.id for g in groups]
         logger.info(f"Scoping search to {len(group_ids)} user groups")
 
-    # Inject group_ids so the base runner can pick them up.
     args._group_ids = group_ids
+    args._resolved_scope = resolved_scope
+    args._resolved_label = resolved_label
 
     save_dir = None
     if args.save:
@@ -154,7 +179,7 @@ async def run_with_arguments(
     if save_dir:
         return await _run_with_save(context, args, save_dir)
 
-    return await SharePointSearch.run_with_arguments(context, args)
+    return await SharePointSearch.run_with_arguments(context, args, scope=resolved_scope, label=resolved_label)
 
 
 async def _run_with_save(

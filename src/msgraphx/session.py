@@ -26,7 +26,6 @@ from .modules.aad.search import (
     fetch_service_principals,
     fetch_users,
 )
-from .modules.onedrive import search as _onedrive_search
 from .modules.me import calendar as _me_calendar
 from .modules.me import groups as _me_groups
 from .modules.me import people as _me_people
@@ -195,19 +194,6 @@ class _OutlookNamespace:
         return await _outlook_contacts.fetch(self._ctx, after=after, before=before, only=only, top=top)
 
 
-class _OneDriveNamespace:
-    def __init__(self, context: GraphContext) -> None:
-        self._ctx = context
-
-    async def search(
-        self,
-        query: str = "*",
-        after: str | None = None,
-        before: str | None = None,
-    ) -> list[dict]:
-        return await _onedrive_search.fetch(self._ctx, query=query, after=after, before=before)
-
-
 class _SharePointNamespace:
     def __init__(self, context: GraphContext) -> None:
         self._ctx = context
@@ -303,7 +289,6 @@ class Session:
         self.aad = _AadNamespace(context)
         self.outlook = _OutlookNamespace(context)
         self.sharepoint = _SharePointNamespace(context)
-        self.onedrive = _OneDriveNamespace(context)
         self.teams = _TeamsNamespace(context)
         self.mfa = _MfaNamespace()
 

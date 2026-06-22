@@ -148,6 +148,7 @@ class DriveSearchBase:
         before: str | None = None,
         drive_id: str | None = None,
         group_ids: list[str] | None = None,
+        scope: SharePointOneDriveOptions | None = None,
     ) -> list[dict]:
         search_query = query
 
@@ -164,14 +165,15 @@ class DriveSearchBase:
             search_query = f"({search_query}) AND ({group_filter})"
 
         # share_point_one_drive_options only applies to app-only tokens.
-        scope = cls.SCOPE if context.is_app_only else None
+        # Use caller-supplied scope override first, then fall back to class-level SCOPE.
+        resolved = (scope if scope is not None else cls.SCOPE) if context.is_app_only else None
 
         options = graph_search.SearchOptions(
             query_string=search_query,
             page_size=500,
             region=context.region if context.is_app_only else None,
             drive_id=drive_id,
-            share_point_one_drive_options=scope,
+            share_point_one_drive_options=resolved,
         )
 
         items: list[dict] = []
@@ -219,7 +221,11 @@ class DriveSearchBase:
     @classmethod
     @handle_graph_errors
     async def run_with_arguments(
-        cls, context: GraphContext, args: argparse.Namespace
+        cls,
+        context: GraphContext,
+        args: argparse.Namespace,
+        scope: SharePointOneDriveOptions | None = None,
+        label: str | None = None,
     ) -> int:
         search_query = args.query
 
@@ -259,6 +265,7 @@ class DriveSearchBase:
             before=before_iso,
             drive_id=drive_id,
             group_ids=group_ids,
+            scope=scope,
         )
 
         if not items:
@@ -278,7 +285,7 @@ class DriveSearchBase:
                 output.print_ndjson_item(item)
             return 0
 
-        console.print(f"[bold]{cls.LABEL} search results[/bold] ({len(items)})")
+        console.print(f"[bold]{label or cls.LABEL} search results[/bold] ({len(items)})")
         console.rule()
         for count, item in enumerate(items, 1):
             console.print(
