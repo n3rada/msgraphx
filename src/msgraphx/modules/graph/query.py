@@ -33,7 +33,9 @@ from ...utils.errors import handle_graph_errors
 _GRAPH_BASE = "https://graph.microsoft.com"
 
 
-def _strip_odata(obj: dict) -> dict:
+def _clean(obj: dict, trace: bool) -> dict:
+    if trace:
+        return obj
     return {k: v for k, v in obj.items() if not k.startswith("@odata.")}
 
 
@@ -139,6 +141,7 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
             return 1
 
     paginate = getattr(args, "paginate", False) or getattr(args, "fetch_all", False)
+    trace = getattr(args, "trace", False)
 
     collected: list[dict] = []
     raw_response: dict | None = None
@@ -189,7 +192,7 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
                 # Stream NDJSON items as they arrive
                 if context.ndjson_output:
                     for item in page_items:
-                        output.print_ndjson_item(_strip_odata(item))
+                        output.print_ndjson_item(_clean(item, trace))
 
                 next_url = data.get("@odata.nextLink") if paginate else None
                 logger.debug(
@@ -204,20 +207,20 @@ async def run_with_arguments(context: "GraphContext", args: argparse.Namespace) 
     # Render results
     if raw_response is not None:
         if context.json_output:
-            output.print_json(_strip_odata(raw_response))
+            output.print_json(_clean(raw_response, trace))
         elif context.ndjson_output:
-            output.print_ndjson_item(_strip_odata(raw_response))
+            output.print_ndjson_item(_clean(raw_response, trace))
         else:
-            console.print(RichJSON(json.dumps(raw_response, default=str)))
+            console.print(RichJSON(json.dumps(_clean(raw_response, trace), default=str)))
         return 0
 
     # Collection response
     logger.success(f"{len(collected)} item(s) returned.")
 
     if context.json_output:
-        output.print_json([_strip_odata(item) for item in collected])
+        output.print_json([_clean(item, trace) for item in collected])
     elif not context.ndjson_output:
-        # ndjson items already streamed above; console gets raw
-        console.print(RichJSON(json.dumps(collected, default=str)))
+        # ndjson items already streamed above
+        console.print(RichJSON(json.dumps([_clean(item, trace) for item in collected], default=str)))
 
     return 0
