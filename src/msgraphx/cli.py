@@ -25,13 +25,13 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, graph, me, outlook, sharepoint, teams
+from .modules import aad, graph, me, mfa, outlook, sharepoint, teams
 from .modules.graph import refresh
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 _KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
+    {"sharepoint", "sp", "aad", "ad", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
 )
 
 
@@ -292,6 +292,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     graph.add_arguments(graph_parser)
+
+    # MFA manipulation via mysignins.microsoft.com (requires separate --mfa-token)
+    mfa_parser = subparsers.add_parser(
+        "mfa",
+        help="Manipulate MFA security info: backdoor TOTP, add phone/email, delete methods.",
+        parents=[parent_parser],
+    )
+    mfa.add_arguments(mfa_parser, parents=[parent_parser])
 
     # Token refresh daemon subcommand (runs before auth, no GraphContext needed)
     refresh_parser = subparsers.add_parser(
@@ -588,6 +596,9 @@ async def _dispatch(args, context) -> int:
 
     if command == "query":
         return await _call_module(graph.run_with_arguments(context, args))
+
+    if command == "mfa":
+        return await _call_module(mfa.run_with_arguments(context, args))
 
     logger.info("Authentication successful. Use a subcommand to perform actions.")
     return 0

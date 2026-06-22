@@ -104,6 +104,63 @@ class _AadNamespace:
         from .modules.aad.roles import fetch
         return await fetch(self._ctx, odata_filter=odata_filter)
 
+    async def user_details(self, user_id: str) -> dict:
+        from .modules.aad.enrich import fetch_user_details
+        return await fetch_user_details(self._ctx, user_id)
+
+    async def group_details(self, group_id: str) -> dict:
+        from .modules.aad.enrich import fetch_group_details
+        return await fetch_group_details(self._ctx, group_id)
+
+    async def pim_roles(self) -> list[dict]:
+        from .modules.aad.pim import fetch
+        return await fetch(self._ctx)
+
+
+class _MfaNamespace:
+    """MFA manipulation via mysignins.microsoft.com.
+
+    Requires a dedicated access token scoped to resource
+    19db86c3-b2b9-44cc-b339-36da233a3be2 (the My Sign-Ins portal),
+    which is different from the Graph API token.
+    """
+
+    async def available_methods(self, access_token: str) -> list[dict]:
+        from .modules.mfa.security_info import available_methods
+        return await available_methods(access_token)
+
+    async def add_otp_backdoor(self, access_token: str) -> str | None:
+        from .modules.mfa.security_info import add_otp_backdoor
+        return await add_otp_backdoor(access_token)
+
+    async def add_phone(
+        self,
+        access_token: str,
+        country_code: str,
+        phone_number: str,
+        phone_type: str = "sms",
+    ) -> dict:
+        from .modules.mfa.security_info import add_phone
+        return await add_phone(access_token, country_code, phone_number, phone_type)
+
+    async def add_email(self, access_token: str, email: str) -> dict:
+        from .modules.mfa.security_info import add_email
+        return await add_email(access_token, email)
+
+    async def verify(
+        self,
+        access_token: str,
+        security_info_type: int,
+        verification_context: str | None,
+        verification_data: str,
+    ) -> dict:
+        from .modules.mfa.security_info import verify
+        return await verify(access_token, security_info_type, verification_context, verification_data)
+
+    async def delete(self, access_token: str, security_info_type: int, data: str) -> dict:
+        from .modules.mfa.security_info import delete
+        return await delete(access_token, security_info_type, data)
+
 
 class _OutlookNamespace:
     def __init__(self, context: "GraphContext") -> None:
@@ -244,6 +301,7 @@ class Session:
         self.outlook = _OutlookNamespace(context)
         self.sharepoint = _SharePointNamespace(context)
         self.teams = _TeamsNamespace(context)
+        self.mfa = _MfaNamespace()
 
     @property
     def is_app_only(self) -> bool:

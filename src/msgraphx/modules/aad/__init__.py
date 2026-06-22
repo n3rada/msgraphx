@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import authmethods, ca, grants, roles, search
+from . import authmethods, ca, enrich, grants, pim, roles, search
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -52,6 +52,27 @@ def add_arguments(
     )
     grants.add_arguments(grants_parser)
 
+    user_parser = subparsers.add_parser(
+        "user",
+        parents=parents,
+        help="Enriched user details: properties, owned objects, devices, app roles, OAuth2 grants.",
+    )
+    enrich.add_arguments_user(user_parser)
+
+    group_parser = subparsers.add_parser(
+        "group",
+        parents=parents,
+        help="Enriched group details: members, owners, drives, sites, app roles.",
+    )
+    enrich.add_arguments_group(group_parser)
+
+    pim_parser = subparsers.add_parser(
+        "pim",
+        parents=parents,
+        help="List PIM active and eligible role assignments.",
+    )
+    pim.add_arguments(pim_parser)
+
 
 @handle_graph_errors
 async def run_with_arguments(
@@ -69,5 +90,11 @@ async def run_with_arguments(
         return await roles.run_with_arguments(context, args)
     if sub == "grants":
         return await grants.run_with_arguments(context, args)
+    if sub == "user":
+        return await enrich.run_user(context, args)
+    if sub == "group":
+        return await enrich.run_group(context, args)
+    if sub == "pim":
+        return await pim.run_with_arguments(context, args)
 
     return 1
