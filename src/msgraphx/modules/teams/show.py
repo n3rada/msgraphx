@@ -237,7 +237,7 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
 async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
     """Show a cached search result with surrounding conversation context."""
-    cached = cache.load_results(key="teams")
+    cached = cache.load_results(key="teams", identity=context.identity_hash)
     if not cached:
         logger.error(
             "No cached teams results. Run 'teams chat' or 'teams channel' first."

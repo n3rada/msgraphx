@@ -139,7 +139,7 @@ async def _list_pages(context: "GraphContext") -> int:
             "content_url": page.content_url,
         })
 
-    cache.save_results(rows, key="onenote")
+    cache.save_results(rows, key="onenote", identity=context.identity_hash)
 
     if context.json_output:
         output.print_json(rows)

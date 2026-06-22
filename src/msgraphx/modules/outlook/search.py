@@ -216,7 +216,7 @@ async def run_with_arguments(
             logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
-            cache.save_results(cached_items, key="mail")
+            cache.save_results(cached_items, key="mail", identity=context.identity_hash)
 
     if not cached_items:
         logger.info("No results found.")

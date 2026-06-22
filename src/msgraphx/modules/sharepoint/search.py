@@ -227,7 +227,7 @@ async def _run_with_save(
         logger.info("No results found.")
         return 0
 
-    cache.save_results(items, key="sharepoint")
+    cache.save_results(items, key="sharepoint", identity=context.identity_hash)
 
     downloaded = 0
     failed = 0

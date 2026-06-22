@@ -691,6 +691,14 @@ async def _main(argv: list[str]) -> int:
     if err:
         return err
 
+    # Build raw identity for cache partitioning.
+    # Delegated: OID comes from /me (cached_user.id set by _verify_connection).
+    # App-only: /me is unavailable; use tenant_id:client_id as the surrogate.
+    if is_app_only:
+        raw_identity = f"{getattr(args, 'tenant_id', '') or ''}:{getattr(args, 'client_id', '') or ''}"
+    else:
+        raw_identity = ""  # GraphContext.identity_hash falls back to cached_user.id
+
     context = GraphContext(
         graph_client=graph_client,
         is_app_only=is_app_only,
@@ -700,6 +708,7 @@ async def _main(argv: list[str]) -> int:
         json_output=getattr(args, "json_output", False),
         ndjson_output=getattr(args, "ndjson_output", False),
         token_getter=token_getter,
+        raw_identity=raw_identity,
     )
 
     return await _dispatch(args, context)

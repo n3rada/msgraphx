@@ -235,7 +235,7 @@ async def run_with_arguments(
             logger.info(f"Interrupted. {len(cached_items)} result(s) cached.")
     finally:
         if cached_items:
-            cache.save_results(cached_items, key="teams")
+            cache.save_results(cached_items, key="teams", identity=context.identity_hash)
 
     if not context.json_output:
         console.rule()

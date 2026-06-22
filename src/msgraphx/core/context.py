@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -30,6 +31,21 @@ class GraphContext:
     ndjson_output: bool = False
     # Async callable returning the current bearer token (for raw HTTP requests)
     token_getter: Any = field(default=None, repr=False, compare=False)
+    # Raw identity string for cache partitioning — set by cli.py.
+    # Delegated: the user's OID from /me. App-only: "{tenant_id}:{client_id}".
+    raw_identity: str = field(default="", repr=False, compare=False)
+
+    @property
+    def identity_hash(self) -> str:
+        """16-char hex prefix of the SHA-256 of the operator identity.
+
+        Used as a cache subdirectory so that multiple tokens on the same
+        machine never overwrite each other's results.
+        """
+        raw = self.cached_user.id if self.cached_user and self.cached_user.id else self.raw_identity
+        if not raw:
+            return "unknown"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def has_scope(self, *required: str) -> bool:
         """Return True if all required scopes are present in the delegated token."""

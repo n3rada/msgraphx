@@ -41,7 +41,7 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    cached = cache.load_results(key="mail")
+    cached = cache.load_results(key="mail", identity=context.identity_hash)
     if not cached:
         logger.error("No cached mail search results. Run 'outlook search' first.")
         return 1

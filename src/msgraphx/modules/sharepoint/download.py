@@ -302,7 +302,7 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
 async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
     """Download specific items from the last cached search results."""
-    cached = cache.load_results(key="sharepoint")
+    cached = cache.load_results(key="sharepoint", identity=context.identity_hash)
     if not cached:
         logger.error("No cached search results. Run a search first.")
         return 1

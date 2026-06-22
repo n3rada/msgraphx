@@ -274,7 +274,7 @@ class DriveSearchBase:
                 output.print_json([])
             return 0
 
-        cache.save_results(items, key=cls.CACHE_KEY)
+        cache.save_results(items, key=cls.CACHE_KEY, identity=context.identity_hash)
 
         if context.json_output:
             output.print_json(items)

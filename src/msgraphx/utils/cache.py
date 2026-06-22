@@ -21,11 +21,15 @@ from loguru import logger
 APP_NAME = "msgraphx"
 
 
-def _get_data_dir() -> Path:
-    """Return the XDG data directory for msgraphx.
+def _get_data_dir(identity: str = "unknown") -> Path:
+    """Return the XDG data directory for msgraphx, partitioned by operator identity.
 
-    On POSIX: $XDG_DATA_HOME/msgraphx (defaults to ~/.local/share/msgraphx)
-    On Windows: %APPDATA%/msgraphx
+    On POSIX: $XDG_DATA_HOME/msgraphx/{identity}/ (defaults to ~/.local/share/msgraphx/{identity}/)
+    On Windows: %APPDATA%/msgraphx/{identity}/
+
+    The identity is a 16-char hex hash derived from the operator's OID (delegated)
+    or "{tenant_id}:{client_id}" (app-only), preventing multiple tokens on the
+    same machine from overwriting each other's cached results.
     """
     if os.name == "nt":
         base = Path(os.environ.get("APPDATA") or Path.home())
@@ -33,12 +37,12 @@ def _get_data_dir() -> Path:
         xdg = os.environ.get("XDG_DATA_HOME")
         base = Path(xdg) if xdg else Path.home() / ".local" / "share"
 
-    return base / APP_NAME
+    return base / APP_NAME / identity
 
 
-def save_results(items: list[dict], key: str) -> None:
-    """Cache the latest results for *key*, overwriting any previous cache."""
-    data_dir = _get_data_dir()
+def save_results(items: list[dict], key: str, identity: str = "unknown") -> None:
+    """Cache the latest results for *key* under the operator identity subdirectory."""
+    data_dir = _get_data_dir(identity)
     data_dir.mkdir(parents=True, exist_ok=True)
 
     cache_file = data_dir / f"last_{key}.json"
@@ -51,12 +55,12 @@ def save_results(items: list[dict], key: str) -> None:
         logger.warning(f"Failed to cache results: {exc}")
 
 
-def load_results(key: str) -> list[dict]:
-    """Load cached results for *key*.
+def load_results(key: str, identity: str = "unknown") -> list[dict]:
+    """Load cached results for *key* from the operator identity subdirectory.
 
     Returns an empty list if no cache exists or the file is corrupt.
     """
-    cache_file = _get_data_dir() / f"last_{key}.json"
+    cache_file = _get_data_dir(identity) / f"last_{key}.json"
     if not cache_file.is_file():
         return []
 
