@@ -16,6 +16,9 @@ from msgraph.generated.models.sort_property import SortProperty
 from msgraph.generated.search.query.query_post_request_body import QueryPostRequestBody
 from msgraph.generated.models.entity_type import EntityType
 
+# Local library imports
+from ..utils.errors import raise_if_forbidden
+
 
 @dataclass
 class SearchOptions:
@@ -156,7 +159,6 @@ async def search_entities(
             page += 1
 
         except Exception as exc:
-            from ..utils.errors import raise_if_forbidden
             raise_if_forbidden(exc)
             logger.error(f"Error during search: {exc}")
             break

@@ -11,20 +11,44 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .core.context import GraphContext
-    from .utils.tokens import TokenManager
+# Local library imports
+from .core.context import GraphContext
+from .modules.aad import ca as _aad_ca
+from .modules.aad import enrich as _aad_enrich
+from .modules.aad import pim as _aad_pim
+from .modules.aad import roles as _aad_roles
+from .modules.aad.search import (
+    fetch_applications,
+    fetch_devices,
+    fetch_groups,
+    fetch_service_principals,
+    fetch_users,
+)
+from .modules.me import calendar as _me_calendar
+from .modules.me import groups as _me_groups
+from .modules.me import people as _me_people
+from .modules.me import planner as _me_planner
+from .modules.me import shared as _me_shared
+from .modules.me import trending as _me_trending
+from .modules.me import used as _me_used
+from .modules.mfa import security_info as _mfa_security_info
+from .modules.outlook import contacts as _outlook_contacts
+from .modules.outlook import search as _outlook_search
+from .modules.sharepoint import search as _sp_search
+from .modules.sharepoint import sites as _sp_sites
+from .modules.teams import channel as _teams_channel
+from .modules.teams import chat as _teams_chat
+from .modules.teams import meetings as _teams_meetings
+from .utils.tokens import TokenManager
 
 
 class _MeNamespace:
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(self, context: GraphContext) -> None:
         self._ctx = context
 
     async def people(self, top: int = 25, search: str | None = None) -> list[dict]:
-        from .modules.me.people import fetch
-        return await fetch(self._ctx, top=top, search=search)
+        return await _me_people.fetch(self._ctx, top=top, search=search)
 
     async def calendar(
         self,
@@ -32,40 +56,29 @@ class _MeNamespace:
         after: str | None = None,
         before: str | None = None,
     ) -> list[dict]:
-        from .modules.me.calendar import fetch
-        return await fetch(self._ctx, top=top, after=after, before=before)
+        return await _me_calendar.fetch(self._ctx, top=top, after=after, before=before)
 
     async def groups(self, visibility: str | None = None) -> list[dict]:
-        from .modules.me.groups import fetch
-        return await fetch(self._ctx, visibility=visibility)
+        return await _me_groups.fetch(self._ctx, visibility=visibility)
 
     async def planner(self, top: int = 50) -> list[dict]:
-        from .modules.me.planner import fetch
-        return await fetch(self._ctx, top=top)
+        return await _me_planner.fetch(self._ctx, top=top)
 
     async def shared(self, top: int = 25) -> list[dict]:
-        from .modules.me.shared import fetch
-        return await fetch(self._ctx, top=top)
+        return await _me_shared.fetch(self._ctx, top=top)
 
     async def used(self, top: int = 25) -> list[dict]:
-        from .modules.me.used import fetch
-        return await fetch(self._ctx, top=top)
+        return await _me_used.fetch(self._ctx, top=top)
 
     async def trending(self, top: int = 25, type_filter: str | None = None) -> list[dict]:
-        from .modules.me.trending import fetch
-        return await fetch(self._ctx, top=top, type_filter=type_filter)
+        return await _me_trending.fetch(self._ctx, top=top, type_filter=type_filter)
 
 
 class _AadNamespace:
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(self, context: GraphContext) -> None:
         self._ctx = context
 
-    async def users(
-        self,
-        query: str = "*",
-        odata_filter: str | None = None,
-    ) -> list[dict]:
-        from .modules.aad.search import fetch_users
+    async def users(self, query: str = "*", odata_filter: str | None = None) -> list[dict]:
         return await fetch_users(self._ctx, query=query, odata_filter=odata_filter)
 
     async def groups(
@@ -75,7 +88,6 @@ class _AadNamespace:
         synced_only: bool = False,
         odata_filter: str | None = None,
     ) -> list[dict]:
-        from .modules.aad.search import fetch_groups
         return await fetch_groups(
             self._ctx,
             query=query,
@@ -85,36 +97,28 @@ class _AadNamespace:
         )
 
     async def devices(self, query: str = "*") -> list[dict]:
-        from .modules.aad.search import fetch_devices
         return await fetch_devices(self._ctx, query=query)
 
     async def service_principals(self, query: str = "*") -> list[dict]:
-        from .modules.aad.search import fetch_service_principals
         return await fetch_service_principals(self._ctx, query=query)
 
     async def applications(self, query: str = "*") -> list[dict]:
-        from .modules.aad.search import fetch_applications
         return await fetch_applications(self._ctx, query=query)
 
     async def ca_policies(self, state: str | None = None) -> list[dict]:
-        from .modules.aad.ca import fetch
-        return await fetch(self._ctx, state=state)
+        return await _aad_ca.fetch(self._ctx, state=state)
 
     async def role_assignments(self, odata_filter: str | None = None) -> list[dict]:
-        from .modules.aad.roles import fetch
-        return await fetch(self._ctx, odata_filter=odata_filter)
+        return await _aad_roles.fetch(self._ctx, odata_filter=odata_filter)
 
     async def user_details(self, user_id: str) -> dict:
-        from .modules.aad.enrich import fetch_user_details
-        return await fetch_user_details(self._ctx, user_id)
+        return await _aad_enrich.fetch_user_details(self._ctx, user_id)
 
     async def group_details(self, group_id: str) -> dict:
-        from .modules.aad.enrich import fetch_group_details
-        return await fetch_group_details(self._ctx, group_id)
+        return await _aad_enrich.fetch_group_details(self._ctx, group_id)
 
     async def pim_roles(self) -> list[dict]:
-        from .modules.aad.pim import fetch
-        return await fetch(self._ctx)
+        return await _aad_pim.fetch(self._ctx)
 
 
 class _MfaNamespace:
@@ -126,12 +130,10 @@ class _MfaNamespace:
     """
 
     async def available_methods(self, access_token: str) -> list[dict]:
-        from .modules.mfa.security_info import available_methods
-        return await available_methods(access_token)
+        return await _mfa_security_info.available_methods(access_token)
 
     async def add_otp_backdoor(self, access_token: str) -> str | None:
-        from .modules.mfa.security_info import add_otp_backdoor
-        return await add_otp_backdoor(access_token)
+        return await _mfa_security_info.add_otp_backdoor(access_token)
 
     async def add_phone(
         self,
@@ -140,12 +142,10 @@ class _MfaNamespace:
         phone_number: str,
         phone_type: str = "sms",
     ) -> dict:
-        from .modules.mfa.security_info import add_phone
-        return await add_phone(access_token, country_code, phone_number, phone_type)
+        return await _mfa_security_info.add_phone(access_token, country_code, phone_number, phone_type)
 
     async def add_email(self, access_token: str, email: str) -> dict:
-        from .modules.mfa.security_info import add_email
-        return await add_email(access_token, email)
+        return await _mfa_security_info.add_email(access_token, email)
 
     async def verify(
         self,
@@ -154,16 +154,14 @@ class _MfaNamespace:
         verification_context: str | None,
         verification_data: str,
     ) -> dict:
-        from .modules.mfa.security_info import verify
-        return await verify(access_token, security_info_type, verification_context, verification_data)
+        return await _mfa_security_info.verify(access_token, security_info_type, verification_context, verification_data)
 
     async def delete(self, access_token: str, security_info_type: int, data: str) -> dict:
-        from .modules.mfa.security_info import delete
-        return await delete(access_token, security_info_type, data)
+        return await _mfa_security_info.delete(access_token, security_info_type, data)
 
 
 class _OutlookNamespace:
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(self, context: GraphContext) -> None:
         self._ctx = context
 
     async def search(
@@ -175,8 +173,7 @@ class _OutlookNamespace:
         after: str | None = None,
         before: str | None = None,
     ) -> list[dict]:
-        from .modules.outlook.search import fetch
-        return await fetch(
+        return await _outlook_search.fetch(
             self._ctx,
             query=query,
             from_addr=from_addr,
@@ -193,12 +190,11 @@ class _OutlookNamespace:
         only: str | None = None,
         top: int | None = None,
     ) -> dict:
-        from .modules.outlook.contacts import fetch
-        return await fetch(self._ctx, after=after, before=before, only=only, top=top)
+        return await _outlook_contacts.fetch(self._ctx, after=after, before=before, only=only, top=top)
 
 
 class _SharePointNamespace:
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(self, context: GraphContext) -> None:
         self._ctx = context
 
     async def search(
@@ -210,8 +206,7 @@ class _SharePointNamespace:
         region: str | None = None,
         drive_id: str | None = None,
     ) -> list[dict]:
-        from .modules.sharepoint.search import fetch
-        return await fetch(
+        return await _sp_search.fetch(
             self._ctx,
             query=query,
             after=after,
@@ -222,17 +217,15 @@ class _SharePointNamespace:
         )
 
     async def sites(self, show_public: bool = False) -> dict:
-        from .modules.sharepoint.sites import fetch
-        return await fetch(self._ctx, show_public=show_public)
+        return await _sp_sites.fetch(self._ctx, show_public=show_public)
 
 
 class _TeamsNamespace:
-    def __init__(self, context: "GraphContext") -> None:
+    def __init__(self, context: GraphContext) -> None:
         self._ctx = context
 
     async def chats(self, top: int = 20) -> list[dict]:
-        from .modules.teams.chat import fetch_chats
-        return await fetch_chats(self._ctx, top=top)
+        return await _teams_chat.fetch_chats(self._ctx, top=top)
 
     async def chat_search(
         self,
@@ -241,12 +234,10 @@ class _TeamsNamespace:
         after: str | None = None,
         before: str | None = None,
     ) -> list[dict]:
-        from .modules.teams.chat import fetch_search
-        return await fetch_search(self._ctx, query=query, from_addr=from_addr, after=after, before=before)
+        return await _teams_chat.fetch_search(self._ctx, query=query, from_addr=from_addr, after=after, before=before)
 
     async def joined_teams(self) -> list[dict]:
-        from .modules.teams.channel import fetch_teams
-        return await fetch_teams(self._ctx)
+        return await _teams_channel.fetch_teams(self._ctx)
 
     async def channel_search(
         self,
@@ -255,16 +246,13 @@ class _TeamsNamespace:
         after: str | None = None,
         before: str | None = None,
     ) -> list[dict]:
-        from .modules.teams.channel import fetch_search
-        return await fetch_search(self._ctx, query=query, from_addr=from_addr, after=after, before=before)
+        return await _teams_channel.fetch_search(self._ctx, query=query, from_addr=from_addr, after=after, before=before)
 
     async def meetings(self, top: int = 25) -> list[dict]:
-        from .modules.teams.meetings import fetch
-        return await fetch(self._ctx, top=top)
+        return await _teams_meetings.fetch(self._ctx, top=top)
 
     async def transcripts(self, meeting_id: str) -> list[dict]:
-        from .modules.teams.meetings import fetch_transcripts
-        return await fetch_transcripts(self._ctx, meeting_id=meeting_id)
+        return await _teams_meetings.fetch_transcripts(self._ctx, meeting_id=meeting_id)
 
 
 class Session:
@@ -291,8 +279,8 @@ class Session:
 
     def __init__(
         self,
-        context: "GraphContext",
-        token_manager: "TokenManager | None" = None,
+        context: GraphContext,
+        token_manager: TokenManager | None = None,
     ) -> None:
         self._ctx = context
         self._token_manager = token_manager
@@ -347,6 +335,8 @@ class Session:
                 tenant_id="...", client_id="...", client_secret="..."
             )
         """
+        # Lazy: __init__.py imports Session at module level, so importing
+        # create_context here avoids a circular import at load time.
         from . import create_context
 
         ctx = await create_context(
@@ -360,7 +350,6 @@ class Session:
 
         token_manager = None
         if access_token and not tenant_id:
-            from .utils.tokens import TokenManager
             try:
                 token_manager = TokenManager(access_token, refresh_token)
             except Exception:

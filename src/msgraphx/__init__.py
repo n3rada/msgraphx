@@ -24,6 +24,13 @@ except PackageNotFoundError:
 from .core.context import GraphContext  # noqa: E402
 from .session import Session  # noqa: E402
 
+# External library imports
+from azure.identity.aio import ClientSecretCredential  # noqa: E402
+from msgraph.graph_service_client import GraphServiceClient  # noqa: E402
+
+# Local library imports
+from .utils.tokens import TokenManager  # noqa: E402
+
 
 async def create_context(
     access_token: str | None = None,
@@ -55,16 +62,8 @@ async def create_context(
         users   = await session.aad.users(query="admin")
         files   = await session.sharepoint.search("filetype:xlsx credentials")
     """
-    # External library imports
-    from msgraph.graph_service_client import GraphServiceClient
-
-    # Local library imports
-    from .utils.tokens import TokenManager
-
     if tenant_id and (client_id or client_secret):
         # App-only: client credentials flow
-        from azure.identity.aio import ClientSecretCredential
-
         if not all((tenant_id, client_id, client_secret)):
             raise ValueError("App-only auth requires tenant_id, client_id, and client_secret.")
 
