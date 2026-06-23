@@ -92,29 +92,33 @@ def _load_tokens(token_file: str | None) -> tuple[str | None, str | None, str]:
     return None, None, "file"
 
 
+async def _async_refresh_loop(access_token: str, refresh_token: str, source: str) -> None:
+    token = TokenManager(access_token, refresh_token, source=source)
+    _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=0.0)
+    logger.info("Refresh loop started.")
+    while True:
+        sleep_for = max(0, token.expires_in() - 300)
+        if sleep_for > 0:
+            logger.debug(f"Next refresh in {sleep_for}s.")
+            await asyncio.sleep(sleep_for)
+        ok = await token.refresh_access_token(token.refresh_token)
+        if ok:
+            token.update_output_file()
+            _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=time.time())
+            logger.info("Token refreshed successfully.")
+        else:
+            logger.error("Token refresh failed. Stopping.")
+            break
+
+
 def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
     """Refresh loop. Runs until a refresh fails, then removes the PID file."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Clear any event loop inherited from the parent process after fork.
+    asyncio.set_event_loop(None)
     try:
-        token = TokenManager(access_token, refresh_token, source=source)
-        _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=0.0)
-        while True:
-            sleep_for = max(0, token.expires_in() - 300)
-            if sleep_for > 0:
-                logger.debug(f"Next refresh in {sleep_for}s.")
-                time.sleep(sleep_for)
-            ok = loop.run_until_complete(token.refresh_access_token(token.refresh_token))
-            if ok:
-                token.update_output_file()
-                _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=time.time())
-            else:
-                logger.error("Token refresh failed. Stopping.")
-                break
+        asyncio.run(_async_refresh_loop(access_token, refresh_token, source))
     except Exception as exc:
         logger.error(f"Refresh loop error: {exc}")
-    finally:
-        loop.close()
     _pid_file().unlink(missing_ok=True)
     _state_file().unlink(missing_ok=True)
 

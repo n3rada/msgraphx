@@ -34,14 +34,18 @@ msgraphx refresh --daemon
 # watch a specific token file
 msgraphx refresh --daemon --token-file /tmp/tokens.json
 
-# check status
+# check status (shows last refresh time, token expiry, next refresh ETA)
 msgraphx refresh --status
+
+# check status as JSON
+msgraphx refresh --status --json
 
 # stop
 msgraphx refresh --stop
 ```
 
-PID file: `~/.local/state/msgraphx/refresh.pid`
+PID file: `~/.local/state/msgraphx/refresh.pid`  
+State file: `~/.local/state/msgraphx/refresh.state.json`
 
 ---
 
@@ -92,7 +96,7 @@ msgraphx outlook download 1-5 --save /tmp/loot/
 
 ### search
 
-Full-text search across SharePoint. Results cached to `~/.local/share/msgraphx/last_sharepoint.json`.
+Full-text search across SharePoint. Results cached to `~/.local/share/msgraphx/<identity>/last_sharepoint.json`.
 
 ```bash
 msgraphx sp search "password"
@@ -102,11 +106,34 @@ msgraphx sp search --hunt credentials
 msgraphx sp search --hunt ssh --all
 msgraphx sp search "budget" --my-groups
 msgraphx sp search --hunt credentials --save /tmp/loot/
+
+# scope to a specific site (name, full URL, or Graph site ID)
+msgraphx sp search "password" --site EngieITCybersecurity
+msgraphx sp search "password" --site "https://tenant.sharepoint.com/sites/MySite"
 ```
 
-Flags: `--filetype EXT` / `-f EXT`, `--hunt QUERY`, `--my-groups`.
+Flags: `--filetype EXT` / `-f EXT`, `--hunt QUERY`, `--my-groups`, `--site SITE`.
+
+`--site` accepts a site name/slug (resolved via `$search`), a full SharePoint URL, or a Graph site ID. When multiple sites match a name, the first match is used with a warning.
 
 Predefined hunt queries: `credentials`, `ssh`, `office`, and others (run `--hunt` without a value to list them).
+
+### sites
+
+Enumerate SharePoint sites accessible to the current user.
+
+```bash
+# full tenant-wide search (uses POST /search/query with EntityType.Site)
+msgraphx sp sites
+
+# fetch only sites from your M365 group membership (faster, 1 call per group)
+msgraphx sp sites --from-groups
+
+# enrich tenant-wide results with group membership info
+msgraphx sp sites --enrich
+```
+
+`--from-groups` and `--enrich` are mutually exclusive. `--enrich` reuses the `sites` cache if already populated.
 
 ### download
 
@@ -122,6 +149,52 @@ msgraphx --drive-id <id> sp download --save /tmp/loot/
 
 # force re-download (default is resume)
 msgraphx --drive-id <id> sp download --no-resume --save /tmp/loot/
+```
+
+---
+
+## groups
+
+Enumerate and interact with Microsoft 365 Unified groups — the cross-service backbone behind Teams workspaces, SharePoint team sites, and Exchange mailboxes.
+
+### list / ls
+
+```bash
+# groups you belong to (transitive membership)
+msgraphx groups list --mine
+
+# filter to Teams-provisioned groups only
+msgraphx groups list --mine --teams-only
+
+# filter by visibility
+msgraphx groups list --mine --visibility Private
+
+# all groups in the tenant
+msgraphx groups list
+msgraphx groups list --visibility Public
+```
+
+Flags: `--mine`, `--teams-only`, `--visibility Private|Public`.
+
+### members
+
+```bash
+# direct members
+msgraphx groups members <group-id>
+
+# transitive members (resolves nested groups)
+msgraphx groups members <group-id> --transitive
+
+# users only
+msgraphx groups members <group-id> --users-only
+```
+
+### sites
+
+Resolve the SharePoint site owned by a group.
+
+```bash
+msgraphx groups sites <group-id>
 ```
 
 ---
@@ -169,6 +242,25 @@ msgraphx teams show 2 --context 8
 msgraphx teams show alice
 msgraphx teams show "project phoenix" --last 50
 ```
+
+### send
+
+Send a message to a user (1:1 chat) or a Teams channel. Requires delegated auth. Permissions: `Chat.ReadWrite`, `ChatMessage.Send`, `ChannelMessage.Send`.
+
+```bash
+# 1:1 DM by UPN or object ID
+msgraphx teams send --to alice@corp.com "Hey, lunch today?"
+
+# 1:1 DM with HTML body
+msgraphx teams send --to alice@corp.com --html "<b>Important:</b> see attached."
+
+# post to a channel
+msgraphx teams send --team <team-id> --channel <channel-id> "Announcement text"
+```
+
+Flags: `--to USER` (UPN, object ID, or mail address), `--channel CHANNEL_ID` (requires `--team`), `--team TEAM_ID`, `--html`.
+
+`--to` and `--channel` are mutually exclusive.
 
 ---
 
@@ -338,6 +430,31 @@ Microsoft 365 groups you belong to.
 msgraphx me groups
 msgraphx me groups --visibility Public
 ```
+
+### drive / onedrive
+
+Browse your personal OneDrive as a tree, or upload a file. Requires `Files.ReadWrite`.
+
+```bash
+# full tree from root (default depth: 3)
+msgraphx me drive tree
+
+# tree rooted at a specific folder
+msgraphx me drive tree --path Desktop
+msgraphx me drive tree --path "Documents/Projects"
+
+# limit recursion depth
+msgraphx me drive tree --depth 2
+
+# upload a file to the root
+msgraphx me drive upload /tmp/payload.exe
+
+# upload to a subfolder (created if absent)
+msgraphx me drive upload /tmp/payload.exe --path Desktop
+msgraphx me onedrive upload report.pdf --path "Documents/Reports"
+```
+
+`me onedrive` is an alias for `me drive`.
 
 ---
 

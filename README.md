@@ -2,13 +2,14 @@
 
 Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/overview) [SDK](https://github.com/microsoftgraph/msgraph-sdk-python) to search and harvest SharePoint files, Outlook mail, Teams messages and Microsoft 365 data during red team operations and penetration tests.
 
-- **SharePoint**: search across all sites, filter by filetype, use predefined hunt queries, bulk download
+- **SharePoint**: search across all sites or a specific site (`--site`), filter by filetype, predefined hunt queries, bulk download, enumerate sites via group membership
 - **Outlook**: build communication graphs from mailboxes, KQL keyword search, download emails as `.eml`
-- **Teams**: search DMs and channel messages, browse chats, inspect message context
+- **Teams**: search DMs and channel messages, browse chats, send messages to any user or channel
 - **Entra ID**: enumerate users, groups, devices, apps, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
-- **Me**: calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
+- **Groups**: list M365 Unified groups, enumerate members (direct or transitive), resolve group SharePoint sites
+- **Me**: OneDrive tree view and file upload, calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
 - **MFA backdoor**: register TOTP, phone, or email as secondary factor via `mysignins.microsoft.com`
-- **Output**: local caching of search results, JSON/NDJSON export, resumable downloads
+- **Output**: local caching of search results per identity, JSON/NDJSON export, resumable downloads
 
 For the full command reference see [USAGE.md](USAGE.md).
 
@@ -81,6 +82,15 @@ msgraphx aad pim
 
 # Me: dump OneNote pages
 msgraphx me onenote --list
+
+# Me: browse OneDrive tree
+msgraphx me drive tree
+
+# Groups: list your M365 groups
+msgraphx groups list --mine
+
+# Teams: send a message to a user
+msgraphx teams send --to target@corp.com "message"
 
 # MFA backdoor: register a hidden TOTP
 msgraphx mfa --mfa-token <mysignins-token> add-otp
