@@ -125,11 +125,9 @@ async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, 
     }
     results = []
     try:
-        response = await context.graph_client.groups.by_group_id(group.id).sites.get()
-        if response and response.value:
-            for site in response.value:
-                if site.id:
-                    results.append((site.id, info))
+        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
+        if site and site.id:
+            results.append((site.id, info))
     except Exception:
         pass
     return results
@@ -144,11 +142,9 @@ async def _fetch_group_sites(context: GraphContext, group) -> list[dict]:
     }
     results = []
     try:
-        response = await context.graph_client.groups.by_group_id(group.id).sites.get()
-        if response and response.value:
-            for site in response.value:
-                if site.id:
-                    results.append(_site_obj_to_dict(site, info))
+        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
+        if site and site.id:
+            results.append(_site_obj_to_dict(site, info))
     except Exception:
         pass
     return results

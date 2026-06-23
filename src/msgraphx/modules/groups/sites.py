@@ -24,8 +24,8 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     group_id = args.group_id
     logger.info(f"Fetching sites for group {group_id}")
 
-    response = await context.graph_client.groups.by_group_id(group_id).sites.get()
-    raw_sites = response.value if response and response.value else []
+    root_site = await context.graph_client.groups.by_group_id(group_id).sites.by_site_id("root").get()
+    raw_sites = [root_site] if root_site else []
 
     rows = []
     for site in raw_sites:
