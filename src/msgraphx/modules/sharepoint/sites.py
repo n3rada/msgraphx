@@ -33,7 +33,7 @@ from rich.table import Table
 
 from ...core import graph_search
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
@@ -98,6 +98,8 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         if context.json_output:
             output.print_json([])
         return 0
+
+    cache.save_results(sites, key="sites", identity=context.identity_hash)
 
     if context.json_output:
         output.print_json(sites)

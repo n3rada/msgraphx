@@ -22,7 +22,7 @@ from msgraph.generated.applications.applications_request_builder import (
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output, pagination
+from ...utils import cache, output, pagination
 from ...utils.errors import handle_graph_errors
 
 # Preset hunt queries for common privileged groups
@@ -498,6 +498,10 @@ async def run_with_arguments(
                 logger.info("─" * 80)
 
     logger.info(f"Total objects found: {total_found}")
+
+    all_items = [item for items in structured_results.values() for item in items]
+    if all_items:
+        cache.save_results(all_items, key="aad", identity=context.identity_hash)
 
     if context.ndjson_output:
         for items in structured_results.values():

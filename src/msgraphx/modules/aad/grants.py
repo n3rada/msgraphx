@@ -19,7 +19,7 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
@@ -76,6 +76,8 @@ async def run_with_arguments(
         logger.warning("Client-side filter applied. OData syntax is not evaluated; filtering by simple substring match on scope.")
         q = args.odata_filter.lower()
         rows = [r for r in rows if q in str(r).lower()]
+
+    cache.save_results(rows, key="grants", identity=context.identity_hash)
 
     if context.json_output:
         output.print_json(rows)
