@@ -165,6 +165,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="Token file to watch (default: .roadtools_auth in the current directory).",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output --status as JSON.",
+    )
 
 
 def run_command(args: argparse.Namespace) -> int:
@@ -182,33 +188,46 @@ def run_command(args: argparse.Namespace) -> int:
     if args.status:
         pid = _read_pid()
         now = time.time()
+        as_json = getattr(args, "json", False)
 
-        if pid is None or not _is_alive(pid):
+        alive = pid is not None and _is_alive(pid)
+        if not alive:
             if pid is not None:
                 _pid_file().unlink(missing_ok=True)
                 _state_file().unlink(missing_ok=True)
-            print("Refresh daemon: not running.")
+            if as_json:
+                print(json.dumps({"running": False}))
+            else:
+                print("not running")
             return 0
 
-        print(f"Refresh daemon: running (PID {pid}).")
+        state = _read_state() or {}
+        last = state.get("last_refreshed", 0.0)
+        expires_at = state.get("expires_at", 0.0)
+        until = int(expires_at - now) if expires_at else None
+        next_refresh = max(0, until - 300) if until is not None else None
 
-        state = _read_state()
-        if state:
-            last = state.get("last_refreshed", 0.0)
-            expires_at = state.get("expires_at", 0.0)
-
+        if as_json:
+            print(json.dumps({
+                "running": True,
+                "pid": pid,
+                "last_refreshed": datetime.fromtimestamp(last, tz=timezone.utc).isoformat() if last else None,
+                "last_refreshed_ago_seconds": int(now - last) if last else None,
+                "token_expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat() if expires_at else None,
+                "token_expires_in_seconds": until,
+                "next_refresh_in_seconds": next_refresh,
+            }))
+        else:
+            print(f"running (PID {pid})")
             if last:
                 ago = int(now - last)
-                print(f"  Last refreshed : {datetime.fromtimestamp(last, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC ({ago}s ago)")
+                print(f"  last refreshed : {datetime.fromtimestamp(last, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC  ({ago}s ago)")
             else:
-                print("  Last refreshed : not yet (daemon just started)")
-
+                print("  last refreshed : not yet")
             if expires_at:
-                until = int(expires_at - now)
-                next_refresh = max(0, until - 300)
                 exp_str = datetime.fromtimestamp(expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                print(f"  Token expires  : {exp_str} UTC (in {until}s)")
-                print(f"  Next refresh   : in ~{next_refresh}s")
+                print(f"  token expires  : {exp_str} UTC  (in {until}s)")
+                print(f"  next refresh   : in ~{next_refresh}s")
 
         return 0
 
