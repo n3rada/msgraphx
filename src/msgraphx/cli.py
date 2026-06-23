@@ -25,13 +25,13 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, graph, me, mfa, outlook, sharepoint, teams
+from .modules import aad, graph, groups, me, mfa, outlook, sharepoint, teams
 from .modules.graph import refresh
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 _KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
+    {"sharepoint", "sp", "aad", "ad", "groups", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
 )
 
 
@@ -249,6 +249,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     sharepoint.add_arguments(sp_parser, parents=[parent_parser])
+
+    # Groups subcommand
+    groups_parser = subparsers.add_parser(
+        "groups",
+        help="M365 Unified groups: list, members, sites.",
+        parents=[parent_parser],
+    )
+    groups.add_arguments(groups_parser, parents=[parent_parser])
 
     # Entra ID subcommand
     aad_parser = subparsers.add_parser(
@@ -581,6 +589,9 @@ async def _call_module(coro) -> int:
 async def _dispatch(args, context) -> int:
     """Route to the appropriate subcommand handler."""
     command = args.command
+
+    if command == "groups":
+        return await _call_module(groups.run_with_arguments(context, args))
 
     if command in ("sharepoint", "sp"):
         return await _call_module(sharepoint.run_with_arguments(context, args))

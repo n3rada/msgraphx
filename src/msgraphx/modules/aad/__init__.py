@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import authmethods, ca, enrich, grants, groups, pim, roles, search
+from . import authmethods, ca, enrich, grants, pim, roles, search
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -66,13 +66,6 @@ def add_arguments(
     )
     enrich.add_arguments_group(group_parser)
 
-    groups_parser = subparsers.add_parser(
-        "groups",
-        parents=parents,
-        help="Enumerate M365 Unified groups. Use --mine for your transitive membership.",
-    )
-    groups.add_arguments(groups_parser)
-
     pim_parser = subparsers.add_parser(
         "pim",
         parents=parents,
@@ -101,8 +94,6 @@ async def run_with_arguments(
         return await enrich.run_user(context, args)
     if sub == "group":
         return await enrich.run_group(context, args)
-    if sub == "groups":
-        return await groups.run_with_arguments(context, args)
     if sub == "pim":
         return await pim.run_with_arguments(context, args)
 
