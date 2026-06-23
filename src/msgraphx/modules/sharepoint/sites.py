@@ -93,19 +93,27 @@ async def fetch(context: GraphContext) -> list[dict]:
     return sites
 
 
-async def _resolve_group_site(context: GraphContext, group) -> tuple[str, dict] | None:
-    """Return (site_id, group_info) for a group's root SharePoint site, or None on failure."""
+async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, dict]]:
+    """Return all (site_id, group_info) pairs for every site owned by a group.
+
+    Uses GET /groups/{id}/sites (collection) rather than /sites/root so that
+    groups with multiple associated site collections are fully covered.
+    """
+    info = {
+        "group_id": group.id,
+        "group_name": group.display_name or "",
+        "group_visibility": group.visibility or "",
+    }
+    results = []
     try:
-        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
-        if site and site.id:
-            return site.id, {
-                "group_id": group.id,
-                "group_name": group.display_name or "",
-                "group_visibility": group.visibility or "",
-            }
+        response = await context.graph_client.groups.by_group_id(group.id).sites.get()
+        if response and response.value:
+            for site in response.value:
+                if site.id:
+                    results.append((site.id, info))
     except Exception:
         pass
-    return None
+    return results
 
 
 async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[dict]:
@@ -120,14 +128,15 @@ async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[d
         logger.warning("No M365 Unified groups found — skipping group enrichment.")
         return [{**s, "access_via": "direct", "group_id": None, "group_name": None, "group_visibility": None} for s in sites]
 
-    logger.info(f"Resolving root sites for {len(groups)} M365 group(s)...")
-    results = await asyncio.gather(*[_resolve_group_site(context, g) for g in groups])
+    logger.info(f"Resolving sites for {len(groups)} M365 group(s)...")
+    nested = await asyncio.gather(*[_resolve_group_sites(context, g) for g in groups])
 
     group_site_map: dict[str, dict] = {}
-    for result in results:
-        if result:
-            site_id, info = result
+    for pairs in nested:
+        for site_id, info in pairs:
             group_site_map[site_id] = info
+
+    logger.debug(f"{len(group_site_map)} group-owned site(s) resolved")
 
     enriched = []
     for site in sites:
