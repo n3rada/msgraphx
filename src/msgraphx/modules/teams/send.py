@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.models.aad_user_conversation_member import (
     AadUserConversationMember,
@@ -28,6 +29,7 @@ from msgraph.generated.models.chat import Chat
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.chat_type import ChatType
 from msgraph.generated.models.item_body import ItemBody
+from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 
 # Local library imports
 from ...core.context import GraphContext
@@ -111,8 +113,6 @@ async def _send_dm(
         pass
 
     if not target_user or not target_user.id:
-        from msgraph.generated.users.users_request_builder import UsersRequestBuilder
-        from kiota_abstractions.base_request_configuration import RequestConfiguration
         try:
             config = RequestConfiguration(
                 query_parameters=UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
