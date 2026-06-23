@@ -5,16 +5,13 @@
 #
 # Required permissions:
 #   Application.Read.All (or Directory.Read.All)
-#   for SP appRoleAssignments: AppRoleAssignment.ReadWrite.All or Directory.Read.All
 
 from __future__ import annotations
 
 import argparse
-import json
+import asyncio
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
 
-import httpx
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from rich.table import Table
@@ -24,23 +21,7 @@ from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
 
-_BASE = "https://graph.microsoft.com/v1.0"
 _REQUIRED_SCOPE = "Application.Read.All (or Directory.Read.All)"
-
-
-def _check_httpx_forbidden(resp: httpx.Response) -> None:
-    """Raise ForbiddenGraphError if the httpx response is 403."""
-    if resp.status_code != 403:
-        return
-    try:
-        msg = resp.json().get("error", {}).get("message", "Insufficient privileges.")
-    except Exception:
-        msg = "Insufficient privileges."
-    raise ForbiddenGraphError(
-        required=_REQUIRED_SCOPE,
-        granted=None,
-        raw_message=msg,
-    )
 
 
 def _now() -> datetime:
@@ -76,6 +57,13 @@ def _status_badge_short(status: str) -> str:
     }.get(status, "?")
 
 
+def _owner_name(obj) -> str:
+    if hasattr(obj, "display_name") and obj.display_name:
+        return obj.display_name
+    ad = getattr(obj, "additional_data", {}) or {}
+    return ad.get("displayName") or ad.get("userPrincipalName") or (obj.id or "?")
+
+
 # ---------------------------------------------------------------------------
 # aad app <id> — single enriched view
 # ---------------------------------------------------------------------------
@@ -87,183 +75,221 @@ def add_arguments_single(parser: argparse.ArgumentParser) -> None:
     )
 
 
-async def _resolve_app(token: str, app_ref: str) -> dict | None:
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(verify=False, timeout=30) as client:
-        # Try object ID first
-        r = await client.get(f"{_BASE}/applications/{quote(app_ref)}", headers=headers)
-        _check_httpx_forbidden(r)
-        if r.status_code == 200:
-            return r.json()
-        # Try appId filter
-        r2 = await client.get(
-            f"{_BASE}/applications?$filter=appId eq '{app_ref}'&$top=1",
-            headers=headers,
+async def _resolve_app(context: GraphContext, app_ref: str):
+    from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
+
+    # Try object ID directly
+    try:
+        app = await context.graph_client.applications.by_application_id(app_ref).get()
+        if app and app.id:
+            return app
+    except Exception as exc:
+        raise_if_forbidden(exc)
+
+    # Fall back to appId (client ID) filter
+    try:
+        QueryParams = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters
+        config = RequestConfiguration(
+            query_parameters=QueryParams(filter=f"appId eq '{app_ref}'", top=1)
         )
-        _check_httpx_forbidden(r2)
-        if r2.status_code == 200:
-            vals = r2.json().get("value", [])
-            if vals:
-                return vals[0]
+        resp = await context.graph_client.applications.get(request_configuration=config)
+        if resp and resp.value:
+            return resp.value[0]
+    except Exception as exc:
+        raise_if_forbidden(exc)
+        raise
+
     return None
-
-
-async def _batch(token: str, requests: list[dict]) -> list[dict]:
-    async with httpx.AsyncClient(verify=False, timeout=30) as client:
-        resp = await client.post(
-            f"{_BASE}/$batch",
-            json={"requests": requests},
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
-    _check_httpx_forbidden(resp)
-    if resp.status_code != 200:
-        raise RuntimeError(f"$batch failed: {resp.status_code} {resp.text[:200]}")
-    responses = resp.json()["responses"]
-    for r in responses:
-        if r.get("status") == 403:
-            logger.warning(f"Batch sub-request '{r.get('id')}' returned 403 — skipped (insufficient permissions).")
-    return responses
 
 
 @handle_graph_errors
 async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
-    token = await context.get_access_token()
-    if not token:
-        logger.error("No access token available.")
-        return 1
+    from msgraph.generated.service_principals.service_principals_request_builder import (
+        ServicePrincipalsRequestBuilder,
+    )
 
     logger.info(f"Resolving application: {args.app_id}")
-    app = await _resolve_app(token, args.app_id)
+    app = await _resolve_app(context, args.app_id)
     if not app:
         logger.error(f"Application not found: {args.app_id}")
         return 1
 
-    obj_id = app["id"]
-    app_client_id = app["appId"]
+    obj_id = app.id
+    app_client_id = app.app_id
 
-    # Batch: owners + SP lookup in one round-trip
-    responses = await _batch(token, [
-        {"id": "owners", "method": "GET", "url": f"/applications/{obj_id}/owners"},
-        {"id": "sp", "method": "GET",
-         "url": f"/servicePrincipals?$filter=appId eq '{app_client_id}'&$top=1"},
-    ])
-
-    app["owners"] = next(
-        (r["body"].get("value", []) for r in responses if r["id"] == "owners" and r["status"] == 200),
-        [],
+    # Owners + SP lookup in parallel
+    SpQueryParams = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters
+    sp_config = RequestConfiguration(
+        query_parameters=SpQueryParams(filter=f"appId eq '{app_client_id}'", top=1)
     )
 
-    sp_list = next(
-        (r["body"].get("value", []) for r in responses if r["id"] == "sp" and r["status"] == 200),
-        [],
+    owners_result, sp_result = await asyncio.gather(
+        _safe_collect(context.graph_client.applications.by_application_id(obj_id).owners),
+        _safe_get(context.graph_client.service_principals, sp_config),
+        return_exceptions=True,
     )
-    sp = sp_list[0] if sp_list else None
+
+    owners = owners_result if isinstance(owners_result, list) else []
+    sp_resp = sp_result if not isinstance(sp_result, BaseException) else None
+    sp_items = (sp_resp.value if sp_resp and sp_resp.value else [])
+    sp = sp_items[0] if sp_items else None
 
     if sp:
-        sp_id = sp["id"]
-        sp_resp = await _batch(token, [
-            {"id": "appRoles", "method": "GET",
-             "url": f"/servicePrincipals/{sp_id}/appRoleAssignments"},
-            {"id": "grants", "method": "GET",
-             "url": f"/servicePrincipals/{sp_id}/oauth2PermissionGrants"},
-        ])
-        sp["appRoleAssignments"] = next(
-            (r["body"].get("value", []) for r in sp_resp if r["id"] == "appRoles" and r["status"] == 200),
-            [],
+        sp_id = sp.id
+        roles_result, grants_result = await asyncio.gather(
+            _safe_collect(
+                context.graph_client.service_principals.by_service_principal_id(sp_id).app_role_assignments
+            ),
+            _safe_collect(
+                context.graph_client.service_principals.by_service_principal_id(sp_id).oauth2_permission_grants
+            ),
+            return_exceptions=True,
         )
-        sp["oauth2PermissionGrants"] = next(
-            (r["body"].get("value", []) for r in sp_resp if r["id"] == "grants" and r["status"] == 200),
-            [],
-        )
-        app["servicePrincipal"] = sp
+        sp._app_role_assignments = roles_result if isinstance(roles_result, list) else []
+        sp._oauth2_grants = grants_result if isinstance(grants_result, list) else []
 
     if context.json_output:
-        output.print_json(app)
+        output.print_json(_app_to_dict(app, owners, sp))
         return 0
 
-    _print_app(app)
+    _print_app(app, owners, sp)
     return 0
 
 
-def _fmt_dt(dt_str: str | None) -> str:
-    if not dt_str:
+async def _safe_collect(builder) -> list:
+    try:
+        return await pagination.collect_all(builder)
+    except Exception as exc:
+        raise_if_forbidden(exc)
+        logger.warning(f"Could not fetch collection: {exc}")
+        return []
+
+
+async def _safe_get(builder, config):
+    try:
+        return await builder.get(request_configuration=config)
+    except Exception as exc:
+        raise_if_forbidden(exc)
+        logger.warning(f"Could not fetch resource: {exc}")
+        return None
+
+
+def _fmt_dt(dt: datetime | None) -> str:
+    if not dt:
         return "[dim]—[/dim]"
-    return dt_str[:19].replace("T", " ") + " UTC"
+    return dt.strftime("%Y-%m-%d %H:%M") + " UTC"
 
 
-def _print_app(app: dict) -> None:
-    console.print(f"\n[bold]App: {app.get('displayName', '?')}[/bold]")
+def _app_to_dict(app, owners: list, sp) -> dict:
+    pw = [
+        {
+            "keyId": str(c.key_id) if c.key_id else None,
+            "displayName": c.display_name or c.hint,
+            "endDateTime": c.end_date_time.isoformat() if c.end_date_time else None,
+            "status": _cred_status(c.end_date_time),
+        }
+        for c in (app.password_credentials or [])
+    ]
+    kc = [
+        {
+            "keyId": str(c.key_id) if c.key_id else None,
+            "displayName": c.display_name,
+            "endDateTime": c.end_date_time.isoformat() if c.end_date_time else None,
+            "type": c.type,
+            "status": _cred_status(c.end_date_time),
+        }
+        for c in (app.key_credentials or [])
+    ]
+    result = {
+        "displayName": app.display_name,
+        "appId": app.app_id,
+        "id": app.id,
+        "signInAudience": app.sign_in_audience,
+        "createdDateTime": app.created_date_time.isoformat() if app.created_date_time else None,
+        "owners": [_owner_name(o) for o in owners],
+        "passwordCredentials": pw,
+        "keyCredentials": kc,
+    }
+    if sp:
+        result["servicePrincipal"] = {
+            "id": sp.id,
+            "servicePrincipalType": sp.service_principal_type,
+            "accountEnabled": sp.account_enabled,
+            "appRoleAssignments": [
+                {
+                    "resourceDisplayName": r.resource_display_name,
+                    "appRoleId": str(r.app_role_id) if r.app_role_id else None,
+                }
+                for r in getattr(sp, "_app_role_assignments", [])
+            ],
+            "oauth2PermissionGrants": [
+                {
+                    "scope": g.scope,
+                    "resourceId": g.resource_id,
+                    "consentType": g.consent_type,
+                }
+                for g in getattr(sp, "_oauth2_grants", [])
+            ],
+        }
+    return result
+
+
+def _print_app(app, owners: list, sp) -> None:
+    console.print(f"\n[bold]App: {app.display_name or '?'}[/bold]")
     console.rule()
-    console.print(f"  [bold]App ID (client)[/bold] : {app.get('appId')}")
-    console.print(f"  [bold]Object ID[/bold]       : {app.get('id')}")
-    console.print(f"  [bold]Audience[/bold]        : {app.get('signInAudience', '?')}")
-    console.print(f"  [bold]Created[/bold]         : {_fmt_dt(app.get('createdDateTime'))}")
+    console.print(f"  [bold]App ID (client)[/bold] : {app.app_id}")
+    console.print(f"  [bold]Object ID[/bold]       : {app.id}")
+    console.print(f"  [bold]Audience[/bold]        : {app.sign_in_audience or '?'}")
+    console.print(f"  [bold]Created[/bold]         : {_fmt_dt(app.created_date_time)}")
 
-    # Owners
-    owners = app.get("owners", [])
     if owners:
-        names = ", ".join(o.get("displayName") or o.get("userPrincipalName") or o.get("id", "?") for o in owners)
-        console.print(f"  [bold]Owners[/bold]          : {names}")
+        console.print(f"  [bold]Owners[/bold]          : {', '.join(_owner_name(o) for o in owners)}")
 
-    # Password credentials
-    pw_creds = app.get("passwordCredentials", [])
+    pw_creds = app.password_credentials or []
     console.print(f"\n[bold]Password Credentials[/bold] ({len(pw_creds)})")
     if pw_creds:
         for c in pw_creds:
-            end = c.get("endDateTime")
-            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00")) if end else None
-            status = _cred_status(end_dt)
-            label = c.get("displayName") or c.get("hint") or str(c.get("keyId", "?"))
-            end_str = end_dt.strftime("%Y-%m-%d %H:%M UTC") if end_dt else "never"
+            status = _cred_status(c.end_date_time)
+            label = c.display_name or c.hint or str(c.key_id or "?")
+            end_str = _fmt_dt(c.end_date_time) if c.end_date_time else "never"
             console.print(f"  {_status_badge(status)}  {label}  expires: {end_str}")
     else:
         console.print("  [dim]none[/dim]")
 
-    # Key credentials (certs)
-    kc = app.get("keyCredentials", [])
+    kc = app.key_credentials or []
     console.print(f"\n[bold]Key Credentials / Certs[/bold] ({len(kc)})")
     if kc:
         for c in kc:
-            end = c.get("endDateTime")
-            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00")) if end else None
-            status = _cred_status(end_dt)
-            label = c.get("displayName") or str(c.get("keyId", "?"))
-            ktype = c.get("type", "?")
-            end_str = end_dt.strftime("%Y-%m-%d %H:%M UTC") if end_dt else "never"
-            console.print(f"  {_status_badge(status)}  {label}  type: {ktype}  expires: {end_str}")
+            status = _cred_status(c.end_date_time)
+            label = c.display_name or str(c.key_id or "?")
+            end_str = _fmt_dt(c.end_date_time) if c.end_date_time else "never"
+            console.print(f"  {_status_badge(status)}  {label}  type: {c.type}  expires: {end_str}")
     else:
         console.print("  [dim]none[/dim]")
 
-    # Service principal + permissions
-    sp = app.get("servicePrincipal")
     if not sp:
         console.print("\n[dim]No service principal found in this tenant.[/dim]")
         return
 
     console.print(f"\n[bold]Service Principal[/bold]")
-    console.print(f"  SP Object ID : {sp.get('id')}")
-    console.print(f"  Type         : {sp.get('servicePrincipalType', '?')}")
-    console.print(f"  Enabled      : {sp.get('accountEnabled', '?')}")
+    console.print(f"  SP Object ID : {sp.id}")
+    console.print(f"  Type         : {sp.service_principal_type or '?'}")
+    console.print(f"  Enabled      : {sp.account_enabled}")
 
-    roles = sp.get("appRoleAssignments", [])
+    roles = getattr(sp, "_app_role_assignments", [])
     console.print(f"\n[bold]App Role Assignments (API permissions granted)[/bold] ({len(roles)})")
     if roles:
         for r in roles:
-            console.print(
-                f"  resource: {r.get('resourceDisplayName', '?')}  "
-                f"role: {r.get('appRoleId', '?')}"
-            )
+            console.print(f"  resource: {r.resource_display_name or '?'}  role: {r.app_role_id}")
     else:
         console.print("  [dim]none[/dim]")
 
-    grants = sp.get("oauth2PermissionGrants", [])
+    grants = getattr(sp, "_oauth2_grants", [])
     console.print(f"\n[bold]OAuth2 Delegated Grants[/bold] ({len(grants)})")
     if grants:
         for g in grants:
             console.print(
-                f"  scope: {g.get('scope', '?')}  "
-                f"resource: {g.get('resourceId', '?')}  "
-                f"consent: {g.get('consentType', '?')}"
+                f"  scope: {g.scope or '?'}  resource: {g.resource_id or '?'}  consent: {g.consent_type or '?'}"
             )
     else:
         console.print("  [dim]none[/dim]")
@@ -318,23 +344,22 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
 
     now = _now()
 
-    def _annotate(creds: list, is_pw: bool) -> list[dict]:
+    def _annotate_creds(creds: list, is_pw: bool) -> list[dict]:
         out = []
         for c in creds:
-            end_dt = c.end_date_time
-            status = _cred_status(end_dt)
+            status = _cred_status(c.end_date_time)
             out.append({
                 "keyId": str(c.key_id) if c.key_id else None,
-                "displayName": c.display_name or (c.hint if is_pw else None),
-                "endDateTime": end_dt.isoformat() if end_dt else None,
+                "displayName": (c.display_name or c.hint) if is_pw else c.display_name,
+                "endDateTime": c.end_date_time.isoformat() if c.end_date_time else None,
                 "status": status,
             })
         return out
 
     apps = []
     for a in apps_raw:
-        pw = _annotate(a.password_credentials or [], is_pw=True)
-        kc = _annotate(a.key_credentials or [], is_pw=False)
+        pw = _annotate_creds(a.password_credentials or [], is_pw=True)
+        kc = _annotate_creds(a.key_credentials or [], is_pw=False)
         apps.append({
             "displayName": a.display_name,
             "appId": a.app_id,
@@ -345,7 +370,6 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
             "_kc": kc,
         })
 
-    # Apply filters
     if args.with_secrets:
         apps = [a for a in apps if a["_pw"] or a["_kc"]]
     if args.expired:
@@ -363,9 +387,11 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info(f"{len(apps)} app(s) matched.")
 
     if context.json_output:
-        output.print_json([{k: v for k, v in a.items() if not k.startswith("_")} |
-                           {"passwordCredentials": a["_pw"], "keyCredentials": a["_kc"]}
-                           for a in apps])
+        output.print_json([
+            {k: v for k, v in a.items() if not k.startswith("_")} |
+            {"passwordCredentials": a["_pw"], "keyCredentials": a["_kc"]}
+            for a in apps
+        ])
         return 0
 
     if not apps:
