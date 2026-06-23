@@ -351,6 +351,47 @@ msgraphx aad pim --state active
 msgraphx aad pim --state eligible
 ```
 
+### app
+
+Enriched app registration profile: credentials with expiry status, service principal, app role assignments (API permissions), and OAuth2 grants. Accepts either the client ID (appId) or the object ID.
+
+Requires `Application.Read.All`.
+
+```bash
+msgraphx aad app <client-id-or-object-id>
+msgraphx aad app 00000003-0000-0000-c000-000000000000
+msgraphx aad app <object-id> --json
+```
+
+Output sections: app details, password credentials (with expiry/never-expires flag), key credentials (certs), service principal, app role assignments, OAuth2 delegated grants, owners.
+
+### apps
+
+List all app registrations in the tenant with credential status. Useful for finding apps with active secrets, never-expiring secrets, or certificates about to expire.
+
+Requires `Application.Read.All`.
+
+```bash
+# all apps
+msgraphx aad apps
+
+# only apps that have at least one credential
+msgraphx aad apps --with-secrets
+
+# apps with credentials expiring within 7 days
+msgraphx aad apps --expiring-soon 7
+
+# apps with already-expired credentials
+msgraphx aad apps --expired
+
+# export for offline analysis
+msgraphx aad apps --with-secrets --json > apps.json
+```
+
+Flags: `--with-secrets`, `--expired`, `--expiring-soon DAYS`.
+
+Legend in table output: `∞` never-expires, `✗` expired, `!` expiring within 30 days, `✓` valid.
+
 ---
 
 ## me

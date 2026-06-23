@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import authmethods, ca, enrich, grants, pim, roles, search
+from . import apps, authmethods, ca, enrich, grants, pim, roles, search
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -73,6 +73,20 @@ def add_arguments(
     )
     pim.add_arguments(pim_parser)
 
+    app_parser = subparsers.add_parser(
+        "app",
+        parents=parents,
+        help="Enriched app profile: credentials, permissions, service principal.",
+    )
+    apps.add_arguments_single(app_parser)
+
+    apps_parser = subparsers.add_parser(
+        "apps",
+        parents=parents,
+        help="List all app registrations with credential status.",
+    )
+    apps.add_arguments_bulk(apps_parser)
+
 
 @handle_graph_errors
 async def run_with_arguments(
@@ -96,5 +110,9 @@ async def run_with_arguments(
         return await enrich.run_group(context, args)
     if sub == "pim":
         return await pim.run_with_arguments(context, args)
+    if sub == "app":
+        return await apps.run_single(context, args)
+    if sub == "apps":
+        return await apps.run_bulk(context, args)
 
     return 1
