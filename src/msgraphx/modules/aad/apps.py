@@ -22,10 +22,25 @@ from rich.table import Table
 from ...core.context import GraphContext
 from ...utils import output, pagination
 from ...utils.console import console
-from ...utils.errors import handle_graph_errors
+from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
 
 _BASE = "https://graph.microsoft.com/v1.0"
-_NOW = None  # set at runtime
+_REQUIRED_SCOPE = "Application.Read.All (or Directory.Read.All)"
+
+
+def _check_httpx_forbidden(resp: httpx.Response) -> None:
+    """Raise ForbiddenGraphError if the httpx response is 403."""
+    if resp.status_code != 403:
+        return
+    try:
+        msg = resp.json().get("error", {}).get("message", "Insufficient privileges.")
+    except Exception:
+        msg = "Insufficient privileges."
+    raise ForbiddenGraphError(
+        required=_REQUIRED_SCOPE,
+        granted=None,
+        raw_message=msg,
+    )
 
 
 def _now() -> datetime:
@@ -77,6 +92,7 @@ async def _resolve_app(token: str, app_ref: str) -> dict | None:
     async with httpx.AsyncClient(verify=False, timeout=30) as client:
         # Try object ID first
         r = await client.get(f"{_BASE}/applications/{quote(app_ref)}", headers=headers)
+        _check_httpx_forbidden(r)
         if r.status_code == 200:
             return r.json()
         # Try appId filter
@@ -84,6 +100,7 @@ async def _resolve_app(token: str, app_ref: str) -> dict | None:
             f"{_BASE}/applications?$filter=appId eq '{app_ref}'&$top=1",
             headers=headers,
         )
+        _check_httpx_forbidden(r2)
         if r2.status_code == 200:
             vals = r2.json().get("value", [])
             if vals:
@@ -98,9 +115,14 @@ async def _batch(token: str, requests: list[dict]) -> list[dict]:
             json={"requests": requests},
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
+    _check_httpx_forbidden(resp)
     if resp.status_code != 200:
         raise RuntimeError(f"$batch failed: {resp.status_code} {resp.text[:200]}")
-    return resp.json()["responses"]
+    responses = resp.json()["responses"]
+    for r in responses:
+        if r.get("status") == 403:
+            logger.warning(f"Batch sub-request '{r.get('id')}' returned 403 — skipped (insufficient permissions).")
+    return responses
 
 
 @handle_graph_errors
@@ -285,10 +307,14 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
             top=999,
         )
     )
-    apps_raw = await pagination.collect_all(
-        context.graph_client.applications,
-        request_configuration=config,
-    )
+    try:
+        apps_raw = await pagination.collect_all(
+            context.graph_client.applications,
+            request_configuration=config,
+        )
+    except Exception as exc:
+        raise_if_forbidden(exc)
+        raise
 
     now = _now()
 
