@@ -22,31 +22,28 @@ from ...utils.errors import handle_graph_errors
 
 
 async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
-    """Resolve a site name, URL, or ID to a Graph site ID.
+    """Resolve a site name or Graph site ID to its SharePoint web URL.
 
     Accepts:
-      - A full Graph site ID (contains commas: "{hostname},{siteId},{webId}")
-      - A SharePoint URL (https://tenant.sharepoint.com/sites/Name)
-      - A site name/slug searched via GET /sites?$search=<name>
+      - A SharePoint URL (https://tenant.sharepoint.com/sites/Name) — used as-is
+      - A site name/slug — resolved via GET /sites?$search=<name>
+      - A full Graph site ID (contains commas) — resolved via GET /sites/{id}
     """
-    from msgraph.generated.sites.sites_request_builder import SitesRequestBuilderGetQueryParameters
+    from msgraph.generated.sites.sites_request_builder import SitesRequestBuilder
     from kiota_abstractions.base_request_configuration import RequestConfiguration
+    SitesRequestBuilderGetQueryParameters = SitesRequestBuilder.SitesRequestBuilderGetQueryParameters
 
-    # Already a Graph site ID
-    if site_ref.count(",") >= 2:
+    # Full SharePoint URL — use directly as KQL Path:
+    if site_ref.startswith("http"):
         return site_ref
 
-    # Full URL: extract hostname and path, use /sites/{hostname}:/{path}
-    if site_ref.startswith("http"):
-        from urllib.parse import urlparse
-        parsed = urlparse(site_ref)
-        hostname = parsed.netloc
-        path = parsed.path.lstrip("/")
+    # Graph site ID (hostname,siteId,webId) — resolve to web URL
+    if site_ref.count(",") >= 2:
         try:
-            site = await context.graph_client.sites.by_site_id(f"{hostname}:/{path}").get()
-            return site.id if site else None
+            site = await context.graph_client.sites.by_site_id(site_ref).get()
+            return site.web_url if site else None
         except Exception as exc:
-            logger.error(f"Failed to resolve site URL {site_ref}: {exc}")
+            logger.error(f"Failed to resolve site ID {site_ref}: {exc}")
             return None
 
     # Name/slug: search via GET /sites?$search=<name>
@@ -63,7 +60,7 @@ async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
             matches = ", ".join(f"{s.display_name} ({s.web_url})" for s in sites[:5])
             logger.warning(f"Multiple sites match '{site_ref}': {matches}")
             logger.warning("Using first match. Pass a full URL or site ID to be precise.")
-        return sites[0].id
+        return sites[0].web_url
     except Exception as exc:
         logger.error(f"Failed to search for site '{site_ref}': {exc}")
         return None
@@ -227,15 +224,14 @@ async def run_with_arguments(
     args._resolved_scope = resolved_scope
     args._resolved_label = resolved_label
 
-    content_sources: list[str] | None = None
+    site_path: str | None = None
     site_ref = getattr(args, "site", None)
     if site_ref:
-        site_id = await _resolve_site(context, site_ref)
-        if not site_id:
+        site_path = await _resolve_site(context, site_ref)
+        if not site_path:
             return 1
-        content_sources = [f"/sites/{site_id}"]
-        logger.info(f"Scoping search to site: {site_id}")
-    args._content_sources = content_sources
+        logger.info(f"Scoping search to site: {site_path}")
+    args._site_path = site_path
 
     save_dir = None
     if args.save:

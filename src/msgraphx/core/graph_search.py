@@ -34,7 +34,7 @@ class SearchOptions:
         None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
     )
     share_point_one_drive_options: SharePointOneDriveOptions | None = None
-    content_sources: list[str] | None = None  # Scope to specific sites: ["/sites/{siteId}"]
+    site_path: str | None = None  # Scope to a site via KQL Path:"<url>"
 
 
 async def search_entities(
@@ -114,9 +114,13 @@ async def search_entities(
             query_string = f"({query_string}) AND DriveId:{options.drive_id}"
             logger.debug(f"Scoping search to drive: {options.drive_id}")
 
+        effective_query = query_string
+        if options.site_path:
+            effective_query = f'({query_string}) Path:"{options.site_path}"'
+
         search_request = SearchRequest(
             entity_types=entity_types,
-            query=SearchQuery(query_string=query_string),
+            query=SearchQuery(query_string=effective_query),
             sort_properties=(
                 [SortProperty(name=sort_by, is_descending=options.descending)]
                 if sort_by
@@ -127,7 +131,6 @@ async def search_entities(
             fields=options.fields,
             region=options.region,
             share_point_one_drive_options=options.share_point_one_drive_options,
-            content_sources=options.content_sources,
         )
 
         try:

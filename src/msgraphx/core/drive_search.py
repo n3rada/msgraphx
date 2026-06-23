@@ -149,7 +149,7 @@ class DriveSearchBase:
         drive_id: str | None = None,
         group_ids: list[str] | None = None,
         scope: SharePointOneDriveOptions | None = None,
-        content_sources: list[str] | None = None,
+        site_path: str | None = None,
     ) -> list[dict]:
         search_query = query
 
@@ -175,7 +175,7 @@ class DriveSearchBase:
             region=context.region if context.is_app_only else None,
             drive_id=drive_id,
             share_point_one_drive_options=resolved,
-            content_sources=content_sources,
+            site_path=site_path,
         )
 
         items: list[dict] = []
@@ -257,7 +257,7 @@ class DriveSearchBase:
 
         drive_id = getattr(args, "drive_id", None)
         group_ids: list[str] | None = getattr(args, "_group_ids", None)
-        content_sources: list[str] | None = getattr(args, "_content_sources", None)
+        site_path: str | None = getattr(args, "_site_path", None)
 
         logger.info(f"Search query: {search_query}")
 
@@ -269,7 +269,7 @@ class DriveSearchBase:
             drive_id=drive_id,
             group_ids=group_ids,
             scope=scope,
-            content_sources=content_sources,
+            site_path=site_path,
         )
 
         if not items:
