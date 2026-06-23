@@ -114,6 +114,10 @@ async def _send_dm(
         logger.error(f"User not found: {recipient}")
         return 1
 
+    if target_user.id == me.id:
+        logger.error("Cannot send a 1:1 message to yourself.")
+        return 1
+
     logger.info(
         f"Creating or reusing 1:1 chat with "
         f"{target_user.display_name} ({target_user.mail or target_user.id})"
