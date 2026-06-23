@@ -185,9 +185,16 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         if context.is_app_only:
             logger.error("--enrich requires delegated authentication (user context).")
             return 1
+        cached = cache.load_results(key="sites", identity=context.identity_hash)
+        if cached:
+            logger.info(f"Using {len(cached)} cached site(s) — skipping search API. Run 'sp sites' first to refresh.")
+            sites = cached
+        else:
+            cache.save_results(sites, key="sites", identity=context.identity_hash)
         sites = await enrich_with_groups(context, sites)
-
-    cache.save_results(sites, key="sites", identity=context.identity_hash)
+        cache.save_results(sites, key="sites_enriched", identity=context.identity_hash)
+    else:
+        cache.save_results(sites, key="sites", identity=context.identity_hash)
 
     if context.json_output:
         output.print_json(sites)
