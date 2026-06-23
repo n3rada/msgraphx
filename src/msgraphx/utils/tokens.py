@@ -40,11 +40,6 @@ class TokenManager:
         self._refresh_token = refresh_token
         self._source = source
 
-        if self._refresh_token is not None:
-            logger.info(
-                "Refresh token provided, will be used for refreshing access token."
-            )
-
         try:
             self._header, self._payload, self._signature = parse_jwt(access_token)
         except Exception as e:

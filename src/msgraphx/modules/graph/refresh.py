@@ -105,6 +105,12 @@ def _daemonize() -> None:
     os.close(devnull)
 
 
+def is_running() -> bool:
+    """Return True if a refresh daemon is active."""
+    pid = _read_pid()
+    return pid is not None and _is_alive(pid)
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(

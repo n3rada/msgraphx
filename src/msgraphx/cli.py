@@ -497,7 +497,10 @@ async def _authenticate(
         token_scopes = frozenset(scope_list)
         logger.debug(f"Token scopes ({len(scope_list)}): {', '.join(scope_list)}")
 
-    token.start_auto_refresh()
+    if refresh.is_running():
+        logger.debug("Background refresh daemon detected — skipping inline refresh.")
+    else:
+        token.start_auto_refresh()
 
     async def _delegated_token_getter():
         return token.access_token

@@ -89,6 +89,7 @@ async def search_entities(
 
     """
     page = 0
+    total_yielded = 0
 
     sort_by = options.sort_by
 
@@ -151,8 +152,12 @@ async def search_entities(
                     resource.id = hit.hit_id
                 yield resource
 
+            total_yielded += len(hits)
+            more = hits_container.more_results_available if hits_container else False
+            logger.info(f"Page {page + 1}: {len(hits)} result(s) — {total_yielded} total{' (more available)' if more else ''}")
+
             # Stop if the server signals no further pages
-            if not (hits_container and hits_container.more_results_available):
+            if not more:
                 break
 
             # Respect caller-imposed page cap (e.g. Exchange caps from+size≤1000)
