@@ -93,6 +93,25 @@ async def fetch(context: GraphContext) -> list[dict]:
     return sites
 
 
+def _site_obj_to_dict(site, group_info: dict | None = None) -> dict:
+    """Convert a Site SDK object to a plain dict, optionally embedding group info."""
+    d = {
+        "id": site.id,
+        "name": site.display_name or site.name or "",
+        "description": site.description or "",
+        "web_url": site.web_url or "",
+        "created_datetime": (
+            site.created_date_time.isoformat() if site.created_date_time else None
+        ),
+        "last_modified_datetime": (
+            site.last_modified_date_time.isoformat() if site.last_modified_date_time else None
+        ),
+    }
+    if group_info:
+        d.update(group_info)
+    return d
+
+
 async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, dict]]:
     """Return all (site_id, group_info) pairs for every site owned by a group.
 
@@ -114,6 +133,50 @@ async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, 
     except Exception:
         pass
     return results
+
+
+async def _fetch_group_sites(context: GraphContext, group) -> list[dict]:
+    """Return full site dicts for every site owned by a group, with group info embedded."""
+    info = {
+        "group_id": group.id,
+        "group_name": group.display_name or "",
+        "group_visibility": group.visibility or "",
+    }
+    results = []
+    try:
+        response = await context.graph_client.groups.by_group_id(group.id).sites.get()
+        if response and response.value:
+            for site in response.value:
+                if site.id:
+                    results.append(_site_obj_to_dict(site, info))
+    except Exception:
+        pass
+    return results
+
+
+async def fetch_from_groups(context: GraphContext) -> list[dict]:
+    """Fetch SharePoint sites directly from the user's M365 group membership.
+
+    Bypasses the tenant-wide site search entirely: one call to get groups,
+    then one call per group to get its sites (parallelised). Returns only
+    sites the user has access to via group membership, with group info embedded.
+    """
+    groups = await get_user_m365_groups(context.graph_client)
+    if not groups:
+        return []
+
+    logger.info(f"Fetching sites for {len(groups)} M365 group(s)...")
+    nested = await asyncio.gather(*[_fetch_group_sites(context, g) for g in groups])
+
+    seen: set[str] = set()
+    sites: list[dict] = []
+    for group_sites in nested:
+        for site in group_sites:
+            if site["id"] not in seen:
+                seen.add(site["id"])
+                sites.append(site)
+
+    return sites
 
 
 async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[dict]:
@@ -165,21 +228,59 @@ async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[d
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
+        "--from-groups",
+        action="store_true",
+        dest="from_groups",
+        help=(
+            "Fetch sites directly from your M365 group membership — skips the tenant-wide "
+            "site search entirely. Fast: one API call per group (parallelised). "
+            "Returns only sites backed by a group you belong to (direct or transitive). "
+            "Requires delegated auth."
+        ),
+    )
+    parser.add_argument(
         "--enrich",
         action="store_true",
         help=(
-            "Resolve how you have access to each site: cross-references your M365 Unified "
-            "group membership and tags each site as 'group' (backed by a group you belong to) "
-            "or 'direct' (shared directly or via link). Requires delegated auth. "
-            "Makes one extra API call per group."
+            "Cross-reference all accessible sites against your M365 group membership, "
+            "tagging each site as 'group' or 'direct'. Use --from-groups instead when "
+            "you only care about group-backed sites. Requires delegated auth."
         ),
     )
 
 
 @handle_graph_errors
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
-    logger.info("Enumerating accessible SharePoint sites via search index")
+    from_groups = getattr(args, "from_groups", False)
+    enrich = getattr(args, "enrich", False)
 
+    if from_groups and enrich:
+        logger.error("--from-groups and --enrich are mutually exclusive.")
+        return 1
+
+    if from_groups:
+        if context.is_app_only:
+            logger.error("--from-groups requires delegated authentication (user context).")
+            return 1
+        sites = await fetch_from_groups(context)
+        if not sites:
+            logger.info("No group-backed sites found.")
+            if context.json_output:
+                output.print_json([])
+            return 0
+        cache.save_results(sites, key="sites_groups", identity=context.identity_hash)
+        if context.json_output:
+            output.print_json(sites)
+            return 0
+        if context.ndjson_output:
+            for site in sites:
+                output.print_ndjson_item(site)
+            return 0
+        _print_sites(sites, show_group=True)
+        logger.success(f"{len(sites)} group-backed site(s) found")
+        return 0
+
+    logger.info("Enumerating accessible SharePoint sites via search index")
     sites = await fetch(context)
 
     if not sites:
@@ -187,8 +288,6 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         if context.json_output:
             output.print_json([])
         return 0
-
-    enrich = getattr(args, "enrich", False)
 
     if enrich:
         if context.is_app_only:
@@ -214,8 +313,17 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
             output.print_ndjson_item(site)
         return 0
 
+    _print_sites(sites, show_group=enrich)
+    logger.success(f"{len(sites)} site(s) found")
+    return 0
+
+
+def _print_sites(sites: list[dict], show_group: bool = False) -> None:
+    if not sites:
+        return
+
     table = Table(
-        title=f"Accessible SharePoint sites ({len(sites)})",
+        title=f"SharePoint sites ({len(sites)})",
         show_header=True,
         header_style="bold",
         box=None,
@@ -224,21 +332,21 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     table.add_column("#", justify="right", style="dim")
     table.add_column("Site")
     table.add_column("URL")
-    if enrich:
-        table.add_column("Access")
+    if show_group:
+        table.add_column("Group")
 
     for idx, site in enumerate(sites, 1):
-        if enrich:
-            if site["access_via"] == "group":
-                visibility = site["group_visibility"]
+        if show_group:
+            group_name = site.get("group_name") or ""
+            visibility = site.get("group_visibility") or ""
+            access_via = site.get("access_via", "group")
+            if group_name:
                 vis_tag = f" [dim]({visibility})[/dim]" if visibility else ""
-                access_cell = f"[cyan]{site['group_name']}[/cyan]{vis_tag}"
+                group_cell = f"[cyan]{group_name}[/cyan]{vis_tag}"
             else:
-                access_cell = "[dim]direct[/dim]"
-            table.add_row(str(idx), site["name"] or "(unnamed)", site["web_url"], access_cell)
+                group_cell = "[dim]direct[/dim]" if access_via == "direct" else ""
+            table.add_row(str(idx), site["name"] or "(unnamed)", site["web_url"], group_cell)
         else:
             table.add_row(str(idx), site["name"] or "(unnamed)", site["web_url"])
 
     console.print(table)
-    logger.success(f"{len(sites)} site(s) found")
-    return 0
