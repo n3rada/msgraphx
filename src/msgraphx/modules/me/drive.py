@@ -26,6 +26,7 @@ from ...core.context import GraphContext
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils import output
+from ..sharepoint.download import download_drive, download_drive_item
 
 _SMALL_FILE_LIMIT = 4 * 1024 * 1024  # 4 MB
 _CHUNK_SIZE = 4 * 1024 * 1024        # 4 MB chunks for large uploads
@@ -62,6 +63,27 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Destination folder in OneDrive (e.g. 'Desktop'). Defaults to root.",
     )
 
+    download_parser = sub.add_parser("download", help="Download a file or folder from OneDrive.")
+    download_parser.add_argument(
+        "--path",
+        metavar="PATH",
+        default="",
+        help="OneDrive path to download (e.g. 'Desktop/report.pdf'). Omit for full drive dump.",
+    )
+    download_parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Re-download files even if they already exist locally.",
+    )
+    download_parser.add_argument(
+        "-c",
+        "--concurrency",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Max concurrent downloads (default: 20).",
+    )
+
 
 @handle_graph_errors
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
@@ -76,6 +98,8 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         return await _run_tree(context, drive.id, args)
     if sub == "upload":
         return await _run_upload(context, drive.id, args)
+    if sub == "download":
+        return await _run_download(context, drive.id, args)
 
     return 1
 
@@ -152,6 +176,38 @@ async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespa
     await _build_tree(context, drive_id, root_id, tree, depth=1, max_depth=max_depth)
     console.print(tree)
     return 0
+
+
+async def _run_download(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
+    output_dir = Path(args.save if args.save else ".").resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    skip_existing = not getattr(args, "no_resume", False)
+    concurrency = getattr(args, "concurrency", 20)
+    folder_path = (args.path or "").strip("/")
+
+    if not folder_path:
+        count = await download_drive(
+            context.graph_client, drive_id, output_dir, concurrency, skip_existing
+        )
+        return 0 if count > 0 else 1
+
+    item_ref = f"root:/{folder_path}:"
+    item = (
+        await context.graph_client.drives.by_drive_id(drive_id)
+        .items.by_drive_item_id(item_ref)
+        .get()
+    )
+    if not item or not item.id:
+        logger.error(f"Path not found: {folder_path}")
+        return 1
+
+    semaphore = asyncio.Semaphore(concurrency)
+    parent = folder_path.rsplit("/", 1)[0] if "/" in folder_path else ""
+    count = await download_drive_item(
+        context.graph_client, drive_id, item, output_dir, parent, semaphore, skip_existing
+    )
+    logger.info(f"Downloaded {count} file(s) to: {output_dir}")
+    return 0 if count > 0 else 1
 
 
 async def _run_upload(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:

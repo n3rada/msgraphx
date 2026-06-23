@@ -454,6 +454,24 @@ msgraphx me drive upload /tmp/payload.exe --path Desktop
 msgraphx me onedrive upload report.pdf --path "Documents/Reports"
 ```
 
+### drive download
+
+```bash
+# full drive dump to current directory
+msgraphx me drive download --save /tmp/loot/
+
+# download a specific file
+msgraphx me drive download --path "Desktop/report.pdf" --save /tmp/loot/
+
+# download a folder recursively
+msgraphx me drive download --path Desktop --save /tmp/loot/
+
+# force re-download (default is resume)
+msgraphx me drive download --path Desktop --no-resume --save /tmp/loot/
+```
+
+Flags: `--path PATH` (file or folder in OneDrive; omit for full dump), `--no-resume`, `--concurrency N` (default 20).
+
 `me onedrive` is an alias for `me drive`.
 
 ---
