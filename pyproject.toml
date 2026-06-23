@@ -39,7 +39,7 @@ dependencies = [
     "httpx[socks]>=0.28.1",
     "loguru>=0.7.3",
     "markdownify>=0.14.1",
-    "msgraph-sdk>=1.57.0",
+    "msgraph-sdk>=1.58.0",
     "rich>=15.0.0",
 ]
 
