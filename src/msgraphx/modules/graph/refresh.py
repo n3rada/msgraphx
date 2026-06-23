@@ -16,6 +16,7 @@ import os
 import signal
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -31,6 +32,29 @@ def _state_dir() -> Path:
 
 def _pid_file() -> Path:
     return _state_dir() / "refresh.pid"
+
+
+def _state_file() -> Path:
+    return _state_dir() / "refresh.state.json"
+
+
+def _write_state(expires_at: float, last_refreshed: float) -> None:
+    try:
+        _state_file().write_text(
+            json.dumps({"expires_at": expires_at, "last_refreshed": last_refreshed})
+        )
+    except OSError:
+        pass
+
+
+def _read_state() -> dict | None:
+    p = _state_file()
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except (ValueError, OSError):
+        return None
 
 
 def _read_pid() -> int | None:
@@ -74,6 +98,7 @@ def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
     asyncio.set_event_loop(loop)
     try:
         token = TokenManager(access_token, refresh_token, source=source)
+        _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=0.0)
         while True:
             sleep_for = max(0, token.expires_in() - 300)
             if sleep_for > 0:
@@ -82,6 +107,7 @@ def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
             ok = loop.run_until_complete(token.refresh_access_token(token.refresh_token))
             if ok:
                 token.update_output_file()
+                _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=time.time())
             else:
                 logger.error("Token refresh failed. Stopping.")
                 break
@@ -90,6 +116,7 @@ def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
     finally:
         loop.close()
     _pid_file().unlink(missing_ok=True)
+    _state_file().unlink(missing_ok=True)
 
 
 def _daemonize() -> None:
@@ -154,14 +181,35 @@ def run_command(args: argparse.Namespace) -> int:
 
     if args.status:
         pid = _read_pid()
-        if pid is None:
+        now = time.time()
+
+        if pid is None or not _is_alive(pid):
+            if pid is not None:
+                _pid_file().unlink(missing_ok=True)
+                _state_file().unlink(missing_ok=True)
             print("Refresh daemon: not running.")
             return 0
-        if _is_alive(pid):
-            print(f"Refresh daemon: running (PID {pid}).")
-        else:
-            _pid_file().unlink(missing_ok=True)
-            print("Refresh daemon: not running (stale PID removed).")
+
+        print(f"Refresh daemon: running (PID {pid}).")
+
+        state = _read_state()
+        if state:
+            last = state.get("last_refreshed", 0.0)
+            expires_at = state.get("expires_at", 0.0)
+
+            if last:
+                ago = int(now - last)
+                print(f"  Last refreshed : {datetime.fromtimestamp(last, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC ({ago}s ago)")
+            else:
+                print("  Last refreshed : not yet (daemon just started)")
+
+            if expires_at:
+                until = int(expires_at - now)
+                next_refresh = max(0, until - 300)
+                exp_str = datetime.fromtimestamp(expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                print(f"  Token expires  : {exp_str} UTC (in {until}s)")
+                print(f"  Next refresh   : in ~{next_refresh}s")
+
         return 0
 
     access_token, refresh_token, source = _load_tokens(getattr(args, "token_file", None))
