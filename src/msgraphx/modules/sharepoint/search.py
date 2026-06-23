@@ -20,6 +20,54 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 
+
+async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
+    """Resolve a site name, URL, or ID to a Graph site ID.
+
+    Accepts:
+      - A full Graph site ID (contains commas: "{hostname},{siteId},{webId}")
+      - A SharePoint URL (https://tenant.sharepoint.com/sites/Name)
+      - A site name/slug searched via GET /sites?$search=<name>
+    """
+    from msgraph.generated.sites.sites_request_builder import SitesRequestBuilderGetQueryParameters
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
+
+    # Already a Graph site ID
+    if site_ref.count(",") >= 2:
+        return site_ref
+
+    # Full URL: extract hostname and path, use /sites/{hostname}:/{path}
+    if site_ref.startswith("http"):
+        from urllib.parse import urlparse
+        parsed = urlparse(site_ref)
+        hostname = parsed.netloc
+        path = parsed.path.lstrip("/")
+        try:
+            site = await context.graph_client.sites.by_site_id(f"{hostname}:/{path}").get()
+            return site.id if site else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve site URL {site_ref}: {exc}")
+            return None
+
+    # Name/slug: search via GET /sites?$search=<name>
+    try:
+        config = RequestConfiguration(
+            query_parameters=SitesRequestBuilderGetQueryParameters(search=site_ref, top=5),
+        )
+        resp = await context.graph_client.sites.get(request_configuration=config)
+        sites = resp.value if resp and resp.value else []
+        if not sites:
+            logger.error(f"No site found matching '{site_ref}'.")
+            return None
+        if len(sites) > 1:
+            matches = ", ".join(f"{s.display_name} ({s.web_url})" for s in sites[:5])
+            logger.warning(f"Multiple sites match '{site_ref}': {matches}")
+            logger.warning("Using first match. Pass a full URL or site ID to be precise.")
+        return sites[0].id
+    except Exception as exc:
+        logger.error(f"Failed to search for site '{site_ref}': {exc}")
+        return None
+
 HUNT_QUERIES: dict[str, str] = {
     "scripts": (
         "((filetype:ps1 OR filetype:sh OR filetype:bat OR filetype:cmd OR "
@@ -110,7 +158,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--site",
         type=str,
         default=None,
-        help="SharePoint site URL or site ID to restrict the search.",
+        metavar="SITE",
+        help=(
+            "Restrict search to a specific SharePoint site. "
+            "Accepts a site name/slug (searched via $search), a full SharePoint URL, "
+            "or a Graph site ID."
+        ),
     )
     parser.add_argument(
         "--my-groups",
@@ -173,6 +226,16 @@ async def run_with_arguments(
     args._group_ids = group_ids
     args._resolved_scope = resolved_scope
     args._resolved_label = resolved_label
+
+    content_sources: list[str] | None = None
+    site_ref = getattr(args, "site", None)
+    if site_ref:
+        site_id = await _resolve_site(context, site_ref)
+        if not site_id:
+            return 1
+        content_sources = [f"/sites/{site_id}"]
+        logger.info(f"Scoping search to site: {site_id}")
+    args._content_sources = content_sources
 
     save_dir = None
     if args.save:

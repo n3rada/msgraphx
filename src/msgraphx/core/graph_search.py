@@ -34,6 +34,7 @@ class SearchOptions:
         None  # Hard cap on pages (e.g. Exchange caps from+size≤1000)
     )
     share_point_one_drive_options: SharePointOneDriveOptions | None = None
+    content_sources: list[str] | None = None  # Scope to specific sites: ["/sites/{siteId}"]
 
 
 async def search_entities(
@@ -126,6 +127,7 @@ async def search_entities(
             fields=options.fields,
             region=options.region,
             share_point_one_drive_options=options.share_point_one_drive_options,
+            content_sources=options.content_sources,
         )
 
         try:
