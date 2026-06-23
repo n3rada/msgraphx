@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 # Local library imports
-from . import calendar, groups, onenote, people, planner, shared, trending, used
+from . import calendar, drive, groups, onenote, people, planner, shared, trending, used
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
@@ -52,6 +52,11 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
     people.add_arguments(people_parser)
 
+    drive_parser = subparsers.add_parser(
+        "drive", aliases=["onedrive"], help="Browse and upload files in your personal OneDrive."
+    )
+    drive.add_arguments(drive_parser)
+
 
 @handle_graph_errors
 async def run_with_arguments(
@@ -75,5 +80,7 @@ async def run_with_arguments(
         return await planner.run_with_arguments(context, args)
     if sub == "people":
         return await people.run_with_arguments(context, args)
+    if sub in ("drive", "onedrive"):
+        return await drive.run_with_arguments(context, args)
 
     return 1
