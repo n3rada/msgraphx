@@ -103,12 +103,28 @@ async def _send_dm(
     recipient = args.to
     logger.info(f"Resolving user: {recipient}")
 
-    # Accept either UPN or object ID; the by_user_id call works for both
+    # Try UPN / object ID first, fall back to mail attribute filter
+    target_user = None
     try:
         target_user = await context.graph_client.users.by_user_id(recipient).get()
-    except (ValueError, RuntimeError, OSError) as exc:
-        logger.error(f"Failed to resolve user '{recipient}': {exc}")
-        return 1
+    except Exception:
+        pass
+
+    if not target_user or not target_user.id:
+        from msgraph.generated.users.users_request_builder import UsersRequestBuilder
+        from kiota_abstractions.base_request_configuration import RequestConfiguration
+        try:
+            config = RequestConfiguration(
+                query_parameters=UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
+                    filter=f"mail eq '{recipient}'",
+                    top=1,
+                )
+            )
+            resp = await context.graph_client.users.get(request_configuration=config)
+            target_user = resp.value[0] if resp and resp.value else None
+        except Exception as exc:
+            logger.error(f"Failed to resolve user '{recipient}': {exc}")
+            return 1
 
     if not target_user or not target_user.id:
         logger.error(f"User not found: {recipient}")
