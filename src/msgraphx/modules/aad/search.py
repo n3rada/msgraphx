@@ -100,6 +100,11 @@ def save_results_to_json(
     return filepath
 
 
+def _add_consistency(config) -> None:
+    """Add ConsistencyLevel: eventual header required for $search and $count queries."""
+    config.headers.add("ConsistencyLevel", "eventual")
+
+
 async def fetch_groups(
     context: GraphContext,
     query: str,
@@ -107,55 +112,54 @@ async def fetch_groups(
     synced_only: bool = False,
     odata_filter: str | None = None,
 ) -> list[dict]:
-    """Return groups matching query as plain dicts.
+    """Return groups matching query as plain dicts."""
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-    Raises on API error. Callers are responsible for handling exceptions.
-    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
-        query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
-            filter=odata_filter,
-            top=999,
+        params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+            filter=odata_filter, top=999,
         )
-        request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-            query_parameters=query_params
-        )
-        all_results = await pagination.collect_all(context.graph_client.groups, request_config)
+        config = RequestConfiguration(query_parameters=params)
     elif contains:
         logger.debug("Using client-side 'contains' filter (fetching all groups)")
-        all_results = await pagination.collect_all(context.graph_client.groups, None)
+        all_results = await pagination.collect_all(context.graph_client.groups)
         all_results = [
             g for g in all_results
             if matches_query(g.display_name, query) or matches_query(g.mail_nickname, query)
         ]
+        if synced_only:
+            all_results = [g for g in all_results if g.on_premises_sync_enabled]
+        return [_group_dict(g) for g in all_results]
     else:
-        query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
-            filter=f"startswith(displayName,'{query}') or startswith(mailNickname,'{query}')",
+        params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+            search=f'"displayName:{query}"',
+            count=True,
+            orderby=["displayName"],
             top=999,
         )
-        request_config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-            query_parameters=query_params
-        )
-        all_results = await pagination.collect_all(context.graph_client.groups, request_config)
+        config = RequestConfiguration(query_parameters=params)
+        _add_consistency(config)
 
+    all_results = await pagination.collect_all(context.graph_client.groups, config)
     if synced_only:
         all_results = [g for g in all_results if g.on_premises_sync_enabled]
+    return [_group_dict(g) for g in all_results]
 
-    return [
-        {
-            "id": g.id,
-            "display_name": g.display_name,
-            "description": g.description,
-            "mail": g.mail,
-            "mail_nickname": g.mail_nickname,
-            "security_enabled": g.security_enabled,
-            "mail_enabled": g.mail_enabled,
-            "on_premises_sync_enabled": g.on_premises_sync_enabled,
-            "visibility": g.visibility,
-            "group_types": g.group_types,
-        }
-        for g in all_results
-    ]
+
+def _group_dict(g) -> dict:
+    return {
+        "id": g.id,
+        "display_name": g.display_name,
+        "description": g.description,
+        "mail": g.mail,
+        "mail_nickname": g.mail_nickname,
+        "security_enabled": g.security_enabled,
+        "mail_enabled": g.mail_enabled,
+        "on_premises_sync_enabled": g.on_premises_sync_enabled,
+        "visibility": g.visibility,
+        "group_types": g.group_types,
+    }
 
 
 async def fetch_users(
@@ -163,38 +167,41 @@ async def fetch_users(
     query: str,
     odata_filter: str | None = None,
 ) -> list[dict]:
-    """Return users matching query as plain dicts.
+    """Return users matching query as plain dicts."""
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-    Raises on API error. Callers are responsible for handling exceptions.
-    """
-    api_filter = (
-        odata_filter
-        if odata_filter
-        else f"startswith(displayName,'{query}') or startswith(userPrincipalName,'{query}') or startswith(mail,'{query}')"
-    )
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
-    query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
-        filter=api_filter,
-        top=999,
-    )
-    request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfiguration(
-        query_parameters=query_params
-    )
-    all_results = await pagination.collect_all(context.graph_client.users, request_config)
+        params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
+            filter=odata_filter, top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+    else:
+        params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
+            search=f'"displayName:{query} OR userPrincipalName:{query} OR mail:{query}"',
+            count=True,
+            orderby=["displayName"],
+            select=["id", "displayName", "userPrincipalName", "mail",
+                    "accountEnabled", "jobTitle", "department"],
+            top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+        _add_consistency(config)
 
-    return [
-        {
-            "id": u.id,
-            "display_name": u.display_name,
-            "user_principal_name": u.user_principal_name,
-            "mail": u.mail,
-            "account_enabled": u.account_enabled,
-            "job_title": u.job_title,
-            "department": u.department,
-        }
-        for u in all_results
-    ]
+    all_results = await pagination.collect_all(context.graph_client.users, config)
+    return [_user_dict(u) for u in all_results]
+
+
+def _user_dict(u) -> dict:
+    return {
+        "id": u.id,
+        "display_name": u.display_name,
+        "user_principal_name": u.user_principal_name,
+        "mail": u.mail,
+        "account_enabled": u.account_enabled,
+        "job_title": u.job_title,
+        "department": u.department,
+    }
 
 
 async def fetch_devices(
@@ -202,22 +209,26 @@ async def fetch_devices(
     query: str,
     odata_filter: str | None = None,
 ) -> list[dict]:
-    """Return devices matching query as plain dicts.
+    """Return devices matching query as plain dicts."""
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-    Raises on API error. Callers are responsible for handling exceptions.
-    """
-    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
-    query_params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
-        filter=api_filter,
-        top=999,
-    )
-    request_config = DevicesRequestBuilder.DevicesRequestBuilderGetRequestConfiguration(
-        query_parameters=query_params
-    )
-    all_results = await pagination.collect_all(context.graph_client.devices, request_config)
+        params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
+            filter=odata_filter, top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+    else:
+        params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
+            search=f'"displayName:{query}"',
+            count=True,
+            orderby=["displayName"],
+            top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+        _add_consistency(config)
 
+    all_results = await pagination.collect_all(context.graph_client.devices, config)
     return [
         {
             "id": d.id,
@@ -237,24 +248,26 @@ async def fetch_service_principals(
     query: str,
     odata_filter: str | None = None,
 ) -> list[dict]:
-    """Return service principals matching query as plain dicts.
+    """Return service principals matching query as plain dicts."""
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-    Raises on API error. Callers are responsible for handling exceptions.
-    """
-    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
-    query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
-        filter=api_filter,
-        top=999,
-    )
-    request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
-        query_parameters=query_params
-    )
-    all_results = await pagination.collect_all(
-        context.graph_client.service_principals, request_config
-    )
+        params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
+            filter=odata_filter, top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+    else:
+        params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
+            search=f'"displayName:{query}"',
+            count=True,
+            orderby=["displayName"],
+            top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+        _add_consistency(config)
 
+    all_results = await pagination.collect_all(context.graph_client.service_principals, config)
     return [
         {
             "id": sp.id,
@@ -272,24 +285,26 @@ async def fetch_applications(
     query: str,
     odata_filter: str | None = None,
 ) -> list[dict]:
-    """Return applications matching query as plain dicts.
+    """Return applications matching query as plain dicts."""
+    from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-    Raises on API error. Callers are responsible for handling exceptions.
-    """
-    api_filter = odata_filter if odata_filter else f"startswith(displayName,'{query}')"
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
-    query_params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
-        filter=api_filter,
-        top=999,
-    )
-    request_config = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetRequestConfiguration(
-        query_parameters=query_params
-    )
-    all_results = await pagination.collect_all(
-        context.graph_client.applications, request_config
-    )
+        params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
+            filter=odata_filter, top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+    else:
+        params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
+            search=f'"displayName:{query}"',
+            count=True,
+            orderby=["displayName"],
+            top=999,
+        )
+        config = RequestConfiguration(query_parameters=params)
+        _add_consistency(config)
 
+    all_results = await pagination.collect_all(context.graph_client.applications, config)
     return [
         {
             "id": app.id,
