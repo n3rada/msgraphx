@@ -57,7 +57,6 @@ body = json.loads(item.body.read()) if item and item.body else {}
 
 | Module | Endpoint | Reason |
 |--------|----------|--------|
-| `me/drive.py` (`_chunked_upload`) | Azure Blob upload session URL | Chunk PUT targets are Azure Blob Storage, not Graph |
 | `cli.py` (`_check_public_ip`) | `api.ipify.org` | External IP check, not a Graph endpoint |
 | `utils/tokens.py` | `login.microsoftonline.com` | OAuth token refresh — identity platform, not Graph |
 

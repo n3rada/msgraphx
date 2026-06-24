@@ -11,7 +11,7 @@
 #
 # Upload approach:
 #   Files < 4 MB  → PUT /me/drive/root:/{dest}:/content  (single request)
-#   Files >= 4 MB → createUploadSession + chunked PUT
+#   Files >= 4 MB → createUploadSession + LargeFileUploadTask (msgraph_core)
 
 from __future__ import annotations
 
@@ -262,11 +262,14 @@ async def _chunked_upload(
     local: Path,
     size: int,
 ):
-    import httpx
+    from io import BytesIO
+
     from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
         CreateUploadSessionPostRequestBody,
     )
+    from msgraph.generated.models.drive_item import DriveItem
     from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
+    from msgraph_core.tasks import LargeFileUploadTask
 
     body = CreateUploadSessionPostRequestBody(
         item=DriveItemUploadableProperties(additional_data={"@microsoft.graph.conflictBehavior": "rename"})
@@ -280,33 +283,18 @@ async def _chunked_upload(
         logger.error("Failed to create upload session.")
         return None
 
-    upload_url = session.upload_url
-    logger.info(f"Upload session created, sending {size // _CHUNK_SIZE + 1} chunk(s)…")
+    logger.info(f"Upload session created, sending {size // _CHUNK_SIZE + 1} chunk(s).")
 
-    offset = 0
-    result = None
-    async with httpx.AsyncClient(verify=False) as client:
-        with local.open("rb") as fh:
-            while offset < size:
-                chunk = fh.read(_CHUNK_SIZE)
-                end = offset + len(chunk) - 1
-                headers = {
-                    "Content-Range": f"bytes {offset}-{end}/{size}",
-                    "Content-Length": str(len(chunk)),
-                    "Content-Type": "application/octet-stream",
-                }
-                resp = await client.put(upload_url, content=chunk, headers=headers)
-                logger.debug(f"Chunk {offset}-{end}: HTTP {resp.status_code}")
-                if resp.status_code in (200, 201):
-                    result = resp.json()
-                    break
-                elif resp.status_code == 202:
-                    offset += len(chunk)
-                else:
-                    logger.error(f"Chunk upload failed: {resp.status_code} {resp.text}")
-                    return None
-
-    if result:
-        logger.success(f"Uploaded: {result.get('webUrl', '?')}")
-
-    return result
+    stream = BytesIO(local.read_bytes())
+    task = LargeFileUploadTask(
+        session,
+        context.graph_client.request_adapter,
+        stream,
+        parsable_factory=DriveItem.create_from_discriminator_value,
+        max_chunk_size=_CHUNK_SIZE,
+    )
+    result = await task.upload()
+    item = result.item_response if result else None
+    if item:
+        logger.success(f"Uploaded: {getattr(item, 'web_url', '?')}")
+    return item

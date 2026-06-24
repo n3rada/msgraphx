@@ -68,7 +68,7 @@ Enforce these rules on every change:
 - SDK list builders (`client.users`, `client.groups`, `client.drives`, etc.) for enumeration, always via `pagination.GraphPaginator` or `pagination.collect_all`. Never hand-roll `@odata.nextLink` loops.
 
 **3a. Never use raw httpx for Graph API calls.**
-The SDK must be used for every `graph.microsoft.com` call. httpx is only permitted for non-Graph endpoints the SDK does not cover: Azure Blob upload session chunk PUT requests (`me/drive.py`), `login.microsoftonline.com` OAuth token refresh (`utils/tokens.py`), and `api.ipify.org` public IP check (`cli.py`). For parallel Graph calls use `asyncio.gather`; for batch use `context.graph_client.batch()`. See [DEVELOPMENT.md](DEVELOPMENT.md) for examples.
+The SDK must be used for every `graph.microsoft.com` call. httpx is only permitted for non-Graph endpoints the SDK does not cover: `login.microsoftonline.com` OAuth token refresh (`utils/tokens.py`) and `api.ipify.org` public IP check (`cli.py`). Large file uploads use `msgraph_core.tasks.LargeFileUploadTask` — not raw httpx. For parallel Graph calls use `asyncio.gather`; for batch use `context.graph_client.batch()`. See [DEVELOPMENT.md](DEVELOPMENT.md) for examples.
 
 **4. Cache → index → fetch is the download pattern.** Search modules write `cache.save_results(items, key)`. Download modules call `cache.load_results(key)` then `cache.parse_indices(spec, total)` to resolve user specs (`1,3-5`) into 0-based positions before fetching by ID.
 
