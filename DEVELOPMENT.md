@@ -57,8 +57,9 @@ body = json.loads(item.body.read()) if item and item.body else {}
 
 | Module | Endpoint | Reason |
 |--------|----------|--------|
-| `me/drive.py` (`_chunked_upload`) | Azure Blob upload session URL | Upload session URLs are not Graph endpoints |
+| `me/drive.py` (`_chunked_upload`) | Azure Blob upload session URL | Chunk PUT targets are Azure Blob Storage, not Graph |
 | `cli.py` (`_check_public_ip`) | `api.ipify.org` | External IP check, not a Graph endpoint |
+| `utils/tokens.py` | `login.microsoftonline.com` | OAuth token refresh — identity platform, not Graph |
 
 Any other use of `httpx` to call a `graph.microsoft.com` URL is a violation of this rule and must be refactored to use the SDK.
 
