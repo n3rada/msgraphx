@@ -15,17 +15,27 @@
 
 from __future__ import annotations
 
+# Built-in imports
 import argparse
 import asyncio
+from io import BytesIO
 from pathlib import Path
 
+# External library imports
 from loguru import logger
+from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
+    CreateUploadSessionPostRequestBody,
+)
+from msgraph.generated.models.drive_item import DriveItem
+from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
+from msgraph_core.tasks import LargeFileUploadTask
 from rich.tree import Tree
 
+# Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
-from ...utils import output
 from ..sharepoint.download import download_drive, download_drive_item
 
 _SMALL_FILE_LIMIT = 4 * 1024 * 1024  # 4 MB
@@ -262,15 +272,6 @@ async def _chunked_upload(
     local: Path,
     size: int,
 ):
-    from io import BytesIO
-
-    from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
-        CreateUploadSessionPostRequestBody,
-    )
-    from msgraph.generated.models.drive_item import DriveItem
-    from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
-    from msgraph_core.tasks import LargeFileUploadTask
-
     body = CreateUploadSessionPostRequestBody(
         item=DriveItemUploadableProperties(additional_data={"@microsoft.graph.conflictBehavior": "rename"})
     )
