@@ -5,7 +5,7 @@ Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](http
 - **SharePoint**: search across all sites or a specific site (`--site`), filter by filetype, predefined hunt queries, bulk download, enumerate sites via group membership
 - **Outlook**: build communication graphs from mailboxes, KQL keyword search, download emails as `.eml`
 - **Teams**: search DMs and channel messages, browse chats, send messages to any user or channel
-- **Entra ID**: enumerate users, groups, devices, apps, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
+- **Entra ID**: enumerate users, groups, devices, app registrations (with credential/secret expiry status), service principals, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
 - **Groups**: list M365 Unified groups, enumerate members (direct or transitive), resolve group SharePoint sites
 - **Me**: OneDrive tree view, upload, download, calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
 - **Output**: local caching of search results per identity, JSON/NDJSON export, resumable downloads
@@ -78,6 +78,10 @@ msgraphx aad search --hunt admins
 
 # Entra ID: list PIM assignments
 msgraphx aad pim
+
+# Entra ID: find apps with active secrets or never-expiring credentials
+msgraphx aad apps --with-secrets
+msgraphx aad app <client-id-or-object-id>
 
 # Me: dump OneNote pages
 msgraphx me onenote --list
