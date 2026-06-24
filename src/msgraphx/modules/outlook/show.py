@@ -15,6 +15,7 @@ from email.header import decode_header as _decode_header
 
 # External library imports
 from loguru import logger
+from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
@@ -125,8 +126,6 @@ def _render(parsed: dict) -> None:
         attach_text.append(f"\n   {name}", style="yellow")
 
     # Compose panel using Group to mix Text and Markdown renderables
-    from rich.console import Group
-
     parts = [header]
     if body_raw:
         parts.append(Text("─" * 2, style="dim"))

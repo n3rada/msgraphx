@@ -7,12 +7,19 @@
 
 from __future__ import annotations
 
+# Built-in imports
 import argparse
 import asyncio
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.role_management.directory.role_assignment_schedule_instances.role_assignment_schedule_instances_request_builder import (
+    RoleAssignmentScheduleInstancesRequestBuilder,
+)
+from msgraph.generated.role_management.directory.role_eligibility_schedule_instances.role_eligibility_schedule_instances_request_builder import (
+    RoleEligibilityScheduleInstancesRequestBuilder,
+)
 from rich.table import Table
 
 # Local library imports
@@ -59,13 +66,6 @@ async def _safe_collect(builder, config) -> list:
 
 async def fetch(context: GraphContext, state: str) -> list[dict]:
     """Return active and/or eligible PIM role assignments as plain dicts."""
-    from msgraph.generated.role_management.directory.role_assignment_schedule_instances.role_assignment_schedule_instances_request_builder import (
-        RoleAssignmentScheduleInstancesRequestBuilder,
-    )
-    from msgraph.generated.role_management.directory.role_eligibility_schedule_instances.role_eligibility_schedule_instances_request_builder import (
-        RoleEligibilityScheduleInstancesRequestBuilder,
-    )
-
     ActiveParams = RoleAssignmentScheduleInstancesRequestBuilder.RoleAssignmentScheduleInstancesRequestBuilderGetQueryParameters
     EligibleParams = RoleEligibilityScheduleInstancesRequestBuilder.RoleEligibilityScheduleInstancesRequestBuilderGetQueryParameters
 

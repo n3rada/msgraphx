@@ -8,16 +8,19 @@ import json
 from pathlib import Path
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.models.search_content import SearchContent
 from msgraph.generated.models.share_point_one_drive_options import SharePointOneDriveOptions
+from msgraph.generated.sites.sites_request_builder import SitesRequestBuilder
 
 # Local library imports
 from .groups import get_user_m365_groups
-from ...core.drive_search import DriveSearchBase
 from ...core.context import GraphContext
+from ...core.drive_search import DriveSearchBase
 from ...utils import cache, output
 from ...utils.console import console
+from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 
 
@@ -29,8 +32,6 @@ async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
       - A site name/slug — resolved via GET /sites?$search=<name>
       - A full Graph site ID (contains commas) — resolved via GET /sites/{id}
     """
-    from msgraph.generated.sites.sites_request_builder import SitesRequestBuilder
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
     SitesRequestBuilderGetQueryParameters = SitesRequestBuilder.SitesRequestBuilderGetQueryParameters
 
     # Full SharePoint URL — use directly as KQL Path:
@@ -248,8 +249,6 @@ async def _run_with_save(
     context: GraphContext, args: argparse.Namespace, save_dir: Path
 ) -> int:
     """Run search and download every result directly to save_dir."""
-    from ...utils.dates import parse_date_string
-
     search_query = args.query
     hunt = getattr(args, "hunt", None)
     if args.filetype:

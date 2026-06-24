@@ -15,11 +15,15 @@
 
 from __future__ import annotations
 
+# Built-in imports
 import argparse
 
+# External library imports
 from loguru import logger
+from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
 from rich.table import Table
 
+# Local library imports
 from ...core.context import GraphContext
 from ...utils import cache, output
 from ...utils.console import console
@@ -65,8 +69,6 @@ async def fetch_all(
     visibility: str | None = None,
     teams_only: bool = False,
 ) -> list[dict]:
-    from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
-
     query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
         filter="groupTypes/any(c:c eq 'Unified')",
         select=[

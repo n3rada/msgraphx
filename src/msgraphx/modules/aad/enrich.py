@@ -15,13 +15,14 @@ import json
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.users.item.user_item_request_builder import UserItemRequestBuilder
 from msgraph_core.requests.batch_request_content import BatchRequestContent
 
 # Local library imports
 from ...core.context import GraphContext
 from ...utils import output
 from ...utils.console import console
-from ...utils.errors import handle_graph_errors, raise_if_forbidden
+from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
 
 _USER_SELECT = [
     "displayName", "givenName", "surname", "userPrincipalName", "mail", "otherMails",
@@ -59,8 +60,6 @@ async def _send_batch(context: GraphContext, batch_content: BatchRequestContent)
 
 async def fetch_user_details(context: GraphContext, user_id: str) -> dict:
     """Return a merged dict with full user properties and related collections."""
-    from msgraph.generated.users.item.user_item_request_builder import UserItemRequestBuilder
-
     user_builder = context.graph_client.users.by_user_id(user_id)
     UserQueryParams = UserItemRequestBuilder.UserItemRequestBuilderGetQueryParameters
     user_config = RequestConfiguration(
@@ -96,7 +95,7 @@ async def fetch_user_details(context: GraphContext, user_id: str) -> dict:
     if not base:
         status = status_codes.get("userDetails", 0)
         if status == 403:
-            from ...utils.errors import ForbiddenGraphError
+
             raise ForbiddenGraphError(
                 required="User.Read.All",
                 granted=None,
@@ -157,7 +156,7 @@ async def fetch_group_details(context: GraphContext, group_id: str) -> dict:
     if not base:
         status = status_codes.get("groupDetails", 0)
         if status == 403:
-            from ...utils.errors import ForbiddenGraphError
+
             raise ForbiddenGraphError(
                 required="Group.Read.All",
                 granted=None,

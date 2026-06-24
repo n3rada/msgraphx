@@ -8,14 +8,21 @@
 
 from __future__ import annotations
 
+# Built-in imports
 import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+# External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
+from msgraph.generated.service_principals.service_principals_request_builder import (
+    ServicePrincipalsRequestBuilder,
+)
 from rich.table import Table
 
+# Local library imports
 from ...core.context import GraphContext
 from ...utils import output, pagination
 from ...utils.console import console
@@ -76,8 +83,6 @@ def add_arguments_single(parser: argparse.ArgumentParser) -> None:
 
 
 async def _resolve_app(context: GraphContext, app_ref: str):
-    from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
-
     # Try object ID directly
     try:
         app = await context.graph_client.applications.by_application_id(app_ref).get()
@@ -104,10 +109,6 @@ async def _resolve_app(context: GraphContext, app_ref: str):
 
 @handle_graph_errors
 async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
-    from msgraph.generated.service_principals.service_principals_request_builder import (
-        ServicePrincipalsRequestBuilder,
-    )
-
     logger.info(f"Resolving application: {args.app_id}")
     app = await _resolve_app(context, args.app_id)
     if not app:
@@ -321,8 +322,6 @@ def add_arguments_bulk(parser: argparse.ArgumentParser) -> None:
 
 @handle_graph_errors
 async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
-    from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
-
     logger.info("Enumerating app registrations...")
 
     QueryParams = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters

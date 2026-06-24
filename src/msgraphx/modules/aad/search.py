@@ -9,16 +9,15 @@ import json
 from pathlib import Path
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
-from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
-from msgraph.generated.users.users_request_builder import UsersRequestBuilder
+from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
 from msgraph.generated.devices.devices_request_builder import DevicesRequestBuilder
+from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
 from msgraph.generated.service_principals.service_principals_request_builder import (
     ServicePrincipalsRequestBuilder,
 )
-from msgraph.generated.applications.applications_request_builder import (
-    ApplicationsRequestBuilder,
-)
+from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 
 # Local library imports
 from ...core.context import GraphContext
@@ -113,8 +112,6 @@ async def fetch_groups(
     odata_filter: str | None = None,
 ) -> list[dict]:
     """Return groups matching query as plain dicts."""
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
-
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
@@ -168,8 +165,6 @@ async def fetch_users(
     odata_filter: str | None = None,
 ) -> list[dict]:
     """Return users matching query as plain dicts."""
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
-
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
@@ -210,8 +205,6 @@ async def fetch_devices(
     odata_filter: str | None = None,
 ) -> list[dict]:
     """Return devices matching query as plain dicts."""
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
-
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
@@ -249,8 +242,6 @@ async def fetch_service_principals(
     odata_filter: str | None = None,
 ) -> list[dict]:
     """Return service principals matching query as plain dicts."""
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
-
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
@@ -286,8 +277,6 @@ async def fetch_applications(
     odata_filter: str | None = None,
 ) -> list[dict]:
     """Return applications matching query as plain dicts."""
-    from kiota_abstractions.base_request_configuration import RequestConfiguration
-
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
