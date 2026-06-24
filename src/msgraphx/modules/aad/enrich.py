@@ -96,7 +96,12 @@ async def fetch_user_details(context: GraphContext, user_id: str) -> dict:
     if not base:
         status = status_codes.get("userDetails", 0)
         if status == 403:
-            raise_if_forbidden(_make_403())
+            from ...utils.errors import ForbiddenGraphError
+            raise ForbiddenGraphError(
+                required="User.Read.All",
+                granted=None,
+                raw_message="Access denied reading user details.",
+            )
         raise RuntimeError(f"User '{user_id}' not found or access denied (status {status}).")
 
     for key in ("ownedObjects", "ownedDevices", "appRoleAssignments", "oauth2PermissionGrants"):
@@ -152,7 +157,12 @@ async def fetch_group_details(context: GraphContext, group_id: str) -> dict:
     if not base:
         status = status_codes.get("groupDetails", 0)
         if status == 403:
-            raise_if_forbidden(_make_403())
+            from ...utils.errors import ForbiddenGraphError
+            raise ForbiddenGraphError(
+                required="Group.Read.All",
+                granted=None,
+                raw_message="Access denied reading group details.",
+            )
         raise RuntimeError(f"Group '{group_id}' not found or access denied (status {status}).")
 
     for key in ("transitiveMembers", "owners", "transitiveMemberOf", "drives",
@@ -176,14 +186,6 @@ async def fetch_group_details(context: GraphContext, group_id: str) -> dict:
             base[key] = {}
 
     return base
-
-
-def _make_403():
-    """Synthesize an exception that raise_if_forbidden can inspect."""
-    class _Fake:
-        response_status_code = 403
-        error = type("E", (), {"code": "Forbidden", "message": "Access denied."})()
-    return _Fake()
 
 
 def add_arguments_user(parser: argparse.ArgumentParser) -> None:
