@@ -20,12 +20,49 @@ This file is the canonical development guidance for this repository.
 
 ## Core Rule: Use the Microsoft Graph Python SDK
 
-This project uses the official [`msgraph-sdk`](https://github.com/microsoftgraph/msgraph-sdk-python) (Microsoft Graph Python SDK). Always prefer SDK-native patterns over raw HTTP calls.
+This project uses the official [`msgraph-sdk`](https://github.com/microsoftgraph/msgraph-sdk-python) (Microsoft Graph Python SDK). **Always use the SDK for any Graph API call. Never use raw `httpx` to call a Graph endpoint.**
 
 - **Always target the latest SDK.** When a new Graph API feature or endpoint becomes available in the SDK, use it. Do not implement raw `httpx` calls to endpoints already exposed by the SDK.
 - Use generated request builders (`client.users`, `client.groups`, `client.drives`, etc.) and their typed query parameter classes. Never construct Graph API URLs by hand when a builder exists.
 - Use the SDK's typed models (e.g., `DriveItem`, `Message`, `User`) rather than parsing raw JSON dicts.
 - For paginated resources, use [`GraphPaginator`](src/msgraphx/utils/pagination.py) or `pagination.collect_all()` — never implement ad-hoc `@odata.nextLink` loops.
+- For parallel calls to independent endpoints, use `asyncio.gather()` on SDK awaitable calls — not a hand-rolled `$batch` POST via httpx.
+- For batch requests, use `context.graph_client.batch()` (`BatchRequestBuilder` from `msgraph_core`) — not a raw `POST /$batch` via httpx.
+
+### Batch requests via SDK
+
+```python
+from msgraph_core.requests.batch_request_content import BatchRequestContent
+
+batch_content = BatchRequestContent()
+batch_content.add_request_information(
+    context.graph_client.users.by_user_id(uid).to_get_request_information(config),
+    request_id="user",
+)
+batch_content.add_request_information(
+    context.graph_client.users.by_user_id(uid).owned_objects.to_get_request_information(),
+    request_id="ownedObjects",
+)
+
+batch_resp = await context.graph_client.batch().post(batch_content)
+
+status_codes = batch_resp.get_response_status_codes()
+item = batch_resp.get_response_by_id("user")         # BatchResponseItem
+body = json.loads(item.body.read()) if item and item.body else {}
+```
+
+### When httpx is allowed
+
+`httpx` is allowed **only** for non-Graph endpoints that the SDK does not cover:
+
+| Module | Endpoint | Reason |
+|--------|----------|--------|
+| `mfa/security_info.py` | `mysignins.microsoft.com` | My Sign-Ins portal — no SDK coverage |
+| `aad/pim.py` | `azrbac.mspim.azure.com` | PIM RBAC API — no SDK coverage |
+| `me/drive.py` (`_chunked_upload`) | Azure Blob upload session URL | Upload session URLs are not Graph endpoints |
+| `graph/query.py` | Arbitrary Graph URL (escape hatch) | Raw query tool — intentional, user-controlled URL |
+
+Any other use of `httpx` to call a `graph.microsoft.com` URL is a violation of this rule and must be refactored to use the SDK.
 
 ### Testing Graph API calls
 

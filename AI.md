@@ -67,6 +67,9 @@ Enforce these rules on every change:
 - `core/graph_search.py` (`search_entities`) for full-text search: SharePoint (`DriveItem`), Teams (`ChatMessage`), Outlook (`Message`). Handles pagination and the Exchange 1 000-hit cap internally.
 - SDK list builders (`client.users`, `client.groups`, `client.drives`, etc.) for enumeration, always via `pagination.GraphPaginator` or `pagination.collect_all`. Never hand-roll `@odata.nextLink` loops.
 
+**3a. Never use raw httpx for Graph API calls.**
+The SDK must be used for every `graph.microsoft.com` call. httpx is only permitted for endpoints the SDK does not cover: `mysignins.microsoft.com` (MFA portal), `azrbac.mspim.azure.com` (PIM RBAC), Azure Blob upload session URLs (chunked drive upload), and the `graph/query.py` escape hatch for arbitrary operator-provided URLs. For parallel Graph calls use `asyncio.gather`; for batch use `context.graph_client.batch()`. See [DEVELOPMENT.md](DEVELOPMENT.md) for examples.
+
 **4. Cache → index → fetch is the download pattern.** Search modules write `cache.save_results(items, key)`. Download modules call `cache.load_results(key)` then `cache.parse_indices(spec, total)` to resolve user specs (`1,3-5`) into 0-based positions before fetching by ID.
 
 **5. Error handling is centralized.** Use `@handle_graph_errors` on every `run_with_arguments`. Call `raise_if_forbidden(exc)` when a 403 should surface required scope details. Never swallow `ODataError` silently. `ODataError` is imported inside functions in `errors.py` — that is intentional to break a circular import.
