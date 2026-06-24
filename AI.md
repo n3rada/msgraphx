@@ -68,7 +68,7 @@ Enforce these rules on every change:
 - SDK list builders (`client.users`, `client.groups`, `client.drives`, etc.) for enumeration, always via `pagination.GraphPaginator` or `pagination.collect_all`. Never hand-roll `@odata.nextLink` loops.
 
 **3a. Never use raw httpx for Graph API calls.**
-The SDK must be used for every `graph.microsoft.com` call. httpx is only permitted for endpoints the SDK does not cover: `mysignins.microsoft.com` (MFA portal), `azrbac.mspim.azure.com` (PIM RBAC), Azure Blob upload session URLs (chunked drive upload), and the `graph/query.py` escape hatch for arbitrary operator-provided URLs. For parallel Graph calls use `asyncio.gather`; for batch use `context.graph_client.batch()`. See [DEVELOPMENT.md](DEVELOPMENT.md) for examples.
+The SDK must be used for every `graph.microsoft.com` call. httpx is only permitted for non-Graph endpoints the SDK does not cover: Azure Blob upload session URLs (chunked drive upload in `me/drive.py`) and `api.ipify.org` (public IP check in `cli.py`). For parallel Graph calls use `asyncio.gather`; for batch use `context.graph_client.batch()`. See [DEVELOPMENT.md](DEVELOPMENT.md) for examples.
 
 **4. Cache → index → fetch is the download pattern.** Search modules write `cache.save_results(items, key)`. Download modules call `cache.load_results(key)` then `cache.parse_indices(spec, total)` to resolve user specs (`1,3-5`) into 0-based positions before fetching by ID.
 

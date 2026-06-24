@@ -57,10 +57,8 @@ body = json.loads(item.body.read()) if item and item.body else {}
 
 | Module | Endpoint | Reason |
 |--------|----------|--------|
-| `mfa/security_info.py` | `mysignins.microsoft.com` | My Sign-Ins portal — no SDK coverage |
-| `aad/pim.py` | `azrbac.mspim.azure.com` | PIM RBAC API — no SDK coverage |
 | `me/drive.py` (`_chunked_upload`) | Azure Blob upload session URL | Upload session URLs are not Graph endpoints |
-| `graph/query.py` | Arbitrary Graph URL (escape hatch) | Raw query tool — intentional, user-controlled URL |
+| `cli.py` (`_check_public_ip`) | `api.ipify.org` | External IP check, not a Graph endpoint |
 
 Any other use of `httpx` to call a `graph.microsoft.com` URL is a violation of this rule and must be refactored to use the SDK.
 

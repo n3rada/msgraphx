@@ -25,30 +25,10 @@ from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, graph, groups, me, mfa, outlook, sharepoint, teams
+from .modules import aad, graph, groups, me, outlook, sharepoint, teams
 from .modules.graph import refresh
 from .utils import logbook, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
-
-_KNOWN_COMMANDS: frozenset[str] = frozenset(
-    {"sharepoint", "sp", "aad", "ad", "groups", "me", "mfa", "outlook", "mail", "teams", "ms-teams", "query", "refresh"}
-)
-
-
-def _inject_query_subcommand(argv: list[str]) -> list[str]:
-    """Make 'query' the default subcommand.
-
-    If the first non-flag positional is not a known subcommand, prepend 'query'
-    so that e.g. `msgraphx /users` and `msgraphx me/messages` work without
-    an explicit subcommand name.
-    """
-    for i, tok in enumerate(argv):
-        if tok.startswith("-"):
-            continue
-        if tok not in _KNOWN_COMMANDS:
-            return argv[:i] + ["query"] + argv[i:]
-        break
-    return argv
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -292,22 +272,6 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[parent_parser],
     )
     teams.add_arguments(teams_parser, parents=[parent_parser])
-
-    # Generic Graph query subcommand
-    graph_parser = subparsers.add_parser(
-        "query",
-        help="Raw Graph API query: call any endpoint and get JSON back.",
-        parents=[parent_parser],
-    )
-    graph.add_arguments(graph_parser)
-
-    # MFA manipulation via mysignins.microsoft.com (requires separate --mfa-token)
-    mfa_parser = subparsers.add_parser(
-        "mfa",
-        help="Manipulate MFA security info: backdoor TOTP, add phone/email, delete methods.",
-        parents=[parent_parser],
-    )
-    mfa.add_arguments(mfa_parser, parents=[parent_parser])
 
     # Token refresh daemon subcommand (runs before auth, no GraphContext needed)
     refresh_parser = subparsers.add_parser(
@@ -608,12 +572,6 @@ async def _dispatch(args, context) -> int:
     if command in ("teams", "ms-teams"):
         return await _call_module(teams.run_with_arguments(context, args))
 
-    if command == "query":
-        return await _call_module(graph.run_with_arguments(context, args))
-
-    if command == "mfa":
-        return await _call_module(mfa.run_with_arguments(context, args))
-
     logger.info("Authentication successful. Use a subcommand to perform actions.")
     return 0
 
@@ -729,8 +687,7 @@ async def _main(argv: list[str]) -> int:
 
 
 def main() -> None:
-    argv = _inject_query_subcommand(sys.argv[1:])
     try:
-        raise SystemExit(asyncio.run(_main(argv)))
+        raise SystemExit(asyncio.run(_main(sys.argv[1:])))
     except KeyboardInterrupt:
         raise SystemExit(130)

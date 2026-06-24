@@ -7,8 +7,7 @@ Microsoft Graph eXploitation toolkit. ~~Ab~~using the [Microsoft Graph API](http
 - **Teams**: search DMs and channel messages, browse chats, send messages to any user or channel
 - **Entra ID**: enumerate users, groups, devices, apps, roles, PIM assignments, OAuth2 grants, conditional access policies, MFA methods
 - **Groups**: list M365 Unified groups, enumerate members (direct or transitive), resolve group SharePoint sites
-- **Me**: OneDrive tree view and file upload, calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
-- **MFA backdoor**: register TOTP, phone, or email as secondary factor via `mysignins.microsoft.com`
+- **Me**: OneDrive tree view, upload, download, calendar, OneNote, Planner tasks, people graph, trending/shared/used documents
 - **Output**: local caching of search results per identity, JSON/NDJSON export, resumable downloads
 
 For the full command reference see [USAGE.md](USAGE.md).
@@ -91,13 +90,6 @@ msgraphx groups list --mine
 
 # Teams: send a message to a user
 msgraphx teams send --to target@corp.com "message"
-
-# MFA backdoor: register a hidden TOTP
-msgraphx mfa --mfa-token <mysignins-token> add-otp
-
-# Raw Graph query
-msgraphx /users
-msgraphx query /me/messages --filter "hasAttachments eq true" --paginate
 ```
 
 See [USAGE.md](USAGE.md) for all flags, subcommands, and options for each module.

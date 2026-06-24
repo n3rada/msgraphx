@@ -1,99 +1,120 @@
 # msgraphx/modules/aad/pim.py
 #
-# Enumerate active and eligible PIM role assignments.
-# Uses api.azrbac.mspim.azure.com, which is the legacy Azure RBAC PIM API
-# (not the Graph API). The tenant resource ID is discovered automatically.
+# Enumerate active and eligible PIM role assignments via the Graph SDK.
 #
-# Required delegated permissions:
-#   PrivilegedAccess.Read.AzureAD  (or PrivilegedAccess.ReadWrite.AzureAD)
+# Required permissions:
+#   RoleManagement.Read.Directory (or RoleManagement.ReadWrite.Directory)
 
 from __future__ import annotations
 
 import argparse
-from urllib.parse import quote_plus
+import asyncio
 
 # External library imports
-import httpx
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
-from ...utils.errors import handle_graph_errors
-
-_BASE = "https://api.azrbac.mspim.azure.com/api/v2/privilegedAccess/aadroles"
+from ...utils.errors import handle_graph_errors, raise_if_forbidden
 
 
-async def _get_resource_id(token: str) -> str | None:
-    async with httpx.AsyncClient(verify=False, timeout=30) as client:
-        resp = await client.get(
-            f"{_BASE}/resources?$select=id,displayName,type,externalId&$expand=parent",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    if resp.status_code != 200:
-        logger.error(f"Failed to get PIM resource ID: {resp.status_code}")
-        return None
-    values = resp.json().get("value", [])
-    return values[0]["id"] if values else None
+def _principal_label(item) -> str:
+    principal = getattr(item, "principal", None)
+    if principal:
+        ad = getattr(principal, "additional_data", {}) or {}
+        upn = ad.get("userPrincipalName")
+        if upn:
+            return upn
+        name = ad.get("displayName") or getattr(principal, "display_name", None)
+        if name:
+            return name
+    return getattr(item, "principal_id", None) or ""
 
 
-async def _fetch_by_state(token: str, resource_id: str, state: str) -> list[dict]:
-    rid = quote_plus(resource_id)
-    uri = (
-        f"{_BASE}/roleAssignments"
-        f"?$expand=linkedEligibleRoleAssignment,subject,scopedResource,"
-        f"roleDefinition($expand=resource)"
-        f"&$count=true"
-        f"&$filter=(roleDefinition/resource/id%20eq%20%27{rid}%27)"
-        f"%20and%20(assignmentState%20eq%20%27{state}%27)"
-        f"&$orderby=roleDefinition/displayName"
-        f"&$skip=0&$top=10000"
+def _role_label(item) -> str:
+    rd = getattr(item, "role_definition", None)
+    if rd:
+        return getattr(rd, "display_name", None) or getattr(item, "role_definition_id", None) or ""
+    return getattr(item, "role_definition_id", None) or ""
+
+
+def _fmt_dt(dt) -> str:
+    if not dt:
+        return ""
+    return dt.strftime("%Y-%m-%d")
+
+
+async def _safe_collect(builder, config) -> list:
+    try:
+        return await pagination.collect_all(builder, request_configuration=config)
+    except Exception as exc:
+        raise_if_forbidden(exc)
+        logger.warning(f"Could not fetch PIM assignments: {exc}")
+        return []
+
+
+async def fetch(context: GraphContext, state: str) -> list[dict]:
+    """Return active and/or eligible PIM role assignments as plain dicts."""
+    from msgraph.generated.role_management.directory.role_assignment_schedule_instances.role_assignment_schedule_instances_request_builder import (
+        RoleAssignmentScheduleInstancesRequestBuilder,
     )
-    results = []
-    async with httpx.AsyncClient(verify=False, timeout=30) as client:
-        while uri:
-            resp = await client.get(uri, headers={"Authorization": f"Bearer {token}"})
-            if resp.status_code != 200:
-                logger.error(f"PIM {state} fetch failed: {resp.status_code}")
-                break
-            data = resp.json()
-            results.extend(data.get("value", []))
-            uri = data.get("@odata.nextLink")
-    return results
+    from msgraph.generated.role_management.directory.role_eligibility_schedule_instances.role_eligibility_schedule_instances_request_builder import (
+        RoleEligibilityScheduleInstancesRequestBuilder,
+    )
 
+    ActiveParams = RoleAssignmentScheduleInstancesRequestBuilder.RoleAssignmentScheduleInstancesRequestBuilderGetQueryParameters
+    EligibleParams = RoleEligibilityScheduleInstancesRequestBuilder.RoleEligibilityScheduleInstancesRequestBuilderGetQueryParameters
 
-async def fetch(context: GraphContext) -> list[dict]:
-    """Return all active and eligible PIM role assignments as plain dicts."""
-    token = await context.get_access_token()
-    if not token:
-        raise RuntimeError("No access token available.")
+    active_config = RequestConfiguration(
+        query_parameters=ActiveParams(expand=["principal", "roleDefinition"])
+    )
+    eligible_config = RequestConfiguration(
+        query_parameters=EligibleParams(expand=["principal", "roleDefinition"])
+    )
 
-    resource_id = await _get_resource_id(token)
-    if not resource_id:
-        raise RuntimeError("Could not determine PIM resource ID. Check PrivilegedAccess.Read.AzureAD scope.")
+    active_builder = context.graph_client.role_management.directory.role_assignment_schedule_instances
+    eligible_builder = context.graph_client.role_management.directory.role_eligibility_schedule_instances
 
-    logger.debug(f"PIM resource ID: {resource_id}")
-    active = await _fetch_by_state(token, resource_id, "Active")
-    eligible = await _fetch_by_state(token, resource_id, "Eligible")
+    if state == "active":
+        active_items = await _safe_collect(active_builder, active_config)
+        eligible_items = []
+    elif state == "eligible":
+        active_items = []
+        eligible_items = await _safe_collect(eligible_builder, eligible_config)
+    else:
+        active_items, eligible_items = await asyncio.gather(
+            _safe_collect(active_builder, active_config),
+            _safe_collect(eligible_builder, eligible_config),
+        )
 
     rows = []
-    for a in active + eligible:
-        role_def = a.get("roleDefinition") or {}
-        subject = a.get("subject") or {}
+    for item in active_items:
         rows.append({
-            "id": a.get("id"),
-            "assignment_state": a.get("assignmentState"),
-            "role_display_name": role_def.get("displayName"),
-            "role_id": role_def.get("id"),
-            "subject_id": subject.get("id"),
-            "subject_display_name": subject.get("displayName"),
-            "subject_upn": subject.get("userPrincipalName"),
-            "subject_type": subject.get("type"),
-            "is_permanent": a.get("isPermanent"),
-            "start_date": a.get("startDateTime"),
-            "end_date": a.get("endDateTime"),
+            "assignment_state": "Active",
+            "assignment_type": getattr(item, "assignment_type", None),
+            "role_display_name": _role_label(item),
+            "role_definition_id": getattr(item, "role_definition_id", None),
+            "subject_id": getattr(item, "principal_id", None),
+            "subject": _principal_label(item),
+            "member_type": getattr(item, "member_type", None),
+            "start_date": _fmt_dt(getattr(item, "start_date_time", None)),
+            "end_date": _fmt_dt(getattr(item, "end_date_time", None)),
+        })
+    for item in eligible_items:
+        rows.append({
+            "assignment_state": "Eligible",
+            "assignment_type": None,
+            "role_display_name": _role_label(item),
+            "role_definition_id": getattr(item, "role_definition_id", None),
+            "subject_id": getattr(item, "principal_id", None),
+            "subject": _principal_label(item),
+            "member_type": getattr(item, "member_type", None),
+            "start_date": _fmt_dt(getattr(item, "start_date_time", None)),
+            "end_date": _fmt_dt(getattr(item, "end_date_time", None)),
         })
     return rows
 
@@ -110,10 +131,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info("Fetching PIM role assignments")
-    rows = await fetch(context)
-
-    if args.state != "all":
-        rows = [r for r in rows if (r["assignment_state"] or "").lower() == args.state]
+    rows = await fetch(context, args.state)
 
     if not rows:
         logger.info("No PIM role assignments found.")
@@ -134,8 +152,9 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     table.add_column("State", width=10)
     table.add_column("Role", min_width=35)
     table.add_column("Subject", min_width=30)
-    table.add_column("Type", style="dim", width=10)
-    table.add_column("Permanent", style="dim", width=9)
+    table.add_column("Type", style="dim", width=12)
+    table.add_column("Start", style="dim", width=11)
+    table.add_column("End", style="dim", width=11)
 
     state_colors = {
         "Active": "[green]Active[/green]",
@@ -143,15 +162,14 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     }
 
     for row in rows:
-        state_display = state_colors.get(row["assignment_state"] or "", row["assignment_state"] or "")
-        subject = row["subject_upn"] or row["subject_display_name"] or row["subject_id"] or ""
-        perm = "yes" if row["is_permanent"] else "no"
+        state_display = state_colors.get(row["assignment_state"], row["assignment_state"])
         table.add_row(
             state_display,
             row["role_display_name"] or "",
-            subject,
-            row["subject_type"] or "",
-            perm,
+            row["subject"] or "",
+            row["member_type"] or "",
+            row["start_date"],
+            row["end_date"],
         )
 
     console.print("[bold]PIM role assignments[/bold]")

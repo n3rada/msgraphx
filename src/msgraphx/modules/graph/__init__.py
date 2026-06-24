@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
+from .refresh import add_arguments as add_refresh_arguments, run_command
 
-from .query import add_arguments, run_with_arguments
-
-__all__ = ["add_arguments", "run_with_arguments"]
+__all__ = ["add_refresh_arguments", "run_command"]
