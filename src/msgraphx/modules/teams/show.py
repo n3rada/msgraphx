@@ -3,8 +3,6 @@
 # Two modes, auto-detected from the positional argument:
 #   teams show 3          (cached result with surrounding context, numeric index)
 #   teams show alice      (last N messages from the chat matching that name)
-#
-# Required delegated permission: Chat.Read
 
 # Built-in imports
 from __future__ import annotations
@@ -35,7 +33,6 @@ from ...utils.roles import require_scopes
 _DEFAULT_CONTEXT = 4
 _DEFAULT_LAST = 20
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "target",
@@ -57,25 +54,21 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help=f"Number of messages to show in browse mode (default: {_DEFAULT_LAST}).",
     )
 
-
 def _sender(msg: ChatMessage) -> str:
     if msg.from_ and msg.from_.user:
         return msg.from_.user.display_name or "?"
     return "?"
-
 
 def _sender_short(msg: ChatMessage) -> str:
     """Return just the first name of the sender."""
     full = _sender(msg)
     return full.split()[0] if full != "?" else "?"
 
-
 def _is_me(msg: ChatMessage, context: "GraphContext") -> bool:
     """Check if the message was sent by the current user."""
     if not context.cached_user or not msg.from_ or not msg.from_.user:
         return False
     return msg.from_.user.id == context.cached_user.id
-
 
 def _render_window(
     segment: list[ChatMessage],
@@ -96,7 +89,6 @@ def _render_window(
         else:
             console.print(f"     [dim]{body}  {sender}  {sent}[/dim]")
 
-
 @handle_graph_errors
 @require_scopes("Chat.Read")
 async def run_with_arguments(
@@ -110,7 +102,6 @@ async def run_with_arguments(
     if re.match(r"^[\d][0-9,\- ]*$", args.target):
         return await _show_cached(context, args.target, args.context)
     return await _show_chat(context, args.target, args.last)
-
 
 async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
     """Find a chat by name and print its last N messages."""
@@ -236,7 +227,6 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
     return 0
 
-
 async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
     """Show a cached search result with surrounding conversation context."""
     cached = cache.load_results(key="teams", identity=context.identity_hash)
@@ -250,7 +240,6 @@ async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
     if not indices:
         logger.error(f"Invalid index: {index} (cached: 1-{len(cached)})")
         return 1
-
 
     for idx in indices:
         item = cached[idx]

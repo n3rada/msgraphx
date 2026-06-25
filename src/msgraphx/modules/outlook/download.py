@@ -1,7 +1,6 @@
 # msgraphx/modules/outlook/download.py
 #
 # Download emails as .eml (MIME) files from a cached mail search.
-# Required delegated permission: Mail.Read
 #
 # The Graph endpoint GET /me/messages/{id}/$value returns raw RFC 2822 MIME bytes.
 # In the SDK: graph_client.me.messages.by_message_id(id).content.get()
@@ -24,7 +23,6 @@ from ...utils import cache
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
         "indices",
@@ -32,7 +30,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         default=None,
         help="Download messages by index from the last mail search (e.g., 1, '1,3', '2-5').",
     )
-
 
 @handle_graph_errors
 @require_scopes("Mail.Read")

@@ -3,9 +3,6 @@
 # Enriched user and group detail fetch via the SDK $batch endpoint.
 # A single round-trip fans out to five or eight sub-requests and returns
 # a merged dict that mirrors the shape GraphSpy expects.
-#
-# Required delegated permissions:
-#   User.Read.All, Group.Read.All, GroupMember.Read.All
 
 from __future__ import annotations
 
@@ -38,7 +35,6 @@ _USER_SELECT = [
     "securityIdentifier",
 ]
 
-
 def _read_body(batch_resp, req_id: str) -> dict | None:
     """Extract and parse the JSON body for a batch sub-response. Returns None on missing/error."""
     item = batch_resp.get_response_by_id(req_id)
@@ -50,14 +46,12 @@ def _read_body(batch_resp, req_id: str) -> dict | None:
     except Exception:
         return None
 
-
 async def _send_batch(context: GraphContext, batch_content: BatchRequestContent) -> object:
     try:
         return await context.graph_client.batch().post(batch_content)
     except Exception as exc:
         raise_if_forbidden(exc)
         raise
-
 
 async def fetch_user_details(context: GraphContext, user_id: str) -> dict:
     """Return a merged dict with full user properties and related collections."""
@@ -115,7 +109,6 @@ async def fetch_user_details(context: GraphContext, user_id: str) -> dict:
             base[key] = []
 
     return base
-
 
 async def fetch_group_details(context: GraphContext, group_id: str) -> dict:
     """Return a merged dict with full group properties and related collections."""
@@ -187,14 +180,11 @@ async def fetch_group_details(context: GraphContext, group_id: str) -> dict:
 
     return base
 
-
 def add_arguments_user(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("user_id", help="User object ID or UPN.")
 
-
 def add_arguments_group(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("group_id", help="Group object ID.")
-
 
 @handle_graph_errors
 @require_scopes("User.Read.All")
@@ -214,7 +204,6 @@ async def run_user(context: GraphContext, args: argparse.Namespace) -> int:
     console.rule()
     console.print_json(json.dumps(details, indent=2, default=str))
     return 0
-
 
 @handle_graph_errors
 @require_scopes("Group.Read.All")

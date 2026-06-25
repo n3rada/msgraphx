@@ -26,9 +26,6 @@
 # match a group get access_via="group"; the rest get access_via="direct".
 # This tells the operator *how* they have access without re-running a separate
 # groups command.
-#
-# Required delegated permissions: Sites.Read.All
-# Required application permissions: Sites.Read.All + region set
 
 from __future__ import annotations
 
@@ -45,8 +42,8 @@ from ...core.context import GraphContext
 from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 from .groups import get_user_m365_groups
-
 
 async def fetch(context: GraphContext) -> list[dict]:
     """Return SharePoint sites accessible to the current user.
@@ -92,7 +89,6 @@ async def fetch(context: GraphContext) -> list[dict]:
 
     return sites
 
-
 def _site_obj_to_dict(site, group_info: dict | None = None) -> dict:
     """Convert a Site SDK object to a plain dict, optionally embedding group info."""
     d = {
@@ -110,7 +106,6 @@ def _site_obj_to_dict(site, group_info: dict | None = None) -> dict:
     if group_info:
         d.update(group_info)
     return d
-
 
 async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, dict]]:
     """Return all (site_id, group_info) pairs for every site owned by a group.
@@ -132,7 +127,6 @@ async def _resolve_group_sites(context: GraphContext, group) -> list[tuple[str, 
         pass
     return results
 
-
 async def _fetch_group_sites(context: GraphContext, group) -> list[dict]:
     """Return full site dicts for every site owned by a group, with group info embedded."""
     info = {
@@ -148,7 +142,6 @@ async def _fetch_group_sites(context: GraphContext, group) -> list[dict]:
     except Exception:
         pass
     return results
-
 
 async def fetch_from_groups(context: GraphContext) -> list[dict]:
     """Fetch SharePoint sites directly from the user's M365 group membership.
@@ -173,7 +166,6 @@ async def fetch_from_groups(context: GraphContext) -> list[dict]:
                 sites.append(site)
 
     return sites
-
 
 async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[dict]:
     """Annotate each site with the M365 group it belongs to, if any.
@@ -221,7 +213,6 @@ async def enrich_with_groups(context: GraphContext, sites: list[dict]) -> list[d
     logger.info(f"{matched} site(s) matched to a group, {len(enriched) - matched} via direct access")
     return enriched
 
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--from-groups",
@@ -244,8 +235,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
 
-
 @handle_graph_errors
+@require_scopes("Sites.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     from_groups = getattr(args, "from_groups", False)
     enrich = getattr(args, "enrich", False)
@@ -312,7 +303,6 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     _print_sites(sites, show_group=enrich)
     logger.success(f"{len(sites)} site(s) found")
     return 0
-
 
 def _print_sites(sites: list[dict], show_group: bool = False) -> None:
     if not sites:

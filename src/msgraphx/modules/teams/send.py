@@ -1,10 +1,6 @@
 # msgraphx/modules/teams/send.py
 #
 # Send a Teams message to a user (1:1 chat) or a channel.
-# Required delegated permissions:
-#   Chat.ReadWrite: create/use 1:1 chats
-#   ChatMessage.Send: send to chats
-#   ChannelMessage.Send: send to channels
 #
 # Usage:
 #   teams send alice@corp.com "Hey, lunch today?"
@@ -35,7 +31,6 @@ from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
-
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     target_group = parser.add_mutually_exclusive_group(required=True)
@@ -74,7 +69,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help="Treat the message body as HTML.",
     )
 
-
 @handle_graph_errors
 @require_scopes("Chat.ReadWrite")
 async def run_with_arguments(
@@ -91,7 +85,6 @@ async def run_with_arguments(
         return await _send_channel_message(context, args, message_body)
 
     return await _send_dm(context, args, message_body)
-
 
 async def _send_dm(
     context: "GraphContext",
@@ -188,7 +181,6 @@ async def _send_dm(
         return 1
 
     return 0
-
 
 async def _send_channel_message(
     context: "GraphContext",

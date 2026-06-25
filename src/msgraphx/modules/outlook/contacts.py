@@ -1,7 +1,6 @@
 # msgraphx/modules/outlook/contacts.py
 #
 # Build a communication graph from your mail: who do you exchange with most?
-# Required delegated permission: Mail.ReadBasic (or Mail.Read)
 
 # Built-in imports
 from __future__ import annotations
@@ -13,7 +12,6 @@ import json
 from collections import Counter
 from pathlib import Path
 
-
 def _load_config(filename: str) -> frozenset[str]:
     return frozenset(
         line.strip()
@@ -23,7 +21,6 @@ def _load_config(filename: str) -> frozenset[str]:
         .splitlines()
         if line.strip() and not line.startswith("#")
     )
-
 
 _NOISE_DOMAINS: frozenset[str] = _load_config("noise_domains.txt")
 _NOISE_LOCALS: frozenset[str] = _load_config("noise_locals.txt")
@@ -46,7 +43,6 @@ from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
-
 
 async def fetch(
     context: GraphContext,
@@ -204,7 +200,6 @@ async def fetch(
         ][:top],
     }
 
-
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -223,7 +218,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         metavar="{sent,received}",
         help="Restrict analysis to sent or received mail only (default: both).",
     )
-
 
 @handle_graph_errors
 @require_scopes("Mail.ReadBasic")

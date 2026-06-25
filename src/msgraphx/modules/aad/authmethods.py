@@ -3,9 +3,6 @@
 # Enumerate authentication methods registered for a user.
 # Surfaces every MFA factor: phone/SMS, Authenticator app, FIDO2/passkey,
 # software TOTP, Temporary Access Pass, Windows Hello, email OTP, password.
-#
-# Required delegated permissions:
-#   UserAuthenticationMethod.Read.All  (admin consent required)
 
 # Built-in imports
 from __future__ import annotations
@@ -34,13 +31,11 @@ _METHOD_LABEL: dict[str, str] = {
     "#microsoft.graph.passwordAuthenticationMethod": "Password",
 }
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "user",
         help="User UPN or object ID (e.g. alice@corp.com or a GUID).",
     )
-
 
 @handle_graph_errors
 @require_scopes("UserAuthenticationMethod.Read.All")

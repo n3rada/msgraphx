@@ -2,9 +2,6 @@
 #
 # List Planner tasks assigned to the current user.
 # Task titles and plan names reveal active projects and internal priorities.
-#
-# Required delegated permissions:
-#   Tasks.Read
 
 # Built-in imports
 from __future__ import annotations
@@ -23,7 +20,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -33,7 +29,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         metavar="N",
         help="Maximum number of tasks to return (default: 50).",
     )
-
 
 async def fetch(context: GraphContext, top: int = 50) -> list[dict]:
     """Return Planner tasks for the current user as plain dicts.
@@ -64,7 +59,6 @@ async def fetch(context: GraphContext, top: int = 50) -> list[dict]:
         })
 
     return rows
-
 
 @handle_graph_errors
 @require_scopes("Tasks.Read")

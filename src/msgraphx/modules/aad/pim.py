@@ -1,9 +1,6 @@
 # msgraphx/modules/aad/pim.py
 #
 # Enumerate active and eligible PIM role assignments via the Graph SDK.
-#
-# Required permissions:
-#   RoleManagement.Read.Directory (or RoleManagement.ReadWrite.Directory)
 
 from __future__ import annotations
 
@@ -29,7 +26,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors, raise_if_forbidden
 from ...utils.roles import require_scopes
 
-
 def _principal_label(item) -> str:
     principal = getattr(item, "principal", None)
     if principal:
@@ -42,19 +38,16 @@ def _principal_label(item) -> str:
             return name
     return getattr(item, "principal_id", None) or ""
 
-
 def _role_label(item) -> str:
     rd = getattr(item, "role_definition", None)
     if rd:
         return getattr(rd, "display_name", None) or getattr(item, "role_definition_id", None) or ""
     return getattr(item, "role_definition_id", None) or ""
 
-
 def _fmt_dt(dt) -> str:
     if not dt:
         return ""
     return dt.strftime("%Y-%m-%d")
-
 
 async def _safe_collect(builder, config) -> list:
     try:
@@ -63,7 +56,6 @@ async def _safe_collect(builder, config) -> list:
         raise_if_forbidden(exc)
         logger.warning(f"Could not fetch PIM assignments: {exc}")
         return []
-
 
 async def fetch(context: GraphContext, state: str) -> list[dict]:
     """Return active and/or eligible PIM role assignments as plain dicts."""
@@ -119,7 +111,6 @@ async def fetch(context: GraphContext, state: str) -> list[dict]:
         })
     return rows
 
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--state",
@@ -127,7 +118,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default="all",
         help="Assignment state to show (default: all).",
     )
-
 
 @handle_graph_errors
 @require_scopes("RoleManagement.Read.Directory")

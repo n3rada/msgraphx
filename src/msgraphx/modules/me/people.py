@@ -3,9 +3,6 @@
 # Return the most relevant people for the current user ranked by interaction
 # frequency (email, meetings, shared docs). Faster than enumerating contacts
 # for building a high-value target list for social engineering.
-#
-# Required delegated permissions:
-#   People.Read
 
 # Built-in imports
 from __future__ import annotations
@@ -27,7 +24,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -43,7 +39,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by name (server-side $search).",
     )
-
 
 async def fetch(
     context: GraphContext,
@@ -85,7 +80,6 @@ async def fetch(
         })
 
     return rows
-
 
 @handle_graph_errors
 @require_scopes("People.Read")

@@ -2,9 +2,6 @@
 #
 # List SharePoint sites owned by a specific M365 Unified group.
 # GET /groups/{id}/sites
-#
-# Required delegated permissions: Sites.Read.All, Group.Read.All
-# Required application permissions: Sites.Read.All, Group.Read.All
 
 from __future__ import annotations
 
@@ -18,7 +15,6 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
-
 
 @handle_graph_errors
 @require_scopes("Sites.Read.All")
@@ -80,7 +76,6 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     console.print(table)
     logger.success(f"{len(rows)} site(s) found")
     return 0
-
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(

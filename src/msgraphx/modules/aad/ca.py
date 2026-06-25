@@ -3,9 +3,6 @@
 # List conditional access policies in the tenant.
 # Shows which apps, users, and conditions each policy targets
 # and what grant controls it requires.
-#
-# Required delegated permissions:
-#   Policy.Read.All  (admin consent required)
 
 # Built-in imports
 from __future__ import annotations
@@ -23,7 +20,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
 from ...utils.roles import require_roles, require_scopes
-
 
 async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
     """Return conditional access policies as plain dicts.
@@ -86,7 +82,6 @@ async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
 
     return rows
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--state",
@@ -94,7 +89,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by policy state: enabled, disabled, or report (reporting only).",
     )
-
 
 @handle_graph_errors
 @require_roles(

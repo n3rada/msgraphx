@@ -2,10 +2,6 @@
 #
 # List online meetings and fetch transcripts for the current user.
 # Transcripts are returned in VTT format (plain text with timestamps).
-#
-# Required delegated permissions:
-#   OnlineMeetings.Read                  (list meetings)
-#   OnlineMeetingTranscript.Read.All     (fetch transcript content)
 
 # Built-in imports
 from __future__ import annotations
@@ -24,7 +20,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -40,7 +35,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Fetch and print transcripts for a specific meeting ID.",
     )
-
 
 async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
     """Return online meetings for the current user as plain dicts.
@@ -76,7 +70,6 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
             break
 
     return rows
-
 
 async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict]:
     """Return transcripts for a meeting as plain dicts with VTT content.
@@ -114,7 +107,6 @@ async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict
 
     return items
 
-
 @handle_graph_errors
 @require_scopes("OnlineMeetings.Read")
 async def run_with_arguments(
@@ -128,7 +120,6 @@ async def run_with_arguments(
         return await _render_transcripts(context, args.transcript)
 
     return await _render_meetings(context, args.top)
-
 
 async def _render_meetings(context: GraphContext, top: int) -> int:
     logger.info("Fetching online meetings")
@@ -176,7 +167,6 @@ async def _render_meetings(context: GraphContext, top: int) -> int:
     console.print(table)
     logger.success(f"{len(rows)} meeting(s) found. Use --transcript MEETING_ID to fetch a transcript.")
     return 0
-
 
 async def _render_transcripts(context: GraphContext, meeting_id: str) -> int:
     logger.info(f"Fetching transcripts for meeting: {meeting_id}")

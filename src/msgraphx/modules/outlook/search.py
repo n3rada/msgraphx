@@ -1,7 +1,6 @@
 # msgraphx/modules/outlook/search.py
 #
 # Search emails via the Microsoft Search API (EntityType.Message).
-# Required delegated permission: Mail.Read (or Mail.ReadBasic)
 #
 # Exchange limitation: from + size <= 1000, so at most 2 pages of 500.
 # Sorting is not supported for Message; the API ignores sortProperties.
@@ -27,7 +26,6 @@ from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
-
 
 async def fetch(
     context: GraphContext,
@@ -124,7 +122,6 @@ async def fetch(
 
     return items
 
-
 def add_arguments(parser: "argparse.ArgumentParser"):
     parser.add_argument(
         "query",
@@ -153,7 +150,6 @@ def add_arguments(parser: "argparse.ArgumentParser"):
         action="store_true",
         help="Only show messages with attachments.",
     )
-
 
 @handle_graph_errors
 @require_scopes("Mail.Read")

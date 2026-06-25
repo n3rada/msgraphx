@@ -5,10 +5,6 @@
 # members can see them.  The Graph Search API searches across all channels
 # the caller has access to in a single request.
 #
-# Required delegated permissions:
-#   Chat.Read              (user-consentable)
-#   ChannelMessage.Read.All  (admin consent required)
-#
 # For personal chat messages (1:1 / group DMs), use: msgraphx teams chat
 #
 # Tip: prototype queries in Graph Explorer
@@ -35,7 +31,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 from ...utils.roles import require_scopes
 
-
 async def fetch_teams(context: GraphContext) -> list[dict]:
     """Return joined Teams for the current user as plain dicts.
 
@@ -47,7 +42,6 @@ async def fetch_teams(context: GraphContext) -> list[dict]:
         {"id": t.id, "display_name": t.display_name, "description": t.description}
         for t in teams
     ]
-
 
 async def fetch_search(
     context: GraphContext,
@@ -126,7 +120,6 @@ async def fetch_search(
 
     return items
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -143,7 +136,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by sender display name or UPN.",
     )
-
 
 async def _list_teams(context: "GraphContext") -> int:
     rows = await fetch_teams(context)
@@ -170,7 +162,6 @@ async def _list_teams(context: "GraphContext") -> int:
     console.print(table)
     logger.success(f"{len(rows)} team(s) found.")
     return 0
-
 
 @handle_graph_errors
 @require_scopes("ChannelMessage.Read.All")

@@ -3,9 +3,6 @@
 # List directory role assignments with principal and role names resolved.
 # Maps every user/group/service-principal to every assigned directory role
 # (Global Admin, Exchange Admin, Security Reader, etc.).
-#
-# Required delegated permissions:
-#   RoleManagement.Read.Directory  (admin consent required)
 
 # Built-in imports
 from __future__ import annotations
@@ -27,7 +24,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
-
 
 async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[dict]:
     """Return directory role assignments as plain dicts.
@@ -70,7 +66,6 @@ async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[
 
     return rows
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--filter",
@@ -79,7 +74,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="OData $filter expression (e.g. \"principalId eq 'GUID'\").",
     )
-
 
 @handle_graph_errors
 @require_scopes("RoleManagement.Read.Directory")

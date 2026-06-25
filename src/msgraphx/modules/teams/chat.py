@@ -3,10 +3,6 @@
 # Search personal chat messages (1:1 DMs and group chats) via the Microsoft
 # Search API (POST /search/query, EntityType.ChatMessage).
 #
-# Required delegated permissions:
-#   Chat.Read              (user-consentable)
-#   ChannelMessage.Read.All  (admin consent required)
-#
 # For channel messages (Teams workspaces), use: msgraphx teams channel
 #
 # Tip: prototype queries in Graph Explorer
@@ -35,7 +31,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
-
 
 async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
     """Return recent chats for the current user as plain dicts.
@@ -79,7 +74,6 @@ async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
             break
 
     return rows
-
 
 async def fetch_search(
     context: GraphContext,
@@ -148,7 +142,6 @@ async def fetch_search(
 
     return items
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -165,7 +158,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Filter by sender display name (client-side).",
     )
-
 
 async def _list_chats(context: "GraphContext") -> int:
     rows = await fetch_chats(context, top=20)
@@ -192,7 +184,6 @@ async def _list_chats(context: "GraphContext") -> int:
     console.rule()
     console.print(table)
     return 0
-
 
 @handle_graph_errors
 @require_scopes("Chat.Read", "ChannelMessage.Read.All")

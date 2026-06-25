@@ -3,10 +3,6 @@
 # List OAuth2 delegated permission grants in the tenant.
 # Shows which app (client) has been granted which delegated scopes
 # against which resource, and whether the grant is tenant-wide or per-user.
-#
-# Required delegated permissions:
-#   DelegatedPermissionGrant.Read.All  (admin consent required)
-#   or: Directory.Read.All
 
 # Built-in imports
 from __future__ import annotations
@@ -25,7 +21,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--filter",
@@ -39,7 +34,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         action="store_true",
         help="Only show tenant-wide (AllPrincipals) grants.",
     )
-
 
 @handle_graph_errors
 @require_scopes("DelegatedPermissionGrant.Read.All")

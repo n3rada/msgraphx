@@ -2,9 +2,6 @@
 #
 # List OneNote notebooks, sections, and pages for the current user.
 # Pages often contain credentials, architecture diagrams, and internal docs.
-#
-# Required delegated permissions:
-#   Notes.Read
 
 # Built-in imports
 from __future__ import annotations
@@ -24,7 +21,6 @@ from ...utils.html import strip_html
 from ...utils.pagination import collect_all
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -38,7 +34,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         default=None,
         help="Fetch and display the HTML content of a specific page.",
     )
-
 
 @handle_graph_errors
 @require_scopes("Notes.Read")
@@ -56,7 +51,6 @@ async def run_with_arguments(
         return await _list_pages(context)
 
     return await _list_notebooks(context)
-
 
 async def _list_notebooks(context: "GraphContext") -> int:
     logger.info("Fetching OneNote notebooks")
@@ -106,7 +100,6 @@ async def _list_notebooks(context: "GraphContext") -> int:
     console.print(table)
     logger.success(f"{len(rows)} notebook(s) found. Use --pages to list all pages.")
     return 0
-
 
 async def _list_pages(context: "GraphContext") -> int:
     logger.info("Fetching all OneNote pages")
@@ -167,7 +160,6 @@ async def _list_pages(context: "GraphContext") -> int:
     console.print(table)
     logger.success(f"{len(rows)} page(s) found. Use --content PAGE_ID to read a page.")
     return 0
-
 
 async def _fetch_page_content(context: "GraphContext", page_id: str) -> int:
     logger.info(f"Fetching page content: {page_id}")

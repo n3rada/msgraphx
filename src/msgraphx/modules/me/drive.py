@@ -7,8 +7,6 @@
 #   me drive tree --depth 2          # limit recursion depth
 #   me drive upload <file> [--path Desktop/subdir]
 #
-# Required delegated permissions: Files.ReadWrite
-#
 # Upload approach:
 #   Files < 4 MB  → PUT /me/drive/root:/{dest}:/content  (single request)
 #   Files >= 4 MB → createUploadSession + LargeFileUploadTask (msgraph_core)
@@ -41,7 +39,6 @@ from ...utils.roles import require_scopes
 
 _SMALL_FILE_LIMIT = 4 * 1024 * 1024  # 4 MB
 _CHUNK_SIZE = 4 * 1024 * 1024        # 4 MB chunks for large uploads
-
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="drive_subcommand", required=True)
@@ -95,7 +92,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Max concurrent downloads (default: 20).",
     )
 
-
 @handle_graph_errors
 @require_scopes("Files.ReadWrite")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
@@ -115,7 +111,6 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
     return 1
 
-
 async def _list_children(context: GraphContext, drive_id: str, item_id: str) -> list:
     resp = (
         await context.graph_client.drives.by_drive_id(drive_id)
@@ -123,7 +118,6 @@ async def _list_children(context: GraphContext, drive_id: str, item_id: str) -> 
         .children.get()
     )
     return resp.value if resp and resp.value else []
-
 
 async def _build_tree(
     context: GraphContext,
@@ -161,7 +155,6 @@ async def _build_tree(
             size_str = f"{size_bytes} B"
         node.add(f"{f.name}  [dim]{size_str}[/dim]")
 
-
 async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
     folder_path = (args.path or "").strip("/")
     max_depth = args.depth
@@ -188,7 +181,6 @@ async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespa
     await _build_tree(context, drive_id, root_id, tree, depth=1, max_depth=max_depth)
     console.print(tree)
     return 0
-
 
 async def _run_download(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
     output_dir = Path(args.save if args.save else ".").resolve()
@@ -220,7 +212,6 @@ async def _run_download(context: GraphContext, drive_id: str, args: argparse.Nam
     )
     logger.info(f"Downloaded {count} file(s) to: {output_dir}")
     return 0 if count > 0 else 1
-
 
 async def _run_upload(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
     local = Path(args.file)
@@ -265,7 +256,6 @@ async def _run_upload(context: GraphContext, drive_id: str, args: argparse.Names
         })
 
     return 0
-
 
 async def _chunked_upload(
     context: GraphContext,

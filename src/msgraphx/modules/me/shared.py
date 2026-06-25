@@ -5,9 +5,6 @@
 # rather than items Microsoft infers are relevant.
 #
 # NOTE: This API is deprecated and will stop returning data after 2028-01-01.
-#
-# Required delegated permissions:
-#   Sites.Read.All
 
 # Built-in imports
 from __future__ import annotations
@@ -30,7 +27,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -40,7 +36,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         metavar="N",
         help="Number of items to display (default: 25).",
     )
-
 
 async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
     """Return documents shared with the current user as plain dicts.
@@ -83,7 +78,6 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
         })
 
     return rows
-
 
 @handle_graph_errors
 @require_scopes("Sites.Read.All")

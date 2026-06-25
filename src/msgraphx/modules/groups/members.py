@@ -9,9 +9,6 @@
 #
 # Members can be Users, Groups, Devices, or ServicePrincipals.
 # Each type is normalised into a flat dict with a `type` discriminator.
-#
-# Required delegated permissions: GroupMember.Read.All or Group.Read.All
-# Required application permissions: GroupMember.Read.All or Group.Read.All
 
 from __future__ import annotations
 
@@ -30,7 +27,6 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
-
 
 def _member_to_dict(m) -> dict:
     if isinstance(m, User):
@@ -83,7 +79,6 @@ def _member_to_dict(m) -> dict:
         "department": "",
     }
 
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "group_id",
@@ -99,7 +94,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Only show user members, skip groups and service principals.",
     )
-
 
 @handle_graph_errors
 @require_scopes("GroupMember.Read.All")

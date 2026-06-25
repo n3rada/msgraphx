@@ -22,8 +22,6 @@
 # `GET /me/transitiveMemberOf/microsoft.graph.group` returns all groups
 # (Security, Distribution, Unified) the user belongs to, including via nested
 # membership. We filter to `groupTypes == ["Unified"]` to keep only M365 groups.
-#
-# Required delegated permissions: Group.Read.All (or GroupMember.Read.All)
 
 from __future__ import annotations
 
@@ -38,7 +36,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
-
+from ...utils.roles import require_scopes
 
 async def get_user_m365_groups(
     graph_client: GraphServiceClient,
@@ -92,7 +90,6 @@ async def get_user_m365_groups(
 
     return m365_groups
 
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--visibility",
@@ -106,8 +103,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Only show groups that have a Microsoft Teams workspace provisioned.",
     )
 
-
 @handle_graph_errors
+@require_scopes("Group.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")

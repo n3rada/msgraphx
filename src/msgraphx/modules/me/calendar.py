@@ -3,9 +3,6 @@
 # List calendar events for the current user.
 # Meeting titles, attendees, and locations are OSINT goldmines for
 # phishing lure construction and travel/schedule intelligence.
-#
-# Required delegated permissions:
-#   Calendars.Read
 
 # Built-in imports
 from __future__ import annotations
@@ -30,7 +27,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -41,7 +37,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         metavar="N",
         help="Maximum number of events to return (default: 50).",
     )
-
 
 async def fetch(
     context: GraphContext,
@@ -121,7 +116,6 @@ async def fetch(
             break
 
     return rows
-
 
 @handle_graph_errors
 @require_scopes("Calendars.Read")

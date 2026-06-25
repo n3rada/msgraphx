@@ -2,9 +2,6 @@
 #
 # aad app  <id>  — enriched single-app profile (registration + SP + credentials + permissions)
 # aad apps       — bulk listing of all app registrations with credential status
-#
-# Required permissions:
-#   Application.Read.All (or Directory.Read.All)
 
 from __future__ import annotations
 
@@ -29,12 +26,9 @@ from ...utils.console import console
 from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
 from ...utils.roles import require_scopes
 
-_REQUIRED_SCOPE = "Application.Read.All (or Directory.Read.All)"
-
 
 def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
-
 
 def _cred_status(end_dt: datetime | None) -> str:
     if end_dt is None:
@@ -46,7 +40,6 @@ def _cred_status(end_dt: datetime | None) -> str:
         return "expiring-soon"
     return "valid"
 
-
 def _status_badge(status: str) -> str:
     return {
         "never-expires": "[bold red]∞ never-expires[/bold red]",
@@ -54,7 +47,6 @@ def _status_badge(status: str) -> str:
         "expiring-soon": "[yellow]! expiring soon[/yellow]",
         "valid": "[green]✓ valid[/green]",
     }.get(status, status)
-
 
 def _status_badge_short(status: str) -> str:
     return {
@@ -64,13 +56,11 @@ def _status_badge_short(status: str) -> str:
         "valid": "[green]✓[/green]",
     }.get(status, "?")
 
-
 def _owner_name(obj) -> str:
     if hasattr(obj, "display_name") and obj.display_name:
         return obj.display_name
     ad = getattr(obj, "additional_data", {}) or {}
     return ad.get("displayName") or ad.get("userPrincipalName") or (obj.id or "?")
-
 
 # ---------------------------------------------------------------------------
 # aad app <id> — single enriched view
@@ -81,7 +71,6 @@ def add_arguments_single(parser: argparse.ArgumentParser) -> None:
         "app_id",
         help="Application client ID (appId) or object ID.",
     )
-
 
 async def _resolve_app(context: GraphContext, app_ref: str):
     # Try object ID directly
@@ -106,7 +95,6 @@ async def _resolve_app(context: GraphContext, app_ref: str):
         raise
 
     return None
-
 
 @handle_graph_errors
 @require_scopes("Application.Read.All")
@@ -158,7 +146,6 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
     _print_app(app, owners, sp)
     return 0
 
-
 async def _safe_collect(builder) -> list:
     try:
         return await pagination.collect_all(builder)
@@ -166,7 +153,6 @@ async def _safe_collect(builder) -> list:
         raise_if_forbidden(exc)
         logger.warning(f"Could not fetch collection: {exc}")
         return []
-
 
 async def _safe_get(builder, config):
     try:
@@ -176,12 +162,10 @@ async def _safe_get(builder, config):
         logger.warning(f"Could not fetch resource: {exc}")
         return None
 
-
 def _fmt_dt(dt: datetime | None) -> str:
     if not dt:
         return "[dim]—[/dim]"
     return dt.strftime("%Y-%m-%d %H:%M") + " UTC"
-
 
 def _app_to_dict(app, owners: list, sp) -> dict:
     pw = [
@@ -235,7 +219,6 @@ def _app_to_dict(app, owners: list, sp) -> dict:
             ],
         }
     return result
-
 
 def _print_app(app, owners: list, sp) -> None:
     console.print(f"\n[bold]App: {app.display_name or '?'}[/bold]")
@@ -297,7 +280,6 @@ def _print_app(app, owners: list, sp) -> None:
     else:
         console.print("  [dim]none[/dim]")
 
-
 # ---------------------------------------------------------------------------
 # aad apps — bulk listing
 # ---------------------------------------------------------------------------
@@ -320,7 +302,6 @@ def add_arguments_bulk(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Only apps with a credential expiring within N days.",
     )
-
 
 @handle_graph_errors
 @require_scopes("Application.Read.All")
@@ -403,12 +384,10 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
     _print_bulk_table(apps)
     return 0
 
-
 def _badges_for(creds: list[dict]) -> str:
     if not creds:
         return "[dim]-[/dim]"
     return " ".join(_status_badge_short(c["status"]) for c in creds)
-
 
 def _print_bulk_table(apps: list[dict]) -> None:
     table = Table(show_header=True, header_style="bold", show_lines=False)

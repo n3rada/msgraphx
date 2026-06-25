@@ -2,7 +2,6 @@
 #
 # Build a communication graph from your Teams chats.
 # Lists 1:1 chat partners and group chat participants.
-# Required delegated permissions: Chat.Read, Chat.ReadBasic
 #
 # GET /me/chats?$expand=members gives all chats + their members in one call.
 # For message frequency, use GET /me/chats/{id}/messages (expensive, opt-in via --count).
@@ -37,7 +36,6 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
@@ -54,7 +52,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         action="store_true",
         help="Fetch message counts per chat (slower, makes one extra API call per chat).",
     )
-
 
 @handle_graph_errors
 @require_scopes("Chat.Read")

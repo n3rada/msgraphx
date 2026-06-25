@@ -3,8 +3,6 @@
 # Show documents trending around the current user.
 # Uses GET /me/insights/trending which surfaces files from OneDrive and
 # SharePoint that are relevant based on the user's closest network activity.
-#
-# Required delegated permission: Sites.Read.All
 
 # Built-in imports
 from __future__ import annotations
@@ -25,7 +23,6 @@ from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
-
 
 async def fetch(
     context: GraphContext,
@@ -68,7 +65,6 @@ async def fetch(
         for i, item in enumerate(items, 1)
     ]
 
-
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
         "--top",
@@ -87,7 +83,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         metavar="TYPE",
         help="Filter by file type (e.g. Excel, PowerPoint, Word, Pdf).",
     )
-
 
 @handle_graph_errors
 @require_scopes("Sites.Read.All")

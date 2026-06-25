@@ -1,7 +1,6 @@
 # msgraphx/modules/outlook/show.py
 #
 # Fetch and render an email in the terminal from a cached mail search.
-# Required delegated permission: Mail.Read
 #
 # MIME parsing uses Python's stdlib email + html.parser modules.
 # Rendering uses rich (already a dependency).
@@ -32,7 +31,6 @@ from ...utils.roles import require_scopes
 # MIME helpers
 # ---------------------------------------------------------------------------
 
-
 def _decode_value(value: str) -> str:
     parts = _decode_header(value or "")
     out: list[str] = []
@@ -42,7 +40,6 @@ def _decode_value(value: str) -> str:
         else:
             out.append(data)
     return "".join(out)
-
 
 def _extract_mime(raw: bytes) -> dict:
     msg = _email_lib.message_from_bytes(raw)
@@ -93,11 +90,9 @@ def _extract_mime(raw: bytes) -> dict:
         "attachments": attachments,
     }
 
-
 # ---------------------------------------------------------------------------
 # Rich rendering
 # ---------------------------------------------------------------------------
-
 
 def _render(parsed: dict) -> None:
     subject = parsed["subject"] or "(no subject)"
@@ -143,11 +138,9 @@ def _render(parsed: dict) -> None:
         )
     )
 
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
     parser.add_argument(
@@ -155,7 +148,6 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         type=str,
         help="Index from the last mail search to display (e.g., 3).",
     )
-
 
 @handle_graph_errors
 @require_scopes("Mail.Read")
@@ -175,7 +167,6 @@ async def run_with_arguments(
     if not indices:
         logger.error(f"Invalid index: {args.index} (cached: 1-{len(cached)})")
         return 1
-
 
     for idx in indices:
         item = cached[idx]

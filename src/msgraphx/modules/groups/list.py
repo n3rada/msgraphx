@@ -9,9 +9,6 @@
 #
 # default (any token): GET /groups?$filter=groupTypes/any(c:c eq 'Unified')
 #   App-only: tenant-wide. Delegated: all groups the token can read.
-#
-# Required delegated permissions: Group.Read.All (or GroupMember.Read.All for --mine)
-# Required application permissions: Group.Read.All
 
 from __future__ import annotations
 
@@ -32,7 +29,6 @@ from ...utils.pagination import GraphPaginator, collect_all
 from ..sharepoint.groups import get_user_m365_groups
 from ...utils.roles import require_scopes
 
-
 def _to_dict(g) -> dict:
     return {
         "id": g.id,
@@ -51,7 +47,6 @@ def _to_dict(g) -> dict:
         ),
     }
 
-
 async def fetch_mine(
     context: GraphContext,
     visibility: str | None = None,
@@ -63,7 +58,6 @@ async def fetch_mine(
         teams_only=teams_only,
     )
     return [_to_dict(g) for g in groups]
-
 
 async def fetch_all(
     context: GraphContext,
@@ -94,7 +88,6 @@ async def fetch_all(
 
     return [_to_dict(g) for g in all_groups]
 
-
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mine",
@@ -112,7 +105,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Filter by visibility.",
     )
-
 
 @handle_graph_errors
 @require_scopes("Group.Read.All")
