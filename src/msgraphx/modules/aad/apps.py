@@ -27,6 +27,7 @@ from ...core.context import GraphContext
 from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
+from ...utils.roles import require_scopes
 
 _REQUIRED_SCOPE = "Application.Read.All (or Directory.Read.All)"
 
@@ -108,6 +109,7 @@ async def _resolve_app(context: GraphContext, app_ref: str):
 
 
 @handle_graph_errors
+@require_scopes("Application.Read.All")
 async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info(f"Resolving application: {args.app_id}")
     app = await _resolve_app(context, args.app_id)
@@ -321,6 +323,7 @@ def add_arguments_bulk(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("Application.Read.All")
 async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info("Enumerating app registrations...")
 

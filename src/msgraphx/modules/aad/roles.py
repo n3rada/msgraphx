@@ -26,6 +26,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[dict]:
@@ -81,6 +82,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("RoleManagement.Read.Directory")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

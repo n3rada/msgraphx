@@ -22,6 +22,7 @@ from loguru import logger
 from ...core.context import GraphContext
 from ...utils import cache
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser"):
@@ -34,6 +35,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 
 @handle_graph_errors
+@require_scopes("Mail.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

@@ -37,6 +37,7 @@ from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ..sharepoint.download import download_drive, download_drive_item
+from ...utils.roles import require_scopes
 
 _SMALL_FILE_LIMIT = 4 * 1024 * 1024  # 4 MB
 _CHUNK_SIZE = 4 * 1024 * 1024        # 4 MB chunks for large uploads
@@ -96,6 +97,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("Files.ReadWrite")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     drive = await context.graph_client.me.drive.get()
     if not drive or not drive.id:

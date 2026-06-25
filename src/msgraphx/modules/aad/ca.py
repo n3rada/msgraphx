@@ -22,7 +22,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
-from ...utils.roles import require_any_role
+from ...utils.roles import require_roles, require_scopes
 
 
 async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
@@ -96,7 +96,8 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 
-_CA_REQUIRED_ROLES = [
+@handle_graph_errors
+@require_roles(
     "Security Reader",
     "Global Administrator",
     "Global Reader",
@@ -104,16 +105,11 @@ _CA_REQUIRED_ROLES = [
     "Conditional Access Administrator",
     "Devices Administrator",
     "Privileged Role Administrator",
-]
-
-
-@handle_graph_errors
+)
+@require_scopes("Policy.Read.All")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:
-    if not await require_any_role(context, _CA_REQUIRED_ROLES):
-        return 1
-
     logger.info("Fetching conditional access policies")
 
     rows = await fetch(context, state=args.state)

@@ -23,6 +23,7 @@ from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 from ...core.context import GraphContext
 from ...utils import cache, output, pagination
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 # Preset hunt queries for common privileged groups
 HUNT_GROUPS = {
@@ -425,6 +426,7 @@ def _log_applications(results: list[dict]) -> None:
 
 
 @handle_graph_errors
+@require_scopes("User.Read.All")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

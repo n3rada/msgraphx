@@ -21,6 +21,7 @@ from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -66,6 +67,7 @@ async def fetch(context: GraphContext, top: int = 50) -> list[dict]:
 
 
 @handle_graph_errors
+@require_scopes("Tasks.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

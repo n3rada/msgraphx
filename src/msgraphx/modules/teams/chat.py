@@ -34,6 +34,7 @@ from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
@@ -194,6 +195,7 @@ async def _list_chats(context: "GraphContext") -> int:
 
 
 @handle_graph_errors
+@require_scopes("Chat.Read", "ChannelMessage.Read.All")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

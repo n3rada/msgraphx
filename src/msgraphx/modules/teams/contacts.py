@@ -35,6 +35,7 @@ from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -56,6 +57,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("Chat.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

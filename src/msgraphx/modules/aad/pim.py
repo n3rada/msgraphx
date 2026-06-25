@@ -27,6 +27,7 @@ from ...core.context import GraphContext
 from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors, raise_if_forbidden
+from ...utils.roles import require_scopes
 
 
 def _principal_label(item) -> str:
@@ -129,6 +130,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("RoleManagement.Read.Directory")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info("Fetching PIM role assignments")
     rows = await fetch(context, args.state)

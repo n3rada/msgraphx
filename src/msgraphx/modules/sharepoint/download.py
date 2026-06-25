@@ -16,6 +16,7 @@ from msgraph.graph_service_client import GraphServiceClient
 from ...core.context import GraphContext
 from ...utils import cache, pagination
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 @handle_graph_errors
@@ -268,6 +269,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 
 @handle_graph_errors
+@require_scopes("Files.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
 
     # If indices provided, download from cached search results

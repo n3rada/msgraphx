@@ -29,6 +29,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 def _member_to_dict(m) -> dict:
@@ -101,6 +102,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("GroupMember.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     group_id = args.group_id
     transitive = getattr(args, "transitive", False)

@@ -30,6 +30,7 @@ from ...utils import cache, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import render_html, strip_html
+from ...utils.roles import require_scopes
 
 _DEFAULT_CONTEXT = 4
 _DEFAULT_LAST = 20
@@ -97,6 +98,7 @@ def _render_window(
 
 
 @handle_graph_errors
+@require_scopes("Chat.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

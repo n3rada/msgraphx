@@ -30,6 +30,7 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator, collect_all
 from ..sharepoint.groups import get_user_m365_groups
+from ...utils.roles import require_scopes
 
 
 def _to_dict(g) -> dict:
@@ -114,6 +115,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("Group.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
     mine = getattr(args, "mine", False)
     teams_only = getattr(args, "teams_only", False)

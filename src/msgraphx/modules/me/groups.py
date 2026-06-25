@@ -13,6 +13,7 @@ from loguru import logger
 from ...core.context import GraphContext
 from ...utils import output
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 async def fetch(context: GraphContext, visibility: str | None = None) -> list[dict]:
@@ -58,6 +59,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 
 @handle_graph_errors
+@require_scopes("Group.Read.All")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

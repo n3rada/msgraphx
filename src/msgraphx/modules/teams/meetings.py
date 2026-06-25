@@ -22,6 +22,7 @@ from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -115,6 +116,7 @@ async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict
 
 
 @handle_graph_errors
+@require_scopes("OnlineMeetings.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

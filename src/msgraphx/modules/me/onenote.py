@@ -22,6 +22,7 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 from ...utils.pagination import collect_all
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -40,6 +41,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("Notes.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

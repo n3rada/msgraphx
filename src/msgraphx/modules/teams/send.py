@@ -34,6 +34,7 @@ from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 # Local library imports
 from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -75,6 +76,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("Chat.ReadWrite")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

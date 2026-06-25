@@ -26,6 +26,7 @@ from ...utils.cache import load_results, parse_indices
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.html import render_html
+from ...utils.roles import require_scopes
 
 # ---------------------------------------------------------------------------
 # MIME helpers
@@ -157,6 +158,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("Mail.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

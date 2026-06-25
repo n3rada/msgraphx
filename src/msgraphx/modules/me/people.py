@@ -25,6 +25,7 @@ from ...core.context import GraphContext
 from ...utils import output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -87,6 +88,7 @@ async def fetch(
 
 
 @handle_graph_errors
+@require_scopes("People.Read")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

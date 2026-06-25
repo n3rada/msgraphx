@@ -23,6 +23,7 @@ from ...core.context import GraphContext
 from ...utils import output
 from ...utils.console import console
 from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
+from ...utils.roles import require_scopes
 
 _USER_SELECT = [
     "displayName", "givenName", "surname", "userPrincipalName", "mail", "otherMails",
@@ -196,6 +197,7 @@ def add_arguments_group(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("User.Read.All")
 async def run_user(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info(f"Fetching enriched user details: {args.user_id}")
     details = await fetch_user_details(context, args.user_id)
@@ -215,6 +217,7 @@ async def run_user(context: GraphContext, args: argparse.Namespace) -> int:
 
 
 @handle_graph_errors
+@require_scopes("Group.Read.All")
 async def run_group(context: GraphContext, args: argparse.Namespace) -> int:
     logger.info(f"Fetching enriched group details: {args.group_id}")
     details = await fetch_group_details(context, args.group_id)

@@ -22,6 +22,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.dates import parse_date_string
 from ...utils.errors import handle_graph_errors
+from ...utils.roles import require_scopes
 
 
 async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
@@ -187,6 +188,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 @handle_graph_errors
+@require_scopes("Files.Read.All")
 async def run_with_arguments(
     context: GraphContext, args: argparse.Namespace
 ) -> int:

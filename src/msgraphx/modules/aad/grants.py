@@ -23,6 +23,7 @@ from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
+from ...utils.roles import require_scopes
 
 
 def add_arguments(parser: "argparse.ArgumentParser") -> None:
@@ -41,6 +42,7 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 
 
 @handle_graph_errors
+@require_scopes("DelegatedPermissionGrant.Read.All")
 async def run_with_arguments(
     context: "GraphContext", args: "argparse.Namespace"
 ) -> int:

@@ -1,11 +1,21 @@
 # msgraphx/utils/roles.py
 #
-# Entra directory role pre-flight checks via the wids JWT claim.
-# wids lists role template IDs for roles actively assigned to the user
-# (including PIM-activated ones). Only meaningful for delegated tokens;
-# app-only tokens carry no wids and skip all checks.
+# Pre-flight permission checks via JWT claims.
+#
+# Two decorators for run_with_arguments:
+#   @require_roles(*names)  — checks wids claim (directory roles).
+#                             Hard-fail if none match. Delegated tokens only.
+#   @require_scopes(*scopes) — checks scp claim (OAuth delegated scopes).
+#                              Warning only; the API call may still succeed.
+#                              Skipped for app-only tokens.
+#
+# wids contains role template IDs for roles the user currently holds,
+# including PIM-activated assignments.
 
 from __future__ import annotations
+
+# Built-in imports
+from functools import wraps
 
 # External library imports
 from loguru import logger
@@ -30,8 +40,7 @@ _ROLE_TEMPLATE_IDS: dict[str, str] = {
 }
 
 
-def get_wids_roles(token: str) -> list[str]:
-    """Return the list of directory role names present in the token's wids claim."""
+def _get_wids_roles(token: str) -> list[str]:
     try:
         _, payload, _ = parse_jwt(token)
         wids: list[str] = payload.get("wids", [])
@@ -40,25 +49,60 @@ def get_wids_roles(token: str) -> list[str]:
         return []
 
 
-async def require_any_role(context, required: list[str]) -> bool:
-    """Return True if the token holder has at least one of the required directory roles.
+def _get_scp_scopes(token: str) -> frozenset[str]:
+    try:
+        _, payload, _ = parse_jwt(token)
+        scp: str = payload.get("scp", "")
+        return frozenset(scp.split()) if scp else frozenset()
+    except Exception:
+        return frozenset()
 
-    Returns True unconditionally for app-only tokens (no wids claim).
-    Logs the gap and returns False when none of the required roles are present.
+
+def require_roles(*roles: str):
+    """Decorator: hard-fail if the delegated token lacks all of the listed directory roles.
+
+    Passes if the token contains at least one of the named roles in its wids claim.
+    App-only tokens are not checked (no wids claim).
+    Stack outside @handle_graph_errors so auth errors still propagate normally.
     """
-    if context.is_app_only:
-        return True
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(context, args):
+            if context.is_app_only:
+                return await fn(context, args)
+            token = await context.get_access_token()
+            if token:
+                user_roles = _get_wids_roles(token)
+                if not any(r in user_roles for r in roles):
+                    logger.error(
+                        f"Insufficient directory roles. "
+                        f"Required (any one of): {', '.join(roles)}. "
+                        f"Token has: {', '.join(user_roles) or 'no elevated roles'}."
+                    )
+                    return 1
+            return await fn(context, args)
+        return wrapper
+    return decorator
 
-    token = await context.get_access_token()
-    if not token:
-        return True
 
-    user_roles = get_wids_roles(token)
-    if any(r in user_roles for r in required):
-        return True
+def require_scopes(*scopes: str):
+    """Decorator: warn if the delegated token is missing any of the listed OAuth scopes.
 
-    logger.error(
-        f"Insufficient directory roles. Required (any one of): {', '.join(required)}. "
-        f"Token has: {', '.join(user_roles) or 'no elevated roles'}."
-    )
-    return False
+    Continues execution so the actual API 403 can surface with its own message.
+    Skipped for app-only tokens (they use roles claim, not scp).
+    """
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(context, args):
+            if not context.is_app_only:
+                token = await context.get_access_token()
+                if token:
+                    token_scopes = _get_scp_scopes(token)
+                    missing = [s for s in scopes if s not in token_scopes]
+                    if missing:
+                        logger.warning(
+                            f"Token may be missing required scope(s): {', '.join(missing)}."
+                        )
+            return await fn(context, args)
+        return wrapper
+    return decorator
