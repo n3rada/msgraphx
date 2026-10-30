@@ -7,6 +7,7 @@ This file is the canonical development guidance for this repository.
 - Python version baseline is 3.12+ (see [pyproject.toml](pyproject.toml): `requires-python = ">=3.12,<4.0"`).
 - Do not introduce language features or dependencies incompatible with Python 3.12.
 - Use `uv` for environment and dependency workflows in this repo.
+- `verify=False` is intentional for intercepting proxies and self-signed assessment environments. Do not flag or remove it.
 
 ## Read Order
 
@@ -184,6 +185,7 @@ The `--save-dir` argument in `aad search` saves results to disk as JSON files �
   - **Tool stops** (re-raise / fatal failure): `logger.exception("...")` — ERROR level with full traceback, no need to interpolate `{exc}` in the message.
   - **Tool continues** (recoverable / per-item failure): `logger.error(f"...: {exc}")` — message only, no traceback.
 - Use `logger.trace(...)` for deep developer-facing logs (request parameters, intermediate values, per-iteration data); `logger.debug(...)` for general internal state; `logger.success(...)` for completed operations; `logger.warning(...)` for recoverable issues; `logger.error(...)` for non-recoverable ones that do not halt the process.
+- Use Loguru for operational stderr output and the shared [`console`](src/msgraphx/utils/console.py) for operator-facing stdout. Do not call bare `print()` for operational output.
 - Never use `except Exception: pass` — silent swallowing masks real failures.
 
 ### 4. Async
@@ -278,8 +280,16 @@ Prefer composing small, focused functions and passing `GraphContext` over buildi
 
 ## Git Conventions
 
-- Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): short description`. One-liner, no body.
-- Always sign commits with `-S`.
+- Submit one focused, signed commit for a completed change. Amend it during iteration instead of adding fixup commits.
+- Use the [Conventional Commits 1.0.0 specification](https://www.conventionalcommits.org/en/v1.0.0/) with one-line subjects and no commit body: `type(scope): summary` or `type: summary`.
+- Use `feat`, `fix`, `refactor`, `test`, `docs`, or `chore` as appropriate. Omit the scope rather than using empty parentheses.
+- Commit with the human contributor's configured identity. Never add an AI or LLM as a co-author or include AI-generated attribution trailers.
+- The human contributor is responsible for understanding, reviewing, signing, and owning every submitted change.
+- Preserve another contributor's commits and authorship on shared pull requests unless a history rewrite is explicitly agreed.
+
+Examples: `feat(search): add drive item filters`, `fix(tokens): preserve refreshed scopes`, `test(pagination): cover empty pages`, and `docs: explain GraphContext`.
+
+Avoid vague subjects such as `fix stuff`, empty scopes such as `feat(): add a module`, multi-line messages, and AI `Co-authored-by` trailers.
 
 ## Testing
 
