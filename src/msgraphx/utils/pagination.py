@@ -187,9 +187,7 @@ async def collect_all(
     Example:
         all_groups = await collect_all(
             client.groups,
-            GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-                query_parameters=query_params
-            )
+            RequestConfiguration(query_parameters=query_params)
         )
     """
     return await GraphPaginator(

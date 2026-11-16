@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
 from rich.table import Table
@@ -72,9 +73,7 @@ async def fetch_all(
         ],
         top=999,
     )
-    config = GroupsRequestBuilder.GroupsRequestBuilderGetRequestConfiguration(
-        query_parameters=query_params
-    )
+    config = RequestConfiguration(query_parameters=query_params)
     all_groups = await collect_all(context.graph_client.groups, config)
 
     if teams_only:

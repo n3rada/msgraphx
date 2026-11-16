@@ -13,6 +13,7 @@ from pathlib import Path
 # External library imports
 import httpx
 from azure.identity.aio import ClientSecretCredential
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from rich.console import Console
 
@@ -519,9 +520,7 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
             filter=f"appId eq '{client_id}'", select=["displayName", "appId"]
         )
-        request_config = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetRequestConfiguration(
-            query_parameters=query_params
-        )
+        request_config = RequestConfiguration(query_parameters=query_params)
         sps = await graph_client.service_principals.get(
             request_configuration=request_config
         )
