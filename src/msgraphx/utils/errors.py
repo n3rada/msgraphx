@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 import sys
 import functools
-import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -54,7 +54,8 @@ def is_graph_auth_error(exc: Exception) -> bool:
     if not err_obj:
         return False
 
-    # Extract code and message if available
+    # ODataError carries code/message on its MainError payload (`.error`), not on itself
+    err_obj = getattr(err_obj, "error", None) or err_obj
     code = getattr(err_obj, "code", None)
     message = getattr(err_obj, "message", "")
 
@@ -95,7 +96,8 @@ def check_and_exit_for_auth_error(exc: Exception) -> None:
     if not err_obj:
         return
 
-    # Extract code and message if available
+    # ODataError carries code/message on its MainError payload (`.error`), not on itself
+    err_obj = getattr(err_obj, "error", None) or err_obj
     code = getattr(err_obj, "code", None)
     message = getattr(err_obj, "message", "")
 
@@ -180,7 +182,7 @@ def handle_graph_errors(func: Callable) -> Callable:
     Use on async functions as well; the decorator preserves coroutine behaviour.
     """
 
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
