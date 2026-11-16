@@ -21,6 +21,20 @@ These flags are available to every subcommand.
 | `--trace` | Enable TRACE logging. |
 | `--log-level LEVEL` | Set log level explicitly: `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 
+### Logs
+
+Console logs go to stderr, so stdout carries only results. Every run is also recorded in `msgraphx.jsonl`, one JSON object per line (`ts`, `level`, `msg`, `module`, `function`, `line`, `exception`, plus `extra` when bound).
+
+| Setting | Default |
+|---------|---------|
+| Directory | `$XDG_STATE_HOME/msgraphx/logs/` (Linux), `%LOCALAPPDATA%\msgraphx\logs\` (Windows); override with `MSGRAPHX_LOG_DIR` |
+| Rotation | `10 MB`; override with `MSGRAPHX_LOG_MAX_BYTES` |
+| Retention | `14` days; override with `MSGRAPHX_LOG_RETENTION_DAYS` |
+
+```bash
+jq -r 'select(.level == "ERROR") | "\(.ts) \(.msg)"' ~/.local/state/msgraphx/logs/msgraphx.jsonl
+```
+
 ---
 
 ## refresh

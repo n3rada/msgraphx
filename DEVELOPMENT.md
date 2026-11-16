@@ -260,7 +260,7 @@ Prefer composing small, focused functions and passing `GraphContext` over buildi
 | [`src/msgraphx/utils/errors.py`](src/msgraphx/utils/errors.py) | `handle_graph_errors`, `AuthenticationError`, `ForbiddenGraphError` |
 | [`src/msgraphx/utils/cache.py`](src/msgraphx/utils/cache.py) | Result persistence and retrieval |
 | [`src/msgraphx/utils/tokens.py`](src/msgraphx/utils/tokens.py) | Token loading, refresh, `.roadtools_auth` interop |
-| [`src/msgraphx/utils/logbook.py`](src/msgraphx/utils/logbook.py) | Loguru configuration |
+| [`src/msgraphx/utils/logbook.py`](src/msgraphx/utils/logbook.py) | Loguru configuration: colored stderr sink and rotating `msgraphx.jsonl` file sink |
 | [`src/msgraphx/utils/console.py`](src/msgraphx/utils/console.py) | Shared Rich `Console` instance (stdout) |
 | [`src/msgraphx/utils/output.py`](src/msgraphx/utils/output.py) | `print_json(data)` — JSON-to-stdout for `--json` mode |
 | [`tests/`](tests/) | pytest suite |
