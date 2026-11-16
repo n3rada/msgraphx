@@ -46,8 +46,9 @@ def test_parse_indices(spec: str, total: int, expected: list[int]):
 
 @pytest.fixture()
 def xdg_data_home(tmp_path, monkeypatch):
-    """Override XDG_DATA_HOME so cache goes to a temp directory."""
+    """Redirect the cache base directory (XDG_DATA_HOME on POSIX, APPDATA on Windows) to a temp directory."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
     return tmp_path
 
 
