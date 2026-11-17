@@ -8,13 +8,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.group import Group
+from msgraph.generated.users.item.transitive_member_of.graph_group.graph_group_request_builder import (
+    GraphGroupRequestBuilder,
+)
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
+
+# Directory collections accept $top up to 999.
+_PAGE_SIZE = 999
 
 
 async def fetch(
@@ -22,8 +30,8 @@ async def fetch(
 ) -> list[dict[str, Any]]:
     """Return the groups the current user transitively belongs to.
 
-    Only the first page of `/me/transitiveMemberOf/microsoft.graph.group`
-    is read. Groups are sorted by creation time, newest first.
+    Reads every page of `/me/transitiveMemberOf/microsoft.graph.group`.
+    Groups are sorted by creation time, newest first.
 
     Args:
         context: Shared Graph runtime context (delegated auth).
@@ -37,10 +45,16 @@ async def fetch(
         `None`).
 
     Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
         ODataError: If the Graph API rejects the request.
     """
-    result = await context.graph_client.me.transitive_member_of.graph_group.get()
-    groups = result.value if result and result.value else []
+    query_params = GraphGroupRequestBuilder.GraphGroupRequestBuilderGetQueryParameters(
+        top=_PAGE_SIZE,
+    )
+    groups: list[Group] = await pagination.collect_all(
+        context.graph_client.me.transitive_member_of.graph_group,
+        RequestConfiguration(query_parameters=query_params),
+    )
 
     if visibility:
         groups = [g for g in groups if g.visibility == visibility]

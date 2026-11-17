@@ -15,6 +15,7 @@ from typing import Any
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.used_insight import UsedInsight
 from msgraph.generated.users.item.insights.used.used_request_builder import (
     UsedRequestBuilder,
 )
@@ -22,10 +23,12 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
+
+_MAX_PAGE_SIZE = 100
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the `me used` options on the parser.
@@ -46,48 +49,52 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict[str, Any]]:
     """Return documents the current user recently used as plain dicts.
 
     Uses the deprecated `/me/insights/used` API; the SDK's deprecation
-    warning is suppressed. Only the first page of results is read.
+    warning is suppressed. Pages are followed until `top` items are
+    collected or the results run out.
 
     Args:
         context: Shared Graph runtime context (delegated auth).
-        top: Maximum number of items to request (capped at 100).
+        top: Maximum number of items to return. Each page requests at most
+            100.
 
     Returns:
         One dict per item with the keys `type`, `title`, `site`,
         `last_used` (`YYYY-MM-DD`), `url`, and `id`.
 
     Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
         ODataError: If the Graph API rejects the request.
     """
     query_params = UsedRequestBuilder.UsedRequestBuilderGetQueryParameters(
-        top=min(top, 100),
+        top=min(top, _MAX_PAGE_SIZE),
     )
     config = RequestConfiguration(query_parameters=query_params)
 
+    rows: list[dict[str, Any]] = []
+    item: UsedInsight
+    # The SDK warns on every request to this deprecated endpoint, including
+    # next-page requests, so the whole iteration is covered.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        result = await context.graph_client.me.insights.used.get(
-            request_configuration=config
-        )
+        async for item in pagination.GraphPaginator(
+            context.graph_client.me.insights.used, config
+        ):
+            viz = item.resource_visualization
+            ref = item.resource_reference
+            last_used = ""
+            if item.last_used and item.last_used.last_accessed_date_time:
+                last_used = item.last_used.last_accessed_date_time.strftime("%Y-%m-%d")
 
-    items = (result.value or []) if result else []
-
-    rows: list[dict[str, Any]] = []
-    for item in items:
-        viz = item.resource_visualization
-        ref = item.resource_reference
-        last_used = ""
-        if item.last_used and item.last_used.last_accessed_date_time:
-            last_used = item.last_used.last_accessed_date_time.strftime("%Y-%m-%d")
-
-        rows.append({
-            "type": (viz.type if viz else None),
-            "title": (viz.title if viz else None),
-            "site": (viz.container_display_name if viz else None),
-            "last_used": last_used,
-            "url": (ref.web_url if ref else None),
-            "id": (ref.id if ref else None),
-        })
+            rows.append({
+                "type": (viz.type if viz else None),
+                "title": (viz.title if viz else None),
+                "site": (viz.container_display_name if viz else None),
+                "last_used": last_used,
+                "url": (ref.web_url if ref else None),
+                "id": (ref.id if ref else None),
+            })
+            if len(rows) >= top:
+                break
 
     return rows
 

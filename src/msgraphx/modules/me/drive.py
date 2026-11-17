@@ -18,8 +18,6 @@ import argparse
 import asyncio
 from io import BytesIO
 from pathlib import Path
-from typing import cast
-
 # External library imports
 from loguru import logger
 from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
@@ -32,7 +30,7 @@ from rich.tree import Tree
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ..sharepoint.download import download_drive, download_drive_item
@@ -136,13 +134,13 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 async def _list_children(
     context: GraphContext, drive_id: str, item_id: str
 ) -> list[DriveItem]:
-    """Return the first page of children of a drive item."""
-    resp = (
-        await context.graph_client.drives.by_drive_id(drive_id)
+    """Return every child of a drive item, following all result pages."""
+    children: list[DriveItem] = await pagination.collect_all(
+        context.graph_client.drives.by_drive_id(drive_id)
         .items.by_drive_item_id(item_id)
-        .children.get()
+        .children
     )
-    return resp.value if resp and resp.value else []
+    return children
 
 async def _build_tree(
     context: GraphContext,
@@ -181,8 +179,10 @@ async def _build_tree(
     for folder in folders:
         size_info = f"  [dim]{folder.folder.child_count} item(s)[/dim]" if folder.folder else ""
         branch = node.add(f"[bold cyan]{folder.name}/[/bold cyan]{size_info}")
-        # Graph always returns an id for listed children; the SDK model marks it optional.
-        await _build_tree(context, drive_id, cast(str, folder.id), branch, depth + 1, max_depth)
+        if not folder.id:
+            logger.warning(f"Skipping folder without an ID: {folder.name}")
+            continue
+        await _build_tree(context, drive_id, folder.id, branch, depth + 1, max_depth)
 
     for f in files:
         size_bytes = f.size or 0
@@ -203,7 +203,8 @@ async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespa
         args: Parsed CLI arguments (`path`, `depth`).
 
     Returns:
-        0 on success, 1 if `--path` does not resolve to an item.
+        0 on success, 1 if `--path` does not resolve to an item or the
+        drive root cannot be retrieved.
     """
     folder_path = (args.path or "").strip("/")
     max_depth = args.depth
@@ -222,6 +223,9 @@ async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespa
         label = f"[bold]{folder_path}/[/bold]"
     else:
         root_item = await context.graph_client.drives.by_drive_id(drive_id).root.get()
+        if not root_item or not root_item.id:
+            logger.error("Could not retrieve the OneDrive root folder.")
+            return 1
         root_id = root_item.id
         label = "[bold]OneDrive/[/bold]"
 

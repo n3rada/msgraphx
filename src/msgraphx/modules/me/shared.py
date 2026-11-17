@@ -16,6 +16,7 @@ from typing import Any
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.shared_insight import SharedInsight
 from msgraph.generated.users.item.insights.shared.shared_request_builder import (
     SharedRequestBuilder,
 )
@@ -23,10 +24,12 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
+
+_MAX_PAGE_SIZE = 100
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the `me shared` options on the parser.
@@ -47,53 +50,57 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict[str, Any]]:
     """Return documents shared with the current user as plain dicts.
 
     Uses the deprecated `/me/insights/shared` API; the SDK's deprecation
-    warning is suppressed. Only the first page of results is read.
+    warning is suppressed. Pages are followed until `top` items are
+    collected or the results run out.
 
     Args:
         context: Shared Graph runtime context (delegated auth).
-        top: Maximum number of items to request (capped at 100).
+        top: Maximum number of items to return. Each page requests at most
+            100.
 
     Returns:
         One dict per item with the keys `type`, `title`, `site`,
         `shared_by`, `shared_date` (`YYYY-MM-DD`), `url`, and `id`.
 
     Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
         ODataError: If the Graph API rejects the request.
     """
     query_params = SharedRequestBuilder.SharedRequestBuilderGetQueryParameters(
-        top=min(top, 100),
+        top=min(top, _MAX_PAGE_SIZE),
     )
     config = RequestConfiguration(query_parameters=query_params)
 
+    rows: list[dict[str, Any]] = []
+    item: SharedInsight
+    # The SDK warns on every request to this deprecated endpoint, including
+    # next-page requests, so the whole iteration is covered.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        result = await context.graph_client.me.insights.shared.get(
-            request_configuration=config
-        )
+        async for item in pagination.GraphPaginator(
+            context.graph_client.me.insights.shared, config
+        ):
+            viz = item.resource_visualization
+            ref = item.resource_reference
+            shared_by = ""
+            shared_date = ""
+            if item.last_shared:
+                if item.last_shared.shared_by:
+                    shared_by = item.last_shared.shared_by.display_name or ""
+                if item.last_shared.shared_date_time:
+                    shared_date = item.last_shared.shared_date_time.strftime("%Y-%m-%d")
 
-    items = (result.value or []) if result else []
-
-    rows: list[dict[str, Any]] = []
-    for item in items:
-        viz = item.resource_visualization
-        ref = item.resource_reference
-        shared_by = ""
-        shared_date = ""
-        if item.last_shared:
-            if item.last_shared.shared_by:
-                shared_by = item.last_shared.shared_by.display_name or ""
-            if item.last_shared.shared_date_time:
-                shared_date = item.last_shared.shared_date_time.strftime("%Y-%m-%d")
-
-        rows.append({
-            "type": (viz.type if viz else None),
-            "title": (viz.title if viz else None),
-            "site": (viz.container_display_name if viz else None),
-            "shared_by": shared_by,
-            "shared_date": shared_date,
-            "url": (ref.web_url if ref else None),
-            "id": (ref.id if ref else None),
-        })
+            rows.append({
+                "type": (viz.type if viz else None),
+                "title": (viz.title if viz else None),
+                "site": (viz.container_display_name if viz else None),
+                "shared_by": shared_by,
+                "shared_date": shared_date,
+                "url": (ref.web_url if ref else None),
+                "id": (ref.id if ref else None),
+            })
+            if len(rows) >= top:
+                break
 
     return rows
 

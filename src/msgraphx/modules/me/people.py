@@ -13,6 +13,7 @@ from typing import Any
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.person import Person
 from msgraph.generated.users.item.people.people_request_builder import (
     PeopleRequestBuilder,
 )
@@ -20,10 +21,12 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
+
+_MAX_PAGE_SIZE = 1000
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the `me people` options on the parser.
@@ -54,11 +57,13 @@ async def fetch(
     """Return the people most relevant to the current user as plain dicts.
 
     Relevance is ranked by Graph from communication and collaboration
-    patterns. Only the first page of results is read.
+    patterns. Pages are followed until `top` people are collected or the
+    results run out.
 
     Args:
         context: Shared Graph runtime context (delegated auth).
-        top: Maximum number of people to request (capped at 1000).
+        top: Maximum number of people to return. Each page requests at most
+            1000.
         search: Name to filter on via server-side `$search`. `None` returns
             the unfiltered ranking.
 
@@ -68,19 +73,18 @@ async def fetch(
         `phone` (first number), `company`, and `office`.
 
     Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
         ODataError: If the Graph API rejects the request.
     """
     query_params = PeopleRequestBuilder.PeopleRequestBuilderGetQueryParameters(
-        top=min(top, 1000),
+        top=min(top, _MAX_PAGE_SIZE),
         search=f'"{search}"' if search else None,
     )
     config = RequestConfiguration(query_parameters=query_params)
 
-    result = await context.graph_client.me.people.get(request_configuration=config)
-    people = (result.value or []) if result else []
-
     rows: list[dict[str, Any]] = []
-    for person in people:
+    person: Person
+    async for person in pagination.GraphPaginator(context.graph_client.me.people, config):
         email = ""
         phones_list = person.phones or []
         phone = phones_list[0].number if phones_list else ""
@@ -99,6 +103,8 @@ async def fetch(
             "company": person.company_name,
             "office": person.office_location,
         })
+        if len(rows) >= top:
+            break
 
     return rows
 

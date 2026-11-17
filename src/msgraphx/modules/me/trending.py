@@ -13,6 +13,7 @@ from typing import Any
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.trending import Trending
 from msgraph.generated.users.item.insights.trending.trending_request_builder import (
     TrendingRequestBuilder,
 )
@@ -20,10 +21,12 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output
+from ...utils import output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
+
+_MAX_PAGE_SIZE = 100
 
 async def fetch(
     context: GraphContext,
@@ -32,40 +35,41 @@ async def fetch(
 ) -> list[dict[str, Any]]:
     """Return documents trending around the current user as plain dicts.
 
-    Only the first page of results is read; the type filter is applied
-    client-side after fetching.
+    The type filter is applied client-side. Pages are followed until `top`
+    matching items are collected or the results run out.
 
     Args:
         context: Shared Graph runtime context (delegated auth).
-        top: Maximum number of items to request (capped at 100).
+        top: Maximum number of matching items to return. Each page requests
+            at most 100.
         type_filter: Case-insensitive substring matched against the
             resource type (e.g. `Excel`). `None` keeps all items.
 
     Returns:
-        One dict per item with the keys `rank` (1-based), `type`, `title`,
-        `site`, `weight`, `url`, and `id`.
+        One dict per item with the keys `rank` (1-based, among returned
+        items), `type`, `title`, `site`, `weight`, `url`, and `id`.
 
     Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
         ODataError: If the Graph API rejects the request.
     """
     query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
-        top=min(top, 100),
+        top=min(top, _MAX_PAGE_SIZE),
     )
     config = RequestConfiguration(query_parameters=query_params)
 
-    result = await context.graph_client.me.insights.trending.get(
-        request_configuration=config
-    )
-    items = result.value if result and result.value else []
-
-    if type_filter:
-        low = type_filter.lower()
-        items = [
-            i for i in items
-            if i.resource_visualization
-            and i.resource_visualization.type
-            and low in i.resource_visualization.type.lower()
-        ]
+    low = type_filter.lower() if type_filter else None
+    items: list[Trending] = []
+    item: Trending
+    async for item in pagination.GraphPaginator(
+        context.graph_client.me.insights.trending, config
+    ):
+        viz = item.resource_visualization
+        if low and not (viz and viz.type and low in viz.type.lower()):
+            continue
+        items.append(item)
+        if len(items) >= top:
+            break
 
     return [
         {
