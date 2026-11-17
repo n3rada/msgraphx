@@ -118,7 +118,7 @@ async def fetch(
             "conversation_id": msg.conversation_id,
             "internet_message_id": msg.internet_message_id,
             "is_read": msg.is_read,
-            "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
+            "importance": msg.importance.value if msg.importance else None,
             "has_attachments": msg.has_attachments,
             "received_datetime": (
                 msg.received_date_time.isoformat() if msg.received_date_time else None

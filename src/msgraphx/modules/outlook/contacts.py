@@ -55,6 +55,39 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
+def _rank_contacts(
+    to_counter: Mapping[str, int],
+    cc_counter: Mapping[str, int],
+    names: Mapping[str, str],
+    top: int | None = None,
+) -> list[dict[str, Any]]:
+    """Rank contacts by To count, then CC count, then address.
+
+    Args:
+        to_counter: Messages per address where the address was in To.
+        cc_counter: Messages per address where the address was in CC.
+        names: Display name per address, where known.
+        top: Keep at most this many contacts; `None` keeps all.
+
+    Returns:
+        One dict per address in either counter, with `rank` (1-based),
+        `email`, `name` (or `None`), `to_count` and `cc_count`.
+    """
+    addrs = sorted(
+        set(to_counter) | set(cc_counter),
+        key=lambda a: (-to_counter.get(a, 0), -cc_counter.get(a, 0), a),
+    )
+    return [
+        {
+            "rank": rank,
+            "email": addr,
+            "name": names.get(addr),
+            "to_count": to_counter.get(addr, 0),
+            "cc_count": cc_counter.get(addr, 0),
+        }
+        for rank, addr in enumerate(addrs[:top], 1)
+    ]
+
 async def fetch(
     context: GraphContext,
     after: str | None = None,
@@ -78,8 +111,8 @@ async def fetch(
 
     Returns:
         A dict with `"sent"` and `"received"` lists. Each entry has `rank`,
-        `email`, `name`, `to_count` and `cc_count`, ordered by `to_count`
-        descending.
+        `email`, `name`, `to_count` and `cc_count`, ordered by `to_count`,
+        then `cc_count`, descending.
 
     Raises:
         ODataError: A Graph request failed.
@@ -194,37 +227,11 @@ async def fetch(
                 elif user_email in cc_addrs:
                     recv_cc_counter[sender] += 1
 
-    all_sent_addrs = set(to_counter) | set(cc_counter)
     return {
-        "sent": [
-            {
-                "rank": rank,
-                "email": addr,
-                "name": names.get(addr),
-                "to_count": to_counter.get(addr, 0),
-                "cc_count": cc_counter.get(addr, 0),
-            }
-            for rank, (addr, _) in enumerate(
-                sorted(all_sent_addrs, key=lambda a: -to_counter.get(a, 0)),
-                1,
-            )
-        ][:top],
-        "received": [
-            {
-                "rank": rank,
-                "email": addr,
-                "name": recv_names.get(addr),
-                "to_count": recv_to_counter.get(addr, 0),
-                "cc_count": recv_cc_counter.get(addr, 0),
-            }
-            for rank, (addr, _) in enumerate(
-                sorted(
-                    set(recv_to_counter) | set(recv_cc_counter),
-                    key=lambda a: -recv_to_counter.get(a, 0),
-                ),
-                1,
-            )
-        ][:top],
+        "sent": _rank_contacts(to_counter, cc_counter, names, top),
+        "received": _rank_contacts(
+            recv_to_counter, recv_cc_counter, recv_names, top
+        ),
     }
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -259,8 +266,10 @@ async def run_with_arguments(
     """Show the user's top mail correspondents, sent and received.
 
     Renders live tables while paging through mail, then optionally writes
-    the full ranking to `args.save` and/or prints it as JSON. Warns first if
-    the token lacks `Mail.ReadBasic`.
+    the full ranking to `args.save`. Under `--json` or `--ndjson` the live
+    tables are suppressed and the full ranking is printed as one JSON
+    document or one NDJSON line. Warns first if the token lacks
+    `Mail.ReadBasic`.
 
     Args:
         context: Shared Graph runtime context; must be delegated.
@@ -302,6 +311,7 @@ async def run_with_arguments(
     names: dict[str, str] = {}
 
     top_n = args.top if args.top > 0 else None
+    machine_output = context.json_output or context.ndjson_output
 
     def _build_table(
         counter: Counter[str], names_dict: Mapping[str, str], title: str
@@ -335,7 +345,7 @@ async def run_with_arguments(
             "SentItems"
         ).messages
 
-        live_ctx = contextlib.nullcontext() if context.json_output else Live(console=console, refresh_per_second=4)
+        live_ctx = contextlib.nullcontext() if machine_output else Live(console=console, refresh_per_second=4)
         with live_ctx as live:
             async for msg in GraphPaginator(sent_builder, request_config):
                 total += 1
@@ -371,12 +381,9 @@ async def run_with_arguments(
 
         logger.info(f"Analysed {total:,} sent messages")
 
-    if args.only == "sent":
-        return 0
-
     # --- Received analysis ---
     user_email = ""
-    if context.cached_user:
+    if args.only != "sent" and context.cached_user:
         user_email = (
             getattr(context.cached_user, "mail", None)
             or getattr(context.cached_user, "user_principal_name", None)
@@ -434,7 +441,7 @@ async def run_with_arguments(
         logger.info("Fetching received messages from Inbox")
 
         total_recv = 0
-        recv_live_ctx = contextlib.nullcontext() if context.json_output else Live(console=console, refresh_per_second=4)
+        recv_live_ctx = contextlib.nullcontext() if machine_output else Live(console=console, refresh_per_second=4)
         with recv_live_ctx as live:
             async for msg in GraphPaginator(inbox_builder, recv_cfg):
                 total_recv += 1
@@ -488,45 +495,16 @@ async def run_with_arguments(
             f"Received: {sum(recv_to_counter.values()):,} as To, "
             f"{sum(recv_cc_counter.values()):,} as CC"
         )
-    else:
+    elif args.only != "sent":
         logger.warning(
             "Could not determine your email address; skipping received analysis."
         )
 
-    if args.save or context.json_output:
-        all_addrs = set(to_counter) | set(cc_counter)
+    if args.save or machine_output:
         data = {
-            "sent": [
-                {
-                    "rank": rank,
-                    "email": addr,
-                    "name": names.get(addr),
-                    "to_count": to_counter.get(addr, 0),
-                    "cc_count": cc_counter.get(addr, 0),
-                }
-                for rank, (addr, _) in enumerate(
-                    sorted(all_addrs, key=lambda a: -to_counter.get(a, 0)), 1
-                )
-            ],
-            "received": (
-                [
-                    {
-                        "rank": rank,
-                        "email": addr,
-                        "name": recv_names.get(addr) if user_email else None,
-                        "to_count": recv_to_counter.get(addr, 0) if user_email else 0,
-                        "cc_count": recv_cc_counter.get(addr, 0) if user_email else 0,
-                    }
-                    for rank, (addr, _) in enumerate(
-                        sorted(
-                            set(recv_to_counter) | set(recv_cc_counter),
-                            key=lambda a: -recv_to_counter.get(a, 0),
-                        ),
-                        1,
-                    )
-                ]
-                if user_email
-                else []
+            "sent": _rank_contacts(to_counter, cc_counter, names),
+            "received": _rank_contacts(
+                recv_to_counter, recv_cc_counter, recv_names
             ),
         }
 
@@ -539,5 +517,7 @@ async def run_with_arguments(
 
         if context.json_output:
             output.print_json(data)
+        elif context.ndjson_output:
+            output.print_ndjson_item(data)
 
     return 0

@@ -16,13 +16,14 @@ from typing import Any
 
 # External library imports
 from loguru import logger
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import output
 from ...utils.cache import load_results, parse_indices
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
@@ -81,7 +82,7 @@ def _extract_mime(raw: bytes) -> dict[str, Any]:
                 continue
 
             payload = part.get_payload(decode=True)
-            if payload is None:
+            if not isinstance(payload, bytes):
                 continue
             charset = part.get_content_charset() or "utf-8"
             text = payload.decode(charset, errors="replace")
@@ -92,7 +93,7 @@ def _extract_mime(raw: bytes) -> dict[str, Any]:
                 body_html = text
     else:
         payload = msg.get_payload(decode=True)
-        if payload:
+        if isinstance(payload, bytes) and payload:
             charset = msg.get_content_charset() or "utf-8"
             text = payload.decode(charset, errors="replace")
             if msg.get_content_type() == "text/html":
@@ -140,6 +141,7 @@ def _render(parsed: Mapping[str, Any]) -> None:
 
     # Body: render HTML as Markdown for rich display, plain text as-is
     body_raw = parsed["body"]
+    body_renderable: RenderableType
     if body_raw and "<" in body_raw:
         body_renderable = render_html(body_raw)
     else:
@@ -151,7 +153,7 @@ def _render(parsed: Mapping[str, Any]) -> None:
         attach_text.append(f"\n   {name}", style="yellow")
 
     # Compose panel using Group to mix Text and Markdown renderables
-    parts = [header]
+    parts: list[RenderableType] = [header]
     if body_raw:
         parts.append(Text("─" * 2, style="dim"))
         parts.append(body_renderable)
@@ -192,7 +194,9 @@ async def run_with_arguments(
 
     Messages are picked by 1-based index (e.g. `"3"` or `"1,3-5"`) from the
     last `outlook search`. A message that fails to fetch is logged and
-    skipped. Warns first if the token lacks `Mail.Read`.
+    skipped. Under `--json` or `--ndjson` the parsed messages (`index`,
+    `message_id` and the `_extract_mime` fields) are printed instead of Rich
+    panels. Warns first if the token lacks `Mail.Read`.
 
     Args:
         context: Shared Graph runtime context; must be delegated.
@@ -209,7 +213,7 @@ async def run_with_arguments(
         logger.error("This module requires delegated authentication (user context).")
         return 1
 
-    cached = load_results(key="mail")
+    cached = load_results(key="mail", identity=context.identity_hash)
     if not cached:
         logger.error("No cached mail search results. Run 'outlook search' first.")
         return 1
@@ -219,6 +223,7 @@ async def run_with_arguments(
         logger.error(f"Invalid index: {args.index} (cached: 1-{len(cached)})")
         return 1
 
+    results: list[dict[str, Any]] = []
     for idx in indices:
         item = cached[idx]
         message_id = item.get("message_id")
@@ -241,6 +246,16 @@ async def run_with_arguments(
             continue
 
         parsed = _extract_mime(mime_bytes)
-        _render(parsed)
+        if context.json_output:
+            results.append({"index": idx + 1, "message_id": message_id, **parsed})
+        elif context.ndjson_output:
+            output.print_ndjson_item(
+                {"index": idx + 1, "message_id": message_id, **parsed}
+            )
+        else:
+            _render(parsed)
+
+    if context.json_output:
+        output.print_json(results)
 
     return 0
