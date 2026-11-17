@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 
 # External library imports
@@ -15,7 +16,7 @@ from msgraph.graph_service_client import GraphServiceClient
 # Local library imports
 from ...core.context import GraphContext
 from ...utils import cache, pagination
-from ...utils.errors import handle_graph_errors
+from ...utils.errors import handle_graph_errors, is_graph_auth_error
 from ...utils.roles import require_scopes
 
 
@@ -32,7 +33,8 @@ async def download_drive_item(
     """Download a drive item, recursing into folders.
 
     Folder children are downloaded concurrently. Per-item failures are logged
-    and do not stop the rest of the download.
+    and do not stop the rest of the download, except authentication failures,
+    which abort it. Items without a name or ID are skipped with a warning.
 
     Args:
         graph_client: Authenticated Graph client.
@@ -52,6 +54,13 @@ async def download_drive_item(
         AuthenticationError: The Graph token is invalid or expired.
     """
     downloaded_count = 0
+
+    if not item.name or not item.id:
+        logger.warning(
+            f"Skipping drive item without name or ID under '{base_path or '/'}' "
+            f"(id={item.id!r}, name={item.name!r})"
+        )
+        return 0
 
     # Build the full path
     current_path = f"{base_path}/{item.name}" if base_path else item.name
@@ -82,14 +91,11 @@ async def download_drive_item(
                     for child in children
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                for result in results:
-                    if isinstance(result, BaseException):
-                        logger.error(f"Error in folder {current_path}: {result}")
-                    elif isinstance(result, int):
-                        downloaded_count += result
+                downloaded_count += _sum_results(results, f"folder {current_path}")
 
         except Exception as e:
+            if _is_auth_failure(e):
+                raise
             logger.error(f"Failed to list folder {current_path}: {e}")
 
     elif item.file:
@@ -112,6 +118,46 @@ async def download_drive_item(
     return downloaded_count
 
 
+def _is_auth_failure(exc: BaseException) -> bool:
+    """Return True if `exc` means the Graph token is invalid or expired.
+
+    Accepts the `BaseException` values `asyncio.gather` returns, such as
+    `CancelledError`, which are never auth failures.
+
+    Args:
+        exc: The exception to inspect.
+    """
+    return isinstance(exc, Exception) and is_graph_auth_error(exc)
+
+
+def _sum_results(results: Sequence[int | BaseException], where: str) -> int:
+    """Total the per-item counts from `asyncio.gather(return_exceptions=True)`.
+
+    Args:
+        results: Gathered results: a file count or the exception a task raised.
+        where: Location used in error log messages, e.g. "folder Docs".
+
+    Returns:
+        The sum of the integer results. Other exceptions are logged.
+
+    Raises:
+        AuthenticationError: A task failed because the token is invalid or
+            expired; the first such error is re-raised to stop the dump.
+    """
+    total = 0
+    auth_error: BaseException | None = None
+    for result in results:
+        if not isinstance(result, BaseException):
+            total += result
+        elif _is_auth_failure(result):
+            auth_error = auth_error or result
+        else:
+            logger.error(f"Error in {where}: {result}")
+    if auth_error is not None:
+        raise auth_error
+    return total
+
+
 @handle_graph_errors
 async def _download_file(
     graph_client: GraphServiceClient,
@@ -123,7 +169,7 @@ async def _download_file(
 ) -> int:
     """Download one file to `output_dir / current_path`.
 
-    Errors are logged rather than raised.
+    Errors are logged rather than raised, except authentication failures.
 
     Args:
         graph_client: Authenticated Graph client.
@@ -141,6 +187,10 @@ async def _download_file(
     Raises:
         AuthenticationError: The Graph token is invalid or expired.
     """
+    if not item.id:
+        logger.warning(f"Skipping file without an ID: {current_path}")
+        return 0
+
     try:
         # Create the directory structure
         file_path = output_dir / current_path
@@ -177,6 +227,8 @@ async def _download_file(
             return 0
 
     except Exception as e:
+        if _is_auth_failure(e):
+            raise
         logger.error(f"Failed to download {current_path}: {e}")
         return 0
 
@@ -190,7 +242,8 @@ async def download_drive(
 ) -> int:
     """Download every file in a drive into a folder named after the drive.
 
-    Errors are logged rather than raised.
+    Errors are logged rather than raised, except authentication failures,
+    which abort the dump. A drive without a name is saved under its ID.
 
     Args:
         graph_client: Authenticated Graph client.
@@ -203,22 +256,28 @@ async def download_drive(
     Returns:
         The number of files downloaded or skipped as already present; 0 if
         the drive is empty or could not be read.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
     """
     logger.info(f"Starting drive dump: {drive_id}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Max concurrent downloads: {max_concurrent}")
     if skip_existing:
-        logger.info(f" Resume mode: Skipping existing files")
+        logger.info(" Resume mode: Skipping existing files")
 
     try:
         # Get drive info
         drive = await graph_client.drives.by_drive_id(drive_id).get()
+        if drive is None:
+            logger.error(f"Drive not found: {drive_id}")
+            return 0
         logger.info(
             f"Drive: {drive.name} (Owner: {drive.owner.user.display_name if drive.owner and drive.owner.user else 'Unknown'})"
         )
 
         # Create output directory inside a folder named after the drive
-        drive_folder = output_dir / drive.name
+        drive_folder = output_dir / (drive.name or drive_id)
         drive_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"Files will be saved to: {drive_folder}")
 
@@ -246,17 +305,14 @@ async def download_drive(
             for item in root_children
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, BaseException):
-                logger.error(f"Error during download: {result}")
-            elif isinstance(result, int):
-                total_downloaded += result
+        total_downloaded += _sum_results(results, "drive root")
 
         logger.success(f"Download complete! Total files: {total_downloaded}")
         return total_downloaded
 
     except Exception as e:
+        if _is_auth_failure(e):
+            raise
         logger.error(f"Failed to download drive: {e}")
         return 0
 
@@ -352,6 +408,10 @@ async def _download_from_cache(context: GraphContext, args: argparse.Namespace) 
 
     Returns:
         0 if at least one file was downloaded, 1 otherwise.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired. The
+            caller's `handle_graph_errors` converts raw auth `ODataError`s.
     """
     cached = cache.load_results(key="sharepoint", identity=context.identity_hash)
     if not cached:
@@ -417,6 +477,8 @@ async def _download_from_cache(context: GraphContext, args: argparse.Namespace) 
                 failed += 1
 
         except Exception as exc:
+            if _is_auth_failure(exc):
+                raise
             logger.error(f"Failed to download {name}: {exc}")
             failed += 1
 

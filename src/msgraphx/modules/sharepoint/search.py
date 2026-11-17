@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -20,9 +21,8 @@ from .groups import get_user_m365_groups
 from ...core.context import GraphContext
 from ...core.drive_search import DriveSearchBase
 from ...utils import cache, output
-from ...utils.console import console
 from ...utils.dates import parse_date_string
-from ...utils.errors import handle_graph_errors
+from ...utils.errors import handle_graph_errors, is_graph_auth_error
 from ...utils.roles import require_scopes
 
 
@@ -163,16 +163,25 @@ async def fetch(
     Args:
         context: Shared Graph runtime context.
         query: KQL query string. "*" matches everything.
-        region: Unused; accepted for API compatibility.
+        region: Search region for app-only tokens (e.g. "EMEA", "NAM"),
+            overriding `context.region`. None keeps `context.region`. Graph
+            only uses the region for application permissions, so delegated
+            tokens ignore it.
         drive_id: Restrict results to this drive.
         group_ids: Restrict results to sites owned by these M365 group IDs.
-        after: Only return items modified after this ISO 8601 date.
-        before: Only return items modified before this ISO 8601 date.
+        after: Only return items created at or after this ISO 8601 date.
+        before: Only return items created at or before this ISO 8601 date.
 
     Returns:
         One row per matching drive item, as built by
         `core.drive_search.drive_item_to_dict`.
+
+    Raises:
+        ForbiddenGraphError: The search API returned 403 Forbidden.
     """
+    if region:
+        # DriveSearchBase.fetch reads the region from the context.
+        context = dataclasses.replace(context, region=region)
     return await SharePointSearch.fetch(
         context,
         query=query,
@@ -264,7 +273,9 @@ async def run_with_arguments(
         "onedrive": SharePointOneDriveOptions(include_content=SearchContent.PrivateContent),
     }
     resolved_scope = _SCOPE_MAP.get(scope) if scope else None
-    resolved_label = {"sharepoint": "SharePoint", "onedrive": "OneDrive"}.get(scope, "SharePoint / OneDrive")
+    resolved_label = {"sharepoint": "SharePoint", "onedrive": "OneDrive"}.get(
+        scope or "", "SharePoint / OneDrive"
+    )
 
     group_ids: list[str] | None = None
     if getattr(args, "my_groups", False):
@@ -311,6 +322,9 @@ async def _run_with_save(
 ) -> int:
     """Run the search and download every result into `save_dir`.
 
+    Honors the same scoping as the display path: `--my-groups` group IDs,
+    the resolved `--site` path, and the `--scope` content filter, read from
+    `args._group_ids`, `args._site_path`, and `args._resolved_scope`.
     Each file is written next to a `<name>_info.json` file holding its search
     metadata; files whose data and metadata both exist are skipped. Results
     are cached under the `sharepoint` key and printed as JSON in `--json`
@@ -318,11 +332,16 @@ async def _run_with_save(
 
     Args:
         context: Shared Graph runtime context.
-        args: Parsed `sharepoint search` arguments.
+        args: Parsed `sharepoint search` arguments, with the scoping
+            attributes set by `run_with_arguments`.
         save_dir: Existing directory to download into.
 
     Returns:
         0 on success (including no results), 1 if a date filter is invalid.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired. The
+            caller's `handle_graph_errors` converts raw auth `ODataError`s.
     """
     search_query = args.query
     hunt = getattr(args, "hunt", None)
@@ -354,10 +373,14 @@ async def _run_with_save(
         before=before_iso,
         drive_id=getattr(args, "drive_id", None),
         group_ids=getattr(args, "_group_ids", None),
+        scope=getattr(args, "_resolved_scope", None),
+        site_path=getattr(args, "_site_path", None),
     )
 
     if not items:
         logger.info("No results found.")
+        if context.json_output:
+            output.print_json([])
         return 0
 
     cache.save_results(items, key="sharepoint", identity=context.identity_hash)
@@ -392,6 +415,8 @@ async def _run_with_save(
             else:
                 logger.warning(f"Empty file: {item['name']}")
         except Exception as exc:
+            if is_graph_auth_error(exc):
+                raise
             logger.error(f"Failed to download {item['name']}: {exc}")
             failed += 1
 

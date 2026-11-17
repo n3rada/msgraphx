@@ -37,6 +37,7 @@ from typing import Any
 from loguru import logger
 from msgraph.generated.models.entity_type import EntityType
 from msgraph.generated.models.group import Group
+from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph.generated.models.site import Site
 from rich.table import Table
 
@@ -44,7 +45,7 @@ from ...core import graph_search
 from ...core.context import GraphContext
 from ...utils import cache, output
 from ...utils.console import console
-from ...utils.errors import handle_graph_errors
+from ...utils.errors import handle_graph_errors, is_graph_auth_error
 from ...utils.roles import require_scopes
 from .groups import get_user_m365_groups
 
@@ -127,12 +128,61 @@ def _site_obj_to_dict(
         d.update(group_info)
     return d
 
+def _group_info(group: Group) -> dict[str, Any]:
+    """Return the group fields embedded in site rows.
+
+    Args:
+        group: The owning M365 Unified group.
+
+    Returns:
+        A dict with `group_id`, `group_name`, and `group_visibility`.
+    """
+    return {
+        "group_id": group.id,
+        "group_name": group.display_name or "",
+        "group_visibility": group.visibility or "",
+    }
+
+
+async def _get_group_root_site(context: GraphContext, group: Group) -> Site | None:
+    """Return the group's root SharePoint site via `GET /groups/{id}/sites/root`.
+
+    A group without a provisioned site (404) is logged at debug level; any
+    other Graph error is logged as a warning. Both return None so one group
+    cannot abort the whole enumeration.
+
+    Args:
+        context: Shared Graph runtime context.
+        group: The M365 Unified group whose site to fetch.
+
+    Returns:
+        The root site, or None if the group has no ID, no site, or the
+        request failed.
+
+    Raises:
+        ODataError: The token is invalid or expired; re-raised so the
+            entry point's `handle_graph_errors` stops the command.
+    """
+    if not group.id:
+        return None
+    try:
+        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
+    except ODataError as exc:
+        if is_graph_auth_error(exc):
+            raise
+        label = group.display_name or group.id
+        if exc.response_status_code == 404:
+            logger.debug(f"Group '{label}' has no SharePoint site.")
+        else:
+            logger.warning(f"Failed to resolve site for group '{label}': {exc}")
+        return None
+    return site if site and site.id else None
+
+
 async def _resolve_group_sites(
     context: GraphContext, group: Group
 ) -> list[tuple[str, dict[str, Any]]]:
     """Return the group's root site ID paired with the group's details.
-
-    Uses `GET /groups/{id}/sites/root`. Errors are silently ignored.
 
     Args:
         context: Shared Graph runtime context.
@@ -141,30 +191,21 @@ async def _resolve_group_sites(
     Returns:
         A list holding one tuple (site_id, group_info), where group_info has
         `group_id`, `group_name`, and `group_visibility`; empty if the site
-        could not be resolved.
+        could not be resolved (see `_get_group_root_site`).
+
+    Raises:
+        ODataError: The token is invalid or expired.
     """
-    if not group.id:
+    site = await _get_group_root_site(context, group)
+    if site is None or not site.id:
         return []
-    info = {
-        "group_id": group.id,
-        "group_name": group.display_name or "",
-        "group_visibility": group.visibility or "",
-    }
-    results: list[tuple[str, dict[str, Any]]] = []
-    try:
-        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
-        if site and site.id:
-            results.append((site.id, info))
-    except Exception:
-        pass
-    return results
+    return [(site.id, _group_info(group))]
+
 
 async def _fetch_group_sites(
     context: GraphContext, group: Group
 ) -> list[dict[str, Any]]:
     """Return the group's root site as an output row with group details.
-
-    Uses `GET /groups/{id}/sites/root`. Errors are silently ignored.
 
     Args:
         context: Shared Graph runtime context.
@@ -173,23 +214,15 @@ async def _fetch_group_sites(
     Returns:
         A list holding the site row (see `_site_obj_to_dict`) with
         `group_id`, `group_name`, and `group_visibility`; empty if the site
-        could not be fetched.
+        could not be fetched (see `_get_group_root_site`).
+
+    Raises:
+        ODataError: The token is invalid or expired.
     """
-    if not group.id:
+    site = await _get_group_root_site(context, group)
+    if site is None:
         return []
-    info = {
-        "group_id": group.id,
-        "group_name": group.display_name or "",
-        "group_visibility": group.visibility or "",
-    }
-    results: list[dict[str, Any]] = []
-    try:
-        site = await context.graph_client.groups.by_group_id(group.id).sites.by_site_id("root").get()
-        if site and site.id:
-            results.append(_site_obj_to_dict(site, info))
-    except Exception:
-        pass
-    return results
+    return [_site_obj_to_dict(site, _group_info(group))]
 
 async def fetch_from_groups(context: GraphContext) -> list[dict[str, Any]]:
     """Return the root sites of the signed-in user's M365 Unified groups.
@@ -314,8 +347,9 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     By default lists every site found through the search index (cache key
     `sites`). `--from-groups` lists only group-backed sites (`sites_groups`);
     `--enrich` tags each site as group or direct access (`sites_enriched`),
-    reusing cached `sites` results when present. Output is a table, JSON, or
-    NDJSON depending on the output mode.
+    reusing cached `sites` results when present so the search API is only
+    called when there is no cache. Output is a table, JSON, or NDJSON
+    depending on the output mode.
 
     Args:
         context: Shared Graph runtime context.
@@ -357,8 +391,22 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         logger.success(f"{len(sites)} group-backed site(s) found")
         return 0
 
-    logger.info("Enumerating accessible SharePoint sites via search index")
-    sites = await fetch(context)
+    if enrich and context.is_app_only:
+        logger.error("--enrich requires delegated authentication (user context).")
+        return 1
+
+    cached = cache.load_results(key="sites", identity=context.identity_hash) if enrich else []
+    if cached:
+        logger.info(
+            f"Using {len(cached)} cached site(s) — skipping search API. "
+            "Run 'sharepoint sites' without --enrich to refresh."
+        )
+        sites = cached
+    else:
+        logger.info("Enumerating accessible SharePoint sites via search index")
+        sites = await fetch(context)
+        if sites:
+            cache.save_results(sites, key="sites", identity=context.identity_hash)
 
     if not sites:
         logger.info("No sites found.")
@@ -367,19 +415,8 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         return 0
 
     if enrich:
-        if context.is_app_only:
-            logger.error("--enrich requires delegated authentication (user context).")
-            return 1
-        cached = cache.load_results(key="sites", identity=context.identity_hash)
-        if cached:
-            logger.info(f"Using {len(cached)} cached site(s) — skipping search API. Run 'sp sites' first to refresh.")
-            sites = cached
-        else:
-            cache.save_results(sites, key="sites", identity=context.identity_hash)
         sites = await enrich_with_groups(context, sites)
         cache.save_results(sites, key="sites_enriched", identity=context.identity_hash)
-    else:
-        cache.save_results(sites, key="sites", identity=context.identity_hash)
 
     if context.json_output:
         output.print_json(sites)
