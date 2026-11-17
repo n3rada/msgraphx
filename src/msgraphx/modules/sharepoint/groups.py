@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 
 from loguru import logger
+from msgraph.generated.models.group import Group
 from msgraph.graph_service_client import GraphServiceClient
 from rich.table import Table
 
@@ -42,23 +43,27 @@ async def get_user_m365_groups(
     graph_client: GraphServiceClient,
     visibility: str | None = None,
     teams_only: bool = False,
-) -> list:
-    """Return the current user's M365 Unified groups.
+) -> list[Group]:
+    """Return the signed-in user's M365 Unified groups.
 
     Includes groups joined via transitive (nested) membership so that indirect
-    membership is not missed.
+    membership is not missed. Requires a delegated token (`/me`).
 
     Args:
         graph_client: Authenticated Graph client.
-        visibility:   Optional — 'Private' or 'Public'. None returns both.
-        teams_only:   When True, restrict to groups that have a Teams workspace
-                      provisioned. Use only when Teams is the actual target;
-                      for SharePoint enumeration leave this False so groups
-                      without Teams (but with a site) are included.
+        visibility: "Private" or "Public" to keep only that visibility. None
+            returns both.
+        teams_only: When True, keep only groups with a Teams workspace
+            provisioned. Use only when Teams is the actual target; for
+            SharePoint enumeration leave this False so groups without Teams
+            (but with a site) are included.
+
+    Returns:
+        The matching Unified groups, in server order.
     """
     logger.debug("Fetching transitive M365 group membership")
 
-    all_groups = await GraphPaginator(
+    all_groups: list[Group] = await GraphPaginator(
         graph_client.me.transitive_member_of.graph_group
     ).collect()
 
@@ -91,6 +96,11 @@ async def get_user_m365_groups(
     return m365_groups
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the group listing arguments on a parser.
+
+    Args:
+        parser: Parser for the subcommand.
+    """
     parser.add_argument(
         "--visibility",
         choices=["Private", "Public"],
@@ -106,6 +116,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("Group.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """List the signed-in user's M365 Unified groups and cache them.
+
+    Results are cached under the `sp_groups` key and printed as a table,
+    JSON, or NDJSON depending on the output mode.
+
+    Args:
+        context: Shared Graph runtime context. Must be delegated.
+        args: Parsed arguments (`visibility`, `teams_only`).
+
+    Returns:
+        0 on success (including no groups found), 1 for app-only tokens.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

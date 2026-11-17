@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -32,10 +33,22 @@ from ...utils.html import strip_html
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
-    """Return recent chats for the current user as plain dicts.
+async def fetch_chats(
+    context: GraphContext, top: int = 20
+) -> list[dict[str, Any]]:
+    """List the signed-in user's most recently active chats.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Args:
+        context: Shared Graph runtime context (delegated).
+        top: Maximum number of chats to return.
+
+    Returns:
+        One dict per chat, newest activity first, with `id`, `label` (the
+        topic, else the member names, else the chat ID), `last_message` (a
+        60-character preview) and `last_date` (YYYY-MM-DD).
+
+    Raises:
+        ODataError: A Graph request failed.
     """
     chat_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
         top=top,
@@ -45,7 +58,7 @@ async def fetch_chats(context: GraphContext, top: int = 20) -> list[dict]:
     )
     chat_config = RequestConfiguration(query_parameters=chat_params)
 
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     async for chat in GraphPaginator(context.graph_client.me.chats, chat_config):
         members = chat.members or []
         label = (
@@ -81,11 +94,28 @@ async def fetch_search(
     from_addr: str | None = None,
     after: str | None = None,
     before: str | None = None,
-) -> list[dict]:
-    """Return Teams chat messages matching a search query as plain dicts.
+) -> list[dict[str, Any]]:
+    """Search Teams chat messages with the Microsoft Search API.
 
-    `after` and `before` accept ISO 8601 date strings.
-    Raises on API error. Callers are responsible for handling exceptions.
+    The filters are combined into one KQL query, fetched in pages of 25.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        query: Free-text KQL query; `"*"` matches everything.
+        from_addr: Only include messages from this sender (KQL `from:`).
+        after: Only include messages sent on or after this ISO 8601 date or
+            datetime (only the date part is used).
+        before: Only include messages sent on or before this ISO 8601 date
+            or datetime (only the date part is used).
+
+    Returns:
+        One dict per message, with keys such as `message_id`, `chat_id`,
+        `chat_label`, `body` (HTML stripped), `body_preview`, `sent`
+        (YYYY-MM-DD), `sender` and `sender_id`.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission to search messages.
+        ODataError: Another Graph request failure.
     """
     parts: list[str] = []
     if query and query != "*":
@@ -105,7 +135,7 @@ async def fetch_search(
         page_size=25,
     )
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     async for _item in graph_search.search_entities(
         context.graph_client,
         entity_types=[EntityType.ChatMessage],
@@ -142,7 +172,12 @@ async def fetch_search(
 
     return items
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams chat` options on a parser.
+
+    Args:
+        parser: Parser for the `teams chat` subcommand.
+    """
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "query",
@@ -159,7 +194,15 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help="Filter by sender display name (client-side).",
     )
 
-async def _list_chats(context: "GraphContext") -> int:
+async def _list_chats(context: GraphContext) -> int:
+    """Print the 20 most recent chats as a table, JSON, or NDJSON.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+
+    Returns:
+        Always 0.
+    """
     rows = await fetch_chats(context, top=20)
 
     if context.json_output:
@@ -188,8 +231,27 @@ async def _list_chats(context: "GraphContext") -> int:
 @handle_graph_errors
 @require_scopes("Chat.Read", "ChannelMessage.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Search personal Teams chat messages, or list recent chats if no query.
+
+    With no query and no `--from`, prints the 20 most recent chats.
+    Otherwise it requires the `ChannelMessage.Read.All` scope, prints the
+    matches, and caches them for `teams show`, even if interrupted with
+    Ctrl+C.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `query`, `from_addr`, `after`, `before`.
+
+    Returns:
+        0 on success (including no results), 1 for app-only auth, a missing
+        `ChannelMessage.Read.All` scope, or an invalid date bound.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token lacks permission to search messages.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -222,7 +284,7 @@ async def run_with_arguments(
             return 1
 
     logger.info(f"Chat search: {args.query!r}")
-    cached_items: list[dict] = []
+    cached_items: list[dict[str, Any]] = []
 
     if not context.json_output and not context.ndjson_output:
         console.print("[bold]Teams chat search results[/bold]")

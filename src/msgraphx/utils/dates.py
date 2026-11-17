@@ -1,14 +1,27 @@
 # msgraphx/utils/dates.py
 
 # Built-in imports
+from __future__ import annotations
+
 import re
 from datetime import datetime, timezone, timedelta
 
 
 def parse_date_string(s: str) -> str:
-    """
-    Parse string like '5h', '10d', '1w', '2y' or absolute date ('YYYY-MM-DD').
-    Returns an ISO 8601 UTC timestamp string (e.g., '2024-12-01T00:00:00Z').
+    """Convert a relative duration or absolute date into a UTC timestamp.
+
+    Args:
+        s: Either a duration before now made of an integer and a unit
+            (`s`, `m`, `h`, `d`, `w`, or `y`, where a year is 365 days),
+            such as `5h` or `2y`, or an absolute date in `YYYY-MM-DD` form,
+            taken as midnight UTC.
+
+    Returns:
+        An ISO 8601 UTC timestamp without microseconds, such as
+        `2024-12-01T00:00:00Z`.
+
+    Raises:
+        ValueError: If `s` matches neither format.
     """
     now = datetime.now(timezone.utc)
 

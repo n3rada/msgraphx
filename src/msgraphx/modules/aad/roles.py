@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -25,10 +26,23 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[dict]:
-    """Return directory role assignments as plain dicts.
+async def fetch(
+    context: GraphContext, odata_filter: str | None = None
+) -> list[dict[str, Any]]:
+    """Return directory role assignments with role and principal names.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Args:
+        context: Shared Graph runtime context.
+        odata_filter: OData `$filter` expression sent to Graph, e.g.
+            `"principalId eq 'GUID'"`. `None` returns every assignment.
+
+    Returns:
+        One dict per assignment with its ID, role definition ID and name,
+        principal ID, name and type, and directory scope (`"/"` for
+        tenant-wide).
+
+    Raises:
+        ODataError: The Graph request fails. Callers handle API errors.
     """
     query_params = RoleAssignmentsRequestBuilder.RoleAssignmentsRequestBuilderGetQueryParameters(
         expand=["roleDefinition", "principal"],
@@ -66,7 +80,12 @@ async def fetch(context: GraphContext, odata_filter: str | None = None) -> list[
 
     return rows
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad roles`.
+
+    Args:
+        parser: Parser for the `roles` subcommand.
+    """
     parser.add_argument(
         "--filter",
         dest="odata_filter",
@@ -78,8 +97,24 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("RoleManagement.Read.Directory")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List directory role assignments and cache them under the `roles` key.
+
+    Prints JSON under `--json`, NDJSON under `--ndjson`, otherwise a Rich
+    table. Warns if the token lacks `RoleManagement.Read.Directory`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.odata_filter` is an optional OData
+            `$filter` expression.
+
+    Returns:
+        0 on success, including when no assignments are found.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     logger.info("Fetching role assignments")
 
     rows = await fetch(context, odata_filter=args.odata_filter)

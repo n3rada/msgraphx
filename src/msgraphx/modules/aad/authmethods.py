@@ -31,7 +31,12 @@ _METHOD_LABEL: dict[str, str] = {
     "#microsoft.graph.passwordAuthenticationMethod": "Password",
 }
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad authmethods`.
+
+    Args:
+        parser: Parser for the `authmethods` subcommand.
+    """
     parser.add_argument(
         "user",
         help="User UPN or object ID (e.g. alice@corp.com or a GUID).",
@@ -40,8 +45,25 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("UserAuthenticationMethod.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List the authentication methods registered for a user.
+
+    Requires delegated authentication. Prints JSON under `--json`, NDJSON
+    under `--ndjson`, otherwise a Rich table. Warns if the token lacks
+    `UserAuthenticationMethod.Read.All`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.user` is a UPN or object ID.
+
+    Returns:
+        0 on success, including when no methods are found. 1 for app-only
+        authentication.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

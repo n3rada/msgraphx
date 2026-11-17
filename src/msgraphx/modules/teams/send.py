@@ -32,7 +32,12 @@ from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams send` options on a parser.
+
+    Args:
+        parser: Parser for the `teams send` subcommand.
+    """
     target_group = parser.add_mutually_exclusive_group(required=True)
 
     target_group.add_argument(
@@ -72,8 +77,24 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("Chat.ReadWrite")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Send a Teams message to a user (1:1 chat) or a channel.
+
+    Warns first if the token lacks `Chat.ReadWrite`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `message`, `html`, and either `to` (user
+            UPN, object ID, or mail) or `channel` with `team`.
+
+    Returns:
+        0 if the message was posted, 1 for app-only auth or any failure to
+        resolve the target or post the message.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -87,11 +108,27 @@ async def run_with_arguments(
     return await _send_dm(context, args, message_body)
 
 async def _send_dm(
-    context: "GraphContext",
-    args: "argparse.Namespace",
-    message_body: "ItemBody",
+    context: GraphContext,
+    args: argparse.Namespace,
+    message_body: ItemBody,
 ) -> int:
-    """Find or create a 1:1 chat with the target user, then post the message."""
+    """Find or create a 1:1 chat with the target user, then post a message.
+
+    The recipient `args.to` is looked up as a UPN or object ID first, then
+    by `mail` filter.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        args: Parsed arguments: `to` and `message`.
+        message_body: The message body to post.
+
+    Returns:
+        0 if the message was posted, 1 if the sender or recipient cannot be
+        resolved, the recipient is the sender, or a POST returned nothing.
+
+    Raises:
+        ODataError: Creating the chat or posting the message failed.
+    """
     me = await context.graph_client.me.get()
     if not me or not me.id:
         logger.error("Failed to resolve current user identity.")
@@ -183,11 +220,24 @@ async def _send_dm(
     return 0
 
 async def _send_channel_message(
-    context: "GraphContext",
-    args: "argparse.Namespace",
-    message_body: "ItemBody",
+    context: GraphContext,
+    args: argparse.Namespace,
+    message_body: ItemBody,
 ) -> int:
-    """Post a message to a Teams channel."""
+    """Post a message to a Teams channel.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        args: Parsed arguments: `team`, `channel` and `message`.
+        message_body: The message body to post.
+
+    Returns:
+        0 if the message was posted, 1 if `--team` is missing or the POST
+        returned nothing.
+
+    Raises:
+        ODataError: Posting the message failed.
+    """
     if not args.team:
         logger.error("--team <TEAM_ID> is required when using --channel.")
         return 1

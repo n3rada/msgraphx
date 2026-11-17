@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 
 # Local library imports
 from . import apps, authmethods, ca, enrich, grants, pim, roles, search
@@ -10,8 +11,17 @@ from ...utils.errors import handle_graph_errors
 
 
 def add_arguments(
-    parser: "argparse.ArgumentParser", parents: "list | None" = None
+    parser: argparse.ArgumentParser,
+    parents: Sequence[argparse.ArgumentParser] | None = None,
 ) -> None:
+    """Register the `aad` subcommands on the given parser.
+
+    Args:
+        parser: Parser for the `aad` command. A required `subcommand`
+            dispatcher is added to it.
+        parents: Parent parsers whose shared options every subcommand
+            inherits. `None` adds no shared options.
+    """
     parents = parents or []
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -90,8 +100,23 @@ def add_arguments(
 
 @handle_graph_errors
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Dispatch the parsed `aad` subcommand to its module.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.subcommand` selects the handler.
+
+    Returns:
+        The handler's exit code: 0 on success, non-zero on failure. 1 if the
+        subcommand is unknown.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token lacks a permission the subcommand
+            needs.
+    """
     sub = args.subcommand
 
     if sub == "search":

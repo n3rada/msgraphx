@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -35,11 +36,31 @@ async def fetch(
     has_attachments: bool = False,
     after: str | None = None,
     before: str | None = None,
-) -> list[dict]:
-    """Return mail search results as plain dicts.
+) -> list[dict[str, Any]]:
+    """Search the signed-in user's mail with the Microsoft Search API.
 
-    `after` and `before` accept ISO 8601 date strings (YYYY-MM-DD or full datetime).
-    Raises on API error. Callers are responsible for handling exceptions.
+    The filters are combined into one KQL query. Exchange caps search at
+    1,000 results, so at most two pages of 500 are fetched.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        query: Free-text KQL query; `"*"` matches everything.
+        from_addr: Only include mail from this sender address.
+        subject: Only include mail whose subject contains this keyword.
+        has_attachments: Only include mail with attachments.
+        after: Only include mail received on or after this ISO 8601 date or
+            datetime (only the date part is used).
+        before: Only include mail received on or before this ISO 8601 date
+            or datetime (only the date part is used).
+
+    Returns:
+        One dict per message, with keys such as `message_id`, `subject`,
+        `from_address`, `from_name`, `received` (YYYY-MM-DD),
+        `has_attachments`, `to_recipients` and `cc_recipients`.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission to search mail.
+        ODataError: Another Graph request failure.
     """
     parts: list[str] = []
 
@@ -65,7 +86,7 @@ async def fetch(
         max_pages=2,
     )
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     async for _item in graph_search.search_entities(
         context.graph_client,
         entity_types=[EntityType.Message],
@@ -122,7 +143,12 @@ async def fetch(
 
     return items
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `outlook search` options on a parser.
+
+    Args:
+        parser: Parser for the `outlook search` subcommand.
+    """
     parser.add_argument(
         "query",
         nargs="?",
@@ -154,8 +180,27 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 @handle_graph_errors
 @require_scopes("Mail.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Search mail, print the results, and cache them for `show`/`download`.
+
+    Results are cached even if the search is interrupted with Ctrl+C.
+    Output is a numbered list, JSON (`--json`), or NDJSON (`--ndjson`).
+    Warns first if the token lacks `Mail.Read`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `query`, `from_addr`, `subject`,
+            `has_attachments`, `after`, `before`.
+
+    Returns:
+        0 on success (including no results), 1 for app-only auth or an
+        invalid date bound.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token lacks permission to search mail.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -177,7 +222,7 @@ async def run_with_arguments(
             logger.error(str(e))
             return 1
 
-    cached_items: list[dict] = []
+    cached_items: list[dict[str, Any]] = []
 
     if not context.json_output and not context.ndjson_output:
         console.print("[bold]Mail search results[/bold]")

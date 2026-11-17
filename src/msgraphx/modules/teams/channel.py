@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -31,10 +32,19 @@ from ...utils.errors import handle_graph_errors
 from ...utils.html import strip_html
 from ...utils.roles import require_scopes
 
-async def fetch_teams(context: GraphContext) -> list[dict]:
-    """Return joined Teams for the current user as plain dicts.
+async def fetch_teams(context: GraphContext) -> list[dict[str, Any]]:
+    """List the Teams the signed-in user has joined.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Only the first page of `/me/joinedTeams` is read.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+
+    Returns:
+        One dict per team with `id`, `display_name` and `description`.
+
+    Raises:
+        ODataError: The Graph request failed.
     """
     response = await context.graph_client.me.joined_teams.get()
     teams = (response.value or []) if response else []
@@ -49,11 +59,29 @@ async def fetch_search(
     from_addr: str | None = None,
     after: str | None = None,
     before: str | None = None,
-) -> list[dict]:
-    """Return Teams channel messages matching a search query as plain dicts.
+) -> list[dict[str, Any]]:
+    """Search Teams messages with the Microsoft Search API.
 
-    `after` and `before` accept ISO 8601 date strings.
-    Raises on API error. Callers are responsible for handling exceptions.
+    The filters are combined into one KQL query over every chat message the
+    caller can read, in pages of 25.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        query: Free-text KQL query; `"*"` matches everything.
+        from_addr: Only include messages from this sender name or UPN.
+        after: Only include messages sent on or after this ISO 8601 date or
+            datetime (only the date part is used).
+        before: Only include messages sent on or before this ISO 8601 date
+            or datetime (only the date part is used).
+
+    Returns:
+        One dict per message, with keys such as `message_id`, `chat_id`,
+        `team_id`, `channel_id`, `body` (HTML stripped), `body_preview`,
+        `sent` (YYYY-MM-DD), `sender` and `sender_id`.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission to search messages.
+        ODataError: Another Graph request failure.
     """
     parts: list[str] = []
     if query and query != "*":
@@ -73,7 +101,7 @@ async def fetch_search(
         page_size=25,
     )
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     async for _item in graph_search.search_entities(
         context.graph_client,
         entity_types=[EntityType.ChatMessage],
@@ -120,7 +148,12 @@ async def fetch_search(
 
     return items
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams channel` options on a parser.
+
+    Args:
+        parser: Parser for the `teams channel` subcommand.
+    """
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "query",
@@ -137,7 +170,15 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help="Filter by sender display name or UPN.",
     )
 
-async def _list_teams(context: "GraphContext") -> int:
+async def _list_teams(context: GraphContext) -> int:
+    """Print the user's joined Teams as a table, JSON, or NDJSON.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+
+    Returns:
+        Always 0.
+    """
     rows = await fetch_teams(context)
 
     if context.json_output:
@@ -166,8 +207,26 @@ async def _list_teams(context: "GraphContext") -> int:
 @handle_graph_errors
 @require_scopes("ChannelMessage.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Search Teams channel messages, or list joined Teams if no query.
+
+    With no query and no `--from`, prints the joined Teams. Otherwise it
+    requires the `ChannelMessage.Read.All` scope, prints the matches, and
+    caches them for `teams show`, even if interrupted with Ctrl+C.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `query`, `from_addr`, `after`, `before`.
+
+    Returns:
+        0 on success (including no results), 1 for app-only auth, a missing
+        `ChannelMessage.Read.All` scope, or an invalid date bound.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token lacks permission to search messages.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -200,7 +259,7 @@ async def run_with_arguments(
             return 1
 
     logger.info(f"Channel search: {args.query!r}")
-    cached_items: list[dict] = []
+    cached_items: list[dict[str, Any]] = []
 
     if not context.json_output and not context.ndjson_output:
         console.print("[bold]Teams channel search results[/bold]")

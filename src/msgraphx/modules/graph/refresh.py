@@ -18,6 +18,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -25,6 +26,7 @@ from ...utils.tokens import TokenManager
 
 
 def _state_dir() -> Path:
+    """Return the XDG state directory holding the daemon's PID and state."""
     xdg = os.environ.get("XDG_STATE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".local" / "state"
     return base / "msgraphx"
@@ -39,6 +41,13 @@ def _state_file() -> Path:
 
 
 def _write_state(expires_at: float, last_refreshed: float) -> None:
+    """Persist the token expiry and last refresh time, ignoring write errors.
+
+    Args:
+        expires_at: Unix timestamp at which the current access token expires.
+        last_refreshed: Unix timestamp of the last successful refresh, or
+            0.0 if no refresh has happened yet.
+    """
     try:
         _state_file().write_text(
             json.dumps({"expires_at": expires_at, "last_refreshed": last_refreshed})
@@ -47,7 +56,8 @@ def _write_state(expires_at: float, last_refreshed: float) -> None:
         pass
 
 
-def _read_state() -> dict | None:
+def _read_state() -> dict[str, Any] | None:
+    """Return the persisted daemon state, or None if missing or unreadable."""
     p = _state_file()
     if not p.exists():
         return None
@@ -58,6 +68,7 @@ def _read_state() -> dict | None:
 
 
 def _read_pid() -> int | None:
+    """Return the daemon PID from the PID file, or None if missing or invalid."""
     p = _pid_file()
     if not p.exists():
         return None
@@ -68,6 +79,7 @@ def _read_pid() -> int | None:
 
 
 def _is_alive(pid: int) -> bool:
+    """Return True if a process with the given PID exists."""
     try:
         os.kill(pid, 0)
         return True
@@ -76,7 +88,16 @@ def _is_alive(pid: int) -> bool:
 
 
 def _load_tokens(token_file: str | None) -> tuple[str | None, str | None, str]:
-    """Resolve tokens from a file, falling back to env vars."""
+    """Resolve tokens from a roadtools token file, falling back to env vars.
+
+    Args:
+        token_file: Path to a `.roadtools_auth`-format JSON file. None uses
+            `.roadtools_auth` in the current directory.
+
+    Returns:
+        A tuple (access_token, refresh_token, source), where either token may
+        be None when not found and source is "file" or "env".
+    """
     path = Path(token_file) if token_file else Path(".roadtools_auth")
     if path.exists():
         try:
@@ -93,7 +114,15 @@ def _load_tokens(token_file: str | None) -> tuple[str | None, str | None, str]:
 
 
 async def _async_refresh_loop(access_token: str, refresh_token: str, source: str) -> None:
-    token = TokenManager(access_token, refresh_token, source=source)
+    """Refresh the token 5 minutes before each expiry until a refresh fails.
+
+    Args:
+        access_token: Current access token (JWT).
+        refresh_token: Refresh token used to obtain new access tokens.
+        source: Where the tokens came from ("file", "env", or "arg"); decides
+            where refreshed tokens are written back.
+    """
+    token =TokenManager(access_token, refresh_token, source=source)
     _write_state(expires_at=time.time() + token.expires_in(), last_refreshed=0.0)
     logger.info("Refresh loop started.")
     while True:
@@ -112,7 +141,13 @@ async def _async_refresh_loop(access_token: str, refresh_token: str, source: str
 
 
 def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
-    """Refresh loop. Runs until a refresh fails, then removes the PID file."""
+    """Run the refresh loop until a refresh fails, then remove PID and state.
+
+    Args:
+        access_token: Current access token (JWT).
+        refresh_token: Refresh token used to obtain new access tokens.
+        source: Where the tokens came from ("file", "env", or "arg").
+    """
     # Clear any event loop inherited from the parent process after fork.
     asyncio.set_event_loop(None)
     try:
@@ -124,7 +159,11 @@ def _run_loop(access_token: str, refresh_token: str, source: str) -> None:
 
 
 def _daemonize() -> None:
-    """Unix double-fork to fully detach from the terminal."""
+    """Detach from the terminal with a Unix double fork.
+
+    The calling (parent) processes exit; only the grandchild returns, with
+    stdin, stdout, and stderr redirected to the null device.
+    """
     if os.fork() > 0:
         sys.exit(0)
     os.setsid()
@@ -143,7 +182,12 @@ def is_running() -> bool:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    mode = parser.add_mutually_exclusive_group()
+    """Register the refresh command's arguments on a parser.
+
+    Args:
+        parser: Parser for the `refresh` command.
+    """
+    mode =parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--daemon",
         action="store_true",
@@ -178,6 +222,18 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run_command(args: argparse.Namespace) -> int:
+    """Run, daemonize, stop, or report the status of the token refresh loop.
+
+    Without `--stop` or `--status`, this blocks until a refresh fails. With
+    `--daemon`, the parent process exits and the detached child runs the loop.
+
+    Args:
+        args: Parsed `refresh` command arguments.
+
+    Returns:
+        0 on success or when there is nothing to stop, 1 when no access or
+        refresh token is available.
+    """
     if args.stop:
         pid = _read_pid()
         if pid is None or not _is_alive(pid):

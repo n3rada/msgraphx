@@ -14,7 +14,7 @@ Before preparing a commit, pull the current branch with `git pull --rebase --aut
 - Pass the shared `GraphContext`; do not construct module-local Graph clients.
 - Keep module entry points, Graph error handling, pagination utilities, and cache-to-index-to-fetch behavior consistent.
 - Keep JSON output as the only stdout content under `--json`; use Loguru for stderr progress and the shared Rich console for human output.
-- Target Python 3.12, preserve async SDK behavior, and use concrete modern type annotations.
+- Target Python 3.12, preserve async SDK behavior, and follow the Google Python Style Guide for docstrings and type annotations (see `DEVELOPMENT.md`).
 - `verify=False` is intentional for intercepting proxies and self-signed assessment environments.
 
 ## Verification

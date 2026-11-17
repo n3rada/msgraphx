@@ -1,6 +1,8 @@
 # msgraphx/cli.py
 
 # Built-in imports
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -8,6 +10,7 @@ import os
 import shutil
 import sys
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 
 # External library imports
@@ -22,6 +25,7 @@ from msgraph.generated.service_principals.service_principals_request_builder imp
     ServicePrincipalsRequestBuilder,
 )
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+from msgraph.generated.models.user import User
 
 # Local library imports
 from . import __version__
@@ -33,6 +37,14 @@ from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the msgraphx argument parser with every subcommand.
+
+    Global options live on a parent parser shared by all subcommands, so
+    they are accepted before or after the subcommand name.
+
+    Returns:
+        The top-level parser.
+    """
     # Create parent parser with global options that all subcommands inherit.
     # argument_default=SUPPRESS ensures subparsers don't reset values to defaults
     # when a flag is placed before the subcommand (e.g. `msgraphx --debug teams chats`).
@@ -289,7 +301,15 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
-def _configure_logging(args) -> None:
+def _configure_logging(args: argparse.Namespace) -> None:
+    """Set up logging at the level chosen on the command line.
+
+    `--log-level` wins over `--debug`, which wins over `--trace`; the
+    default is INFO.
+
+    Args:
+        args: Parsed arguments with `log_level`, `debug`, and `trace`.
+    """
     if args.log_level:
         level = args.log_level
     elif args.debug:
@@ -302,7 +322,15 @@ def _configure_logging(args) -> None:
 
 
 def _apply_proxy(proxy: str | None) -> int:
-    """Return 1 on bad format, 0 otherwise."""
+    """Route all HTTP traffic through a proxy via the proxy env variables.
+
+    Args:
+        proxy: Proxy URL starting with `http://` or `https://`, or `None`
+            for no proxy.
+
+    Returns:
+        1 if the proxy URL has an unsupported scheme, otherwise 0.
+    """
     if not proxy:
         return 0
     if not proxy.startswith(("http://", "https://")):
@@ -322,6 +350,13 @@ def _apply_proxy(proxy: str | None) -> int:
 
 
 def _check_public_ip() -> tuple[str | None, float]:
+    """Look up the public egress IP via api.ipify.org, through any proxy.
+
+    Returns:
+        A tuple (ip, rtt), where ip is the public IP address or `None` if the
+        lookup failed and rtt is the request round-trip time in seconds
+        (0.0 on failure).
+    """
     try:
         with httpx.Client(verify=False, http1=True, http2=False) as client:
             t0 = time.perf_counter()
@@ -336,12 +371,21 @@ def _check_public_ip() -> tuple[str | None, float]:
     return None, 0.0
 
 
-def _load_token(args) -> tuple[str | None, str | None, str]:
-    """Resolve access/refresh tokens from args → env → .roadtools_auth.
+def _load_token(args: argparse.Namespace) -> tuple[str | None, str | None, str]:
+    """Find the delegated tokens on the command line, env, or token file.
 
-    Returns (access_token, refresh_token, source) where source is one of
-    "arg", "env", or "file"; used to persist refreshed tokens back to the
-    same origin.
+    Checked in order: `--access-token`/`--refresh-token`, the
+    `ACCESS_TOKEN`/`REFRESH_TOKEN` environment variables, then
+    `.roadtools_auth` in the working directory.
+
+    Args:
+        args: Parsed arguments with `access_token` and `refresh_token`.
+
+    Returns:
+        A tuple (access_token, refresh_token, source), where source is
+        `arg`, `env`, or `file` and decides where refreshed tokens are
+        written back. access_token is `None` if no token was found or the
+        token file is not valid JSON.
     """
     if args.access_token:
         return args.access_token, args.refresh_token, "arg"
@@ -370,7 +414,20 @@ def _load_token(args) -> tuple[str | None, str | None, str]:
 
 def _build_app_client(
     tenant_id: str, client_id: str, client_secret: str
-) -> "tuple[GraphServiceClient | None, ClientSecretCredential | None]":
+) -> tuple[GraphServiceClient | None, ClientSecretCredential | None]:
+    """Create a Graph client that authenticates with a client secret.
+
+    No token is requested yet; credential errors surface on the first call.
+
+    Args:
+        tenant_id: Directory (tenant) ID.
+        client_id: Application (client) ID.
+        client_secret: Client secret value.
+
+    Returns:
+        A tuple (client, credentials), or `(None, None)` if construction
+        failed, which is logged.
+    """
     try:
         credentials = ClientSecretCredential(
             tenant_id=tenant_id,
@@ -387,8 +444,15 @@ def _build_app_client(
         return None, None
 
 
-def _classify_token(token) -> bool:
-    """Return True if the token carries app-only permissions."""
+def _classify_token(token: tokens.TokenManager) -> bool:
+    """Check whether a token carries app-only permissions, and log which.
+
+    Args:
+        token: The decoded access token.
+
+    Returns:
+        True if the token has a `roles` claim and no `scp` claim.
+    """
     payload = token.payload
     if payload.get("roles") and not payload.get("scp"):
         logger.info("Token contains application permissions (app roles).")
@@ -398,9 +462,34 @@ def _classify_token(token) -> bool:
 
 
 async def _authenticate(
-    args,
-) -> tuple["GraphServiceClient | None", bool, frozenset[str], "callable | None", int]:
-    """Resolve auth method and return (client, is_app_only, token_scopes, token_getter, exit_code)."""
+    args: argparse.Namespace,
+) -> tuple[
+    GraphServiceClient | None,
+    bool,
+    frozenset[str],
+    Callable[[], Awaitable[str]] | None,
+    int,
+]:
+    """Choose the authentication method and build the Graph client.
+
+    Client credentials are used with `--tenant-id`, or when
+    `TENANT_ID`/`CLIENT_ID`/`CLIENT_SECRET` are all set and no access token
+    was given. Otherwise a delegated token is loaded with `_load_token`,
+    checked for expiry and Graph audience, and auto-refreshed in a
+    background thread unless the refresh daemon is running. Resolved client
+    credentials are written back onto `args`.
+
+    Args:
+        args: Parsed arguments with the authentication options.
+
+    Returns:
+        A tuple (client, is_app_only, token_scopes, token_getter,
+        exit_code). On failure, client and token_getter are `None` and
+        exit_code is 1; on success exit_code is 0.
+
+    Raises:
+        ValueError: If the delegated access token is not a decodable JWT.
+    """
     if args.access_token and args.tenant_id:
         logger.error(
             "Cannot use both token-based authentication (--access-token) and "
@@ -437,7 +526,7 @@ async def _authenticate(
         if not client:
             return None, True, frozenset(), None, 1
 
-        async def _app_token_getter():
+        async def _app_token_getter() -> str:
             t = await credentials.get_token("https://graph.microsoft.com/.default")
             return t.token
 
@@ -475,16 +564,35 @@ async def _authenticate(
     else:
         token.start_auto_refresh()
 
-    async def _delegated_token_getter():
+    async def _delegated_token_getter() -> str:
         return token.access_token
 
     return GraphServiceClient(token), is_app_only, token_scopes, _delegated_token_getter, 0
 
 
 async def _verify_connection(
-    graph_client, is_app_only: bool, client_id: str | None, region: str
-):
-    """Verify the Graph connection. Returns (cached_user, exit_code)."""
+    graph_client: GraphServiceClient,
+    is_app_only: bool,
+    client_id: str | None,
+    region: str,
+) -> tuple[User | None, int]:
+    """Check the Graph connection and log who is authenticated.
+
+    Delegated tokens are verified with `GET /me`. App-only clients cannot
+    call `/me`, so they only log the region and, when possible, the
+    application's display name.
+
+    Args:
+        graph_client: The authenticated Graph client.
+        is_app_only: Whether the client uses app-only permissions.
+        client_id: Application ID used to look up the app's name, or `None`.
+        region: Search region, logged for app-only clients.
+
+    Returns:
+        A tuple (user, exit_code), where user is the signed-in user (`None`
+        for app-only or on failure) and exit_code is 0 on success or 1 if
+        the connection failed, which is logged.
+    """
     if is_app_only:
         logger.info("Authenticated with application permissions.")
         logger.info(f"Region: {region}")
@@ -515,7 +623,17 @@ async def _verify_connection(
         return None, 1
 
 
-async def _log_service_principal(graph_client, client_id: str) -> None:
+async def _log_service_principal(
+    graph_client: GraphServiceClient, client_id: str
+) -> None:
+    """Log the display name of the service principal for an application.
+
+    Lookup failures are logged, not raised.
+
+    Args:
+        graph_client: The authenticated Graph client.
+        client_id: The application (client) ID to look up.
+    """
     try:
         query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
             filter=f"appId eq '{client_id}'", select=["displayName", "appId"]
@@ -530,8 +648,19 @@ async def _log_service_principal(graph_client, client_id: str) -> None:
         logger.error("Failed to log service principal details")
 
 
-async def _call_module(coro) -> int:
-    """Run a module coroutine, catching and formatting Graph API errors centrally."""
+async def _call_module(coro: Awaitable[int]) -> int:
+    """Await a module entry point and turn Graph access errors into exit codes.
+
+    A `ForbiddenGraphError` is printed to stderr with the required and
+    granted permissions. An `AuthenticationError` is assumed to be logged
+    already.
+
+    Args:
+        coro: The pending `run_with_arguments` call.
+
+    Returns:
+        The module's exit code, or 1 on a 403 or authentication failure.
+    """
     try:
         return await coro
     except ForbiddenGraphError as exc:
@@ -549,8 +678,16 @@ async def _call_module(coro) -> int:
         return 1
 
 
-async def _dispatch(args, context) -> int:
-    """Route to the appropriate subcommand handler."""
+async def _dispatch(args: argparse.Namespace, context: GraphContext) -> int:
+    """Run the module for the selected subcommand.
+
+    Args:
+        args: Parsed arguments; `command` selects the module.
+        context: The shared Graph context.
+
+    Returns:
+        The module's exit code, or 0 when no subcommand was given.
+    """
     command = args.command
 
     if command == "groups":
@@ -580,11 +717,19 @@ async def _dispatch(args, context) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
-    """Extract global flags from argv independently of subparser nesting.
+def _pre_parse_globals(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse the global flags on their own, ignoring everything else.
 
-    This avoids argparse's known limitation where nested subparsers stomp
-    namespace values set by a parent parser (even with SUPPRESS defaults).
+    Works around argparse nested subparsers overwriting values set by a
+    parent parser, even with `SUPPRESS` defaults.
+
+    Args:
+        argv: Command-line arguments without the program name, or `None`
+            for `sys.argv[1:]`.
+
+    Returns:
+        A namespace with every global flag; unset flags are `None` or
+        False.
     """
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--debug", action="store_true", default=False)
@@ -605,7 +750,21 @@ def _pre_parse_globals(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 @logger.catch
-async def _main(argv: list[str]) -> int:
+async def _main(argv: Sequence[str]) -> int:
+    """Run the msgraphx command line.
+
+    Parses arguments, configures logging and proxying, checks the public
+    IP, authenticates, verifies the connection, and dispatches the
+    subcommand. Commands that use time bounds default to `--after 1y`
+    unless `--all` is given. Because of `logger.catch`, an unexpected
+    exception is logged and the call returns `None` instead of raising.
+
+    Args:
+        argv: Command-line arguments without the program name.
+
+    Returns:
+        The process exit code.
+    """
     # Pre-parse global flags to survive nested subparser default-stomping.
     # argparse resets parent-parser values when nested subparsers are involved;
     # _pre_parse_globals extracts globals from the raw argv independently.
@@ -686,6 +845,12 @@ async def _main(argv: list[str]) -> int:
 
 
 def main() -> None:
+    """Run msgraphx with `sys.argv` and exit with its status.
+
+    Raises:
+        SystemExit: Always, with the command's exit code, or 130 when
+            interrupted with Ctrl+C.
+    """
     try:
         raise SystemExit(asyncio.run(_main(sys.argv[1:])))
     except KeyboardInterrupt:

@@ -1,6 +1,8 @@
 # msgraphx/utils/tokens.py
 
 # Built-in imports
+from __future__ import annotations
+
 import time
 import json
 import base64
@@ -8,6 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import threading
 import asyncio
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -15,8 +18,20 @@ import httpx
 from azure.core.credentials import AccessToken
 
 
-def parse_jwt(token: str) -> tuple[dict, dict, bytes]:
-    """Decode JWT and return (header, body, signature)"""
+def parse_jwt(token: str) -> tuple[dict[str, Any], dict[str, Any], bytes]:
+    """Decode a JWT without verifying its signature.
+
+    Args:
+        token: A compact-serialized JWT (`header.payload.signature`).
+
+    Returns:
+        A tuple (header, payload, signature), where header and payload are
+        the decoded JSON objects and signature is the raw signature bytes.
+
+    Raises:
+        ValueError: If the token does not have three dot-separated parts or
+            a part is not valid base64url-encoded JSON.
+    """
     parts = token.split(".")
     if len(parts) != 3:
         raise ValueError("Invalid JWT format")
@@ -32,10 +47,33 @@ def parse_jwt(token: str) -> tuple[dict, dict, bytes]:
 
 
 class TokenManager:
+    """A delegated Graph access token, with optional refresh-token renewal.
+
+    Also serves as an Azure `TokenCredential` for `GraphServiceClient` via
+    `get_token`.
+    """
+
     # Recognised source values: "file" | "env" | "arg"
     def __init__(
-        self, access_token: str, refresh_token: str = None, source: str = "file"
+        self,
+        access_token: str,
+        refresh_token: str | None = None,
+        source: str = "file",
     ):
+        """Decode the access token and log its tenant and expiry.
+
+        Args:
+            access_token: The JWT access token.
+            refresh_token: Refresh token for renewal, or `None` to disable
+                refreshing.
+            source: Where the tokens came from, which decides where
+                refreshed tokens are written back: `file`
+                (`.roadtools_auth`), `env`, or `arg` (both environment
+                variables).
+
+        Raises:
+            ValueError: If `access_token` is not a decodable JWT.
+        """
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._source = source
@@ -60,40 +98,56 @@ class TokenManager:
 
     @property
     def audience(self) -> str:
+        """The token's `aud` claim, or an empty string."""
         return self._payload.get("aud", "")
 
     @property
     def app_id(self) -> str:
+        """The client application ID from the `appid` claim, or ''."""
         return self._payload.get("appid", "")
 
     @property
     def scope(self) -> str:
+        """The space-separated delegated scopes (`scp` claim), or ''."""
         return self._payload.get("scp", "")
 
     @property
     def access_token(self) -> str:
+        """The current access token."""
         return self._access_token
 
     @property
-    def refresh_token(self) -> str:
+    def refresh_token(self) -> str | None:
+        """The current refresh token, or `None` if refreshing is disabled."""
         return self._refresh_token
 
     @property
-    def payload(self) -> dict:
+    def payload(self) -> dict[str, Any]:
+        """The decoded access-token claims."""
         return self._payload
 
     @property
     def expiration_datetime(self) -> datetime:
+        """The access token's expiry (`exp` claim) as an aware UTC datetime."""
         return datetime.fromtimestamp(self._expires_on, tz=timezone.utc)
 
     @property
     def is_expired(self) -> bool:
+        """Whether the access token's expiry is in the past."""
         return datetime.now(timezone.utc).timestamp() > self._expires_on
 
     def expires_in(self) -> int:
+        """Return the whole seconds until the access token expires, at least 0."""
         return max(0, int(self._expires_on - datetime.now(timezone.utc).timestamp()))
 
     def update_output_file(self) -> None:
+        """Persist the current tokens back to where they were loaded from.
+
+        For the `env` and `arg` sources this sets the `ACCESS_TOKEN` and
+        `REFRESH_TOKEN` environment variables of the current process. For
+        `file` it rewrites `.roadtools_auth` in the working directory. Does
+        nothing when there is no refresh token.
+        """
         if not self._refresh_token:
             logger.debug("Skipping token persistence - no refresh token available")
             return
@@ -126,7 +180,22 @@ class TokenManager:
             json.dump(data, file_obj, indent=4)
             logger.success("Saved refreshed tokens to .roadtools_auth")
 
-    async def refresh_access_token(self, refresh_token: str):
+    async def refresh_access_token(self, refresh_token: str | None) -> bool:
+        """Exchange a refresh token for new tokens and adopt them.
+
+        Uses the Graph Explorer public client against the `common` endpoint.
+        On success this manager is re-initialized with the new access and
+        refresh tokens, keeping its source. Tokens are not persisted; call
+        `update_output_file` for that.
+
+        Args:
+            refresh_token: The refresh token to redeem, usually
+                `self.refresh_token`.
+
+        Returns:
+            True if new tokens were obtained, False if there was no refresh
+            token or the identity platform rejected the request.
+        """
         if not refresh_token:
             logger.warning(
                 "No refresh token available - token refresh disabled. Re-authenticate when token expires."
@@ -161,10 +230,14 @@ class TokenManager:
         return True
 
     def start_auto_refresh(self) -> threading.Thread | None:
-        """Start a background daemon thread that silently refreshes the token.
+        """Start a daemon thread that keeps the access token fresh.
 
-        Refreshes 5 minutes before expiry. Returns the thread, or None if no
-        refresh token is available.
+        The thread refreshes 5 minutes before each expiry and persists the
+        new tokens with `update_output_file`. It stops at the first failed
+        refresh.
+
+        Returns:
+            The started thread, or `None` if there is no refresh token.
         """
         if not self._refresh_token:
             logger.debug("No refresh token. Auto-refresh disabled.")
@@ -199,10 +272,24 @@ class TokenManager:
         logger.info("Background token refresh started.")
         return t
 
-    def get_token(self, *scopes, **kwargs) -> AccessToken:
+    def get_token(self, *scopes: str, **kwargs: object) -> AccessToken:
+        """Return the current access token as an Azure `AccessToken`.
+
+        Implements `azure.core.credentials.TokenCredential` so the manager
+        can be passed to `GraphServiceClient`. No token is requested: the
+        requested scopes and options are ignored.
+
+        Args:
+            *scopes: Requested scopes; ignored.
+            **kwargs: Credential options such as `claims`; ignored.
+
+        Returns:
+            The current access token and its expiry timestamp.
+        """
         return AccessToken(self._access_token, self._expires_on)
 
     def __str__(self) -> str:
+        """Return the decoded header and payload as indented JSON."""
         return (
             f"Header:\n{json.dumps(self._header, indent=4, sort_keys=True)}\n\n"
             f"Payload:\n{json.dumps(self._payload, indent=4, sort_keys=True)}"

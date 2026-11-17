@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Sequence
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -33,7 +34,12 @@ from ...utils.roles import require_scopes
 _DEFAULT_CONTEXT = 4
 _DEFAULT_LAST = 20
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams show` options on a parser.
+
+    Args:
+        parser: Parser for the `teams show` subcommand.
+    """
     parser.add_argument(
         "target",
         type=str,
@@ -55,26 +61,34 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
     )
 
 def _sender(msg: ChatMessage) -> str:
+    """Return the sender's display name, or `"?"` if unknown."""
     if msg.from_ and msg.from_.user:
         return msg.from_.user.display_name or "?"
     return "?"
 
 def _sender_short(msg: ChatMessage) -> str:
-    """Return just the first name of the sender."""
+    """Return the first word of the sender's display name, or `"?"`."""
     full = _sender(msg)
     return full.split()[0] if full != "?" else "?"
 
-def _is_me(msg: ChatMessage, context: "GraphContext") -> bool:
-    """Check if the message was sent by the current user."""
+def _is_me(msg: ChatMessage, context: GraphContext) -> bool:
+    """Return whether the message was sent by the context's cached user."""
     if not context.cached_user or not msg.from_ or not msg.from_.user:
         return False
     return msg.from_.user.id == context.cached_user.id
 
 def _render_window(
-    segment: list[ChatMessage],
+    segment: Sequence[ChatMessage],
     target_id: str,
     chat_label: str,
 ) -> None:
+    """Print a window of chat messages, highlighting the target message.
+
+    Args:
+        segment: Messages to print, oldest first.
+        target_id: ID of the message to mark with `▶`.
+        chat_label: Chat name shown in the header rule.
+    """
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in segment:
         body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
@@ -92,8 +106,28 @@ def _render_window(
 @handle_graph_errors
 @require_scopes("Chat.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Show cached Teams search results in context, or browse a chat by name.
+
+    A numeric target (e.g. `"3"` or `"1-3"`) selects cached results from the
+    last `teams chat`/`teams channel` search and prints each with
+    surrounding messages. Any other target is matched against chat members
+    and topics, and the best match's latest messages are printed. Warns
+    first if the token lacks `Chat.Read`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `target`, `context` (window size around a
+            cached match) and `last` (messages to show when browsing).
+
+    Returns:
+        0 on success, 1 for app-only auth, an empty cache, an invalid index,
+        no matching chat, or a failed message fetch in browse mode.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -103,8 +137,23 @@ async def run_with_arguments(
         return await _show_cached(context, args.target, args.context)
     return await _show_chat(context, args.target, args.last)
 
-async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
-    """Find a chat by name and print its last N messages."""
+async def _show_chat(context: GraphContext, name: str, last: int) -> int:
+    """Find the chat that best matches a name and print its latest messages.
+
+    Chats are scored by how well a member name or the topic matches, with a
+    bonus for small chats; scanning stops early on an exact 1:1 match.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        name: Person or topic to look for (case-insensitive).
+        last: Number of most recent non-deleted messages to print.
+
+    Returns:
+        0 on success, 1 if no chat matches or fetching messages fails.
+
+    Raises:
+        ODataError: Listing the user's chats failed.
+    """
     name_lower = name.lower()
 
     chat_params = ChatsRequestBuilder.ChatsRequestBuilderGetQueryParameters(
@@ -227,8 +276,21 @@ async def _show_chat(context: "GraphContext", name: str, last: int) -> int:
 
     return 0
 
-async def _show_cached(context: "GraphContext", index: str, ctx_n: int) -> int:
-    """Show a cached search result with surrounding conversation context."""
+async def _show_cached(context: GraphContext, index: str, ctx_n: int) -> int:
+    """Print cached search results with surrounding conversation context.
+
+    Items whose chat cannot be fetched, or whose message is not in the
+    latest messages scanned, are logged and skipped.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        index: 1-based index spec into the cached results, e.g. `"1,3-5"`.
+        ctx_n: Number of messages to show before and after each match.
+
+    Returns:
+        0 after processing the selected items, 1 for an empty cache or an
+        invalid index.
+    """
     cached = cache.load_results(key="teams", identity=context.identity_hash)
     if not cached:
         logger.error(

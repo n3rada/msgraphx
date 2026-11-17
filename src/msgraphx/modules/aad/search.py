@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -14,6 +16,8 @@ from loguru import logger
 from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
 from msgraph.generated.devices.devices_request_builder import DevicesRequestBuilder
 from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
+from msgraph.generated.models.group import Group
+from msgraph.generated.models.user import User
 from msgraph.generated.service_principals.service_principals_request_builder import (
     ServicePrincipalsRequestBuilder,
 )
@@ -40,7 +44,18 @@ HUNT_GROUPS = {
 }
 
 
-def matches_query(text: str, query: str, exact: bool = False) -> bool:
+def matches_query(text: str | None, query: str, exact: bool = False) -> bool:
+    """Return whether text matches a query, ignoring case.
+
+    Args:
+        text: Text to test. Empty or `None` never matches.
+        query: Query to look for.
+        exact: Match only when `text` starts with `query`, instead of
+            anywhere in it.
+
+    Returns:
+        True if the text matches.
+    """
     if not text:
         return False
     text_lower = text.lower()
@@ -50,13 +65,25 @@ def matches_query(text: str, query: str, exact: bool = False) -> bool:
     return query_lower in text_lower
 
 
-def serialize_object(obj):
+def serialize_object(obj: Any) -> Any:
+    """Convert an object graph into JSON-serializable values.
+
+    Datetimes become ISO 8601 strings. Objects with a `__dict__` become dicts
+    of their public attributes, recursively. Other values (including plain
+    dicts) are returned unchanged.
+
+    Args:
+        obj: The value to convert.
+
+    Returns:
+        The converted value, or `None` for `None`.
+    """
     if obj is None:
         return None
     if isinstance(obj, datetime.datetime):
         return obj.isoformat()
     if hasattr(obj, "__dict__"):
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in obj.__dict__.items():
             if key.startswith("_"):
                 continue
@@ -73,8 +100,31 @@ def serialize_object(obj):
 
 
 def save_results_to_json(
-    tenant_id: str, search_type: str, query: str, results: list, output_dir: Path = None
-):
+    tenant_id: str,
+    search_type: str,
+    query: str,
+    results: Sequence[Any],
+    output_dir: Path | None = None,
+) -> Path | None:
+    """Write search results to a timestamped JSON file.
+
+    The file is written to
+    `{output_dir}/{tenant_id}/{search_type}_{query}_{timestamp}.json`, with
+    non-alphanumeric query characters replaced by `_`.
+
+    Args:
+        tenant_id: Tenant ID used as the subdirectory name.
+        search_type: Object type searched, e.g. `"groups"`.
+        query: The search query.
+        results: Results to save; each is passed through `serialize_object`.
+        output_dir: Base directory. `None` uses the current directory.
+
+    Returns:
+        The path of the written file, or `None` if `results` is empty.
+
+    Raises:
+        OSError: The directory or file cannot be written.
+    """
     if not results:
         return None
     if output_dir is None:
@@ -100,8 +150,8 @@ def save_results_to_json(
     return filepath
 
 
-def _add_consistency(config) -> None:
-    """Add ConsistencyLevel: eventual header required for $search and $count queries."""
+def _add_consistency(config: RequestConfiguration[Any]) -> None:
+    """Add the `ConsistencyLevel: eventual` header that `$search` requires."""
     config.headers.add("ConsistencyLevel", "eventual")
 
 
@@ -111,8 +161,24 @@ async def fetch_groups(
     contains: bool = False,
     synced_only: bool = False,
     odata_filter: str | None = None,
-) -> list[dict]:
-    """Return groups matching query as plain dicts."""
+) -> list[dict[str, Any]]:
+    """Return groups matching a query as plain dicts.
+
+    By default uses Graph `$search` on `displayName`.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: Text to search for in group names.
+        contains: Fetch every group and match `query` anywhere in the
+            display name or mail nickname on the client side.
+        synced_only: Keep only groups synced from on-premises AD.
+        odata_filter: Raw OData `$filter` expression. When given, it
+            replaces the query and `contains` is ignored.
+
+    Returns:
+        One dict per group with its ID, names, mail, type flags, sync
+        status, visibility, and group types.
+    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
@@ -145,7 +211,7 @@ async def fetch_groups(
     return [_group_dict(g) for g in all_results]
 
 
-def _group_dict(g) -> dict:
+def _group_dict(g: Group) -> dict[str, Any]:
     return {
         "id": g.id,
         "display_name": g.display_name,
@@ -164,8 +230,19 @@ async def fetch_users(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
-) -> list[dict]:
-    """Return users matching query as plain dicts."""
+) -> list[dict[str, Any]]:
+    """Return users matching a query as plain dicts.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: Text searched with Graph `$search` across display name, UPN,
+            and mail.
+        odata_filter: Raw OData `$filter` expression that replaces the query.
+
+    Returns:
+        One dict per user with its ID, display name, UPN, mail, enabled
+        flag, job title, and department.
+    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
@@ -188,7 +265,7 @@ async def fetch_users(
     return [_user_dict(u) for u in all_results]
 
 
-def _user_dict(u) -> dict:
+def _user_dict(u: User) -> dict[str, Any]:
     return {
         "id": u.id,
         "display_name": u.display_name,
@@ -204,8 +281,18 @@ async def fetch_devices(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
-) -> list[dict]:
-    """Return devices matching query as plain dicts."""
+) -> list[dict[str, Any]]:
+    """Return devices matching a query as plain dicts.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: Text searched with Graph `$search` on `displayName`.
+        odata_filter: Raw OData `$filter` expression that replaces the query.
+
+    Returns:
+        One dict per device with its ID, name, enabled flag, OS and version,
+        trust type, and sync status.
+    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
@@ -241,8 +328,18 @@ async def fetch_service_principals(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
-) -> list[dict]:
-    """Return service principals matching query as plain dicts."""
+) -> list[dict[str, Any]]:
+    """Return service principals matching a query as plain dicts.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: Text searched with Graph `$search` on `displayName`.
+        odata_filter: Raw OData `$filter` expression that replaces the query.
+
+    Returns:
+        One dict per service principal with its ID, name, app ID, enabled
+        flag, and type.
+    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
@@ -276,8 +373,18 @@ async def fetch_applications(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
-) -> list[dict]:
-    """Return applications matching query as plain dicts."""
+) -> list[dict[str, Any]]:
+    """Return app registrations matching a query as plain dicts.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: Text searched with Graph `$search` on `displayName`.
+        odata_filter: Raw OData `$filter` expression that replaces the query.
+
+    Returns:
+        One dict per application with its ID, name, app ID, sign-in
+        audience, and ISO 8601 creation time.
+    """
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters(
@@ -307,7 +414,12 @@ async def fetch_applications(
     ]
 
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad search`.
+
+    Args:
+        parser: Parser for the `search` subcommand.
+    """
     parser.add_argument(
         "query",
         nargs="?",
@@ -374,7 +486,7 @@ def add_arguments(parser: "argparse.ArgumentParser"):
     )
 
 
-def _log_groups(results: list[dict]) -> None:
+def _log_groups(results: Sequence[Mapping[str, Any]]) -> None:
     for g in results:
         group_type = "Security" if g["security_enabled"] else "Distribution"
         if g["group_types"] and "Unified" in g["group_types"]:
@@ -387,7 +499,7 @@ def _log_groups(results: list[dict]) -> None:
             logger.info(f"   Email: {g['mail']}")
 
 
-def _log_users(results: list[dict]) -> None:
+def _log_users(results: Sequence[Mapping[str, Any]]) -> None:
     for u in results:
         status = "Enabled" if u["account_enabled"] else "Disabled"
         logger.success(f"{u['display_name']} ({u['user_principal_name']}) | {status} | ID: {u['id']}")
@@ -397,7 +509,7 @@ def _log_users(results: list[dict]) -> None:
             logger.info(f"   Department: {u['department']}")
 
 
-def _log_devices(results: list[dict]) -> None:
+def _log_devices(results: Sequence[Mapping[str, Any]]) -> None:
     for d in results:
         status = "Enabled" if d["account_enabled"] else "Disabled"
         os_info = (
@@ -410,7 +522,7 @@ def _log_devices(results: list[dict]) -> None:
             logger.info(f"   Trust Type: {d['trust_type']}")
 
 
-def _log_service_principals(results: list[dict]) -> None:
+def _log_service_principals(results: Sequence[Mapping[str, Any]]) -> None:
     for sp in results:
         status = "Enabled" if sp["account_enabled"] else "Disabled"
         logger.success(f"{sp['display_name']} | App ID: {sp['app_id']} | {status} | ID: {sp['id']}")
@@ -418,7 +530,7 @@ def _log_service_principals(results: list[dict]) -> None:
             logger.info(f"   Type: {sp['service_principal_type']}")
 
 
-def _log_applications(results: list[dict]) -> None:
+def _log_applications(results: Sequence[Mapping[str, Any]]) -> None:
     for app in results:
         logger.success(f"{app['display_name']} | App ID: {app['app_id']} | Audience: {app['sign_in_audience']} | ID: {app['id']}")
         if app["created_date_time"]:
@@ -428,8 +540,28 @@ def _log_applications(results: list[dict]) -> None:
 @handle_graph_errors
 @require_scopes("User.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Search Entra ID objects and log, cache, and optionally save results.
+
+    Runs every query (one, or the preset keywords of `--hunt`) against every
+    selected object type. A failed search for one type is logged and treated
+    as empty. All results are cached under the `aad` key. Prints JSON grouped
+    by type under `--json`, or NDJSON under `--ndjson`. Warns if the token
+    lacks `User.Read.All`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments: `query`, `hunt`, `type`, `contains`,
+            `synced_only`, `odata_filter`, and `save_dir`. `tenant_id` names
+            the save subdirectory when present.
+
+    Returns:
+        0 on success, 1 if neither a query nor `--hunt` is given.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if args.hunt:
         queries = HUNT_GROUPS[args.hunt]
         logger.info(f"Hunt mode: {args.hunt}")
@@ -459,7 +591,7 @@ async def run_with_arguments(
         tenant_id = "unknown"
 
     total_found = 0
-    structured_results: dict[str, list] = {}
+    structured_results: dict[str, list[dict[str, Any]]] = {}
 
     for query in queries:
         for search_type in search_types:

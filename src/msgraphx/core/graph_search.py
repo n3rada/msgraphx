@@ -23,6 +23,24 @@ from ..utils.errors import raise_if_forbidden
 
 @dataclass
 class SearchOptions:
+    """Settings for a Microsoft Search API query.
+
+    Attributes:
+        query_string: KQL query string; `*` matches everything.
+        sort_by: Property to sort on, or `None` for relevance order. Ignored
+            for message and event searches, which do not support sorting.
+        descending: Sort in descending order.
+        fields: Properties to return, or `None` for the defaults.
+        page_size: Results requested per page.
+        region: Search region; required with application permissions.
+        drive_id: Restrict results to this drive.
+        max_pages: Maximum pages to fetch, or `None` for no cap (Exchange
+            limits `from + size` to 1000).
+        share_point_one_drive_options: SharePoint and OneDrive search scope
+            options.
+        site_path: Restrict results to this site URL via KQL `Path:`.
+    """
+
     query_string: str = "*"
     sort_by: str | None = "createdDateTime"
     descending: bool = True
@@ -42,52 +60,28 @@ async def search_entities(
     entity_types: list[EntityType],
     options: SearchOptions = SearchOptions(),
 ) -> AsyncGenerator[Entity, None]:
-    """
-    Perform a paginated Microsoft Graph search across one or more entity types (e.g., DriveItem, Message, Site).
+    """Search Microsoft 365 content with the Graph Search API, across all pages.
 
-    Supports optional sorting (where allowed) and field filtering. This function handles pagination
-    transparently and yields results across all pages.
+    Sends `POST /search/query` one page at a time until the server reports
+    no more results, a page is empty, or `options.max_pages` is reached. If
+    sorting is requested for message or event searches, a warning is logged
+    and sorting is disabled. Errors other than 403 are logged and end the
+    search. See
+    https://learn.microsoft.com/en-us/graph/search-concept-overview and
+    https://learn.microsoft.com/en-us/graph/search-concept-sort.
 
     Args:
-        client (GraphServiceClient): An authenticated Microsoft Graph client.
-        entity_types (list[EntityType]): The types of entities to search (e.g., [EntityType.DriveItem]).
-                                         Refer to Microsoft documentation for supported combinations.
-        options (SearchOptions, optional): Search configuration including query string, sorting, fields, and page size.
+        client: An authenticated Graph client.
+        entity_types: Entity types to search, e.g. `[EntityType.DriveItem]`.
+            Only some combinations are allowed by the API.
+        options: Query, sort, field, paging, and scope settings.
 
     Yields:
-        EntityType: Each yielded object is the typed resource (e.g., DriveItem, Message) returned by the Graph Search API.
+        Each hit's typed resource, e.g. a `DriveItem` or `Message`. When the
+        API leaves the resource ID empty, it is filled from the hit ID.
 
-    Warnings:
-        If sorting is requested on unsupported entity types (e.g., Message or Event), sorting will be disabled
-        and a warning will be logged.
-
-    References:
-        https://learn.microsoft.com/en-us/graph/search-concept-overview
-        https://learn.microsoft.com/en-us/graph/search-concept-sort
-
-    This is a POST request to the `/search/query` endpoint, which allows for complex queries such as:
-
-    ```
-    {
-        "requests": [
-            {
-            "entityTypes": ["driveItem"],
-            "query": {
-                "queryString": "filetype:pdf"
-            },
-            "sortProperties": [
-                {
-                "name": "createdDateTime",
-                "isDescending": true
-                }
-            ],
-            "from": 0,
-            "size": 20
-            }
-        ]
-    }
-    ```
-
+    Raises:
+        ForbiddenGraphError: If the API returns 403 Forbidden.
     """
     page = 0
     total_yielded = 0

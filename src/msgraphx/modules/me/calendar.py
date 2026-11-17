@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.event import Event
 from msgraph.generated.users.item.calendar.events.events_request_builder import (
     EventsRequestBuilder,
 )
@@ -27,7 +29,15 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me calendar` options on the parser.
+
+    Also marks the command as honouring the global `--after`/`--before`
+    time bounds.
+
+    Args:
+        parser: Parser for the `me calendar` subcommand.
+    """
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "--top",
@@ -43,11 +53,26 @@ async def fetch(
     top: int = 50,
     after: str | None = None,
     before: str | None = None,
-) -> list[dict]:
-    """Return calendar events for the current user as plain dicts.
+) -> list[dict[str, Any]]:
+    """Return the current user's calendar events as plain dicts.
 
-    `after` and `before` accept ISO 8601 datetime strings for OData filtering.
-    Raises on API error. Callers are responsible for handling exceptions.
+    Events are ordered by start time, most recent first.
+
+    Args:
+        context: Shared Graph runtime context (delegated auth).
+        top: Maximum number of events to return.
+        after: ISO 8601 datetime; keep events starting at or after it.
+        before: ISO 8601 datetime; keep events ending at or before it.
+
+    Returns:
+        One dict per event with the keys `id`, `subject`, `start`
+        (`YYYY-MM-DD HH:MM`), `end` (`HH:MM`), `organizer`,
+        `organizer_email`, `location`, `attendees` (list of addresses),
+        `is_online`, `body_preview`, and `web_link`.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects the request.
     """
     filter_parts: list[str] = []
     if after:
@@ -65,7 +90,8 @@ async def fetch(
     )
     config = RequestConfiguration(query_parameters=query_params)
 
-    rows = []
+    rows: list[dict[str, Any]] = []
+    event: Event
     async for event in GraphPaginator(context.graph_client.me.calendar.events, config):
         start = ""
         end = ""
@@ -120,8 +146,24 @@ async def fetch(
 @handle_graph_errors
 @require_scopes("Calendars.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List the current user's calendar events.
+
+    Prints a table, or JSON/NDJSON when the matching output flag is set.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments (`top`, `after`, `before`).
+
+    Returns:
+        0 on success (including no events), 1 for app-only auth or an
+        unparseable `--after`/`--before` date.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects the request.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

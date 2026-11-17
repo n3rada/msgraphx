@@ -18,6 +18,7 @@ import argparse
 import asyncio
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 # External library imports
 from loguru import logger
@@ -41,6 +42,12 @@ _SMALL_FILE_LIMIT = 4 * 1024 * 1024  # 4 MB
 _CHUNK_SIZE = 4 * 1024 * 1024        # 4 MB chunks for large uploads
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me drive` subcommands (`tree`, `upload`, `download`).
+
+    Args:
+        parser: Parser for the `me drive` subcommand. The chosen subcommand
+            is stored in `args.drive_subcommand`.
+    """
     sub = parser.add_subparsers(dest="drive_subcommand", required=True)
 
     tree_parser = sub.add_parser("tree", help="Print OneDrive folder structure as a tree.")
@@ -95,6 +102,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("Files.ReadWrite")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """Run a `me drive` subcommand against the user's personal OneDrive.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments; `args.drive_subcommand` selects `tree`,
+            `upload`, or `download`.
+
+    Returns:
+        The subcommand's exit code, or 1 if the personal drive cannot be
+        retrieved or the subcommand is unknown.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects a request.
+    """
     drive = await context.graph_client.me.drive.get()
     if not drive or not drive.id:
         logger.error("Could not retrieve personal drive.")
@@ -111,7 +133,10 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
     return 1
 
-async def _list_children(context: GraphContext, drive_id: str, item_id: str) -> list:
+async def _list_children(
+    context: GraphContext, drive_id: str, item_id: str
+) -> list[DriveItem]:
+    """Return the first page of children of a drive item."""
     resp = (
         await context.graph_client.drives.by_drive_id(drive_id)
         .items.by_drive_item_id(item_id)
@@ -127,6 +152,19 @@ async def _build_tree(
     depth: int,
     max_depth: int,
 ) -> None:
+    """Recursively add a folder's children to a Rich tree node.
+
+    Folders are listed before files, each sorted by name. Recursion stops
+    past `max_depth`, where an ellipsis marker is added instead.
+
+    Args:
+        context: Shared Graph runtime context.
+        drive_id: ID of the drive being walked.
+        item_id: ID of the folder whose children are added.
+        node: Tree node to attach the children to. Mutated in place.
+        depth: Current depth of `item_id`, starting at 1.
+        max_depth: Deepest level to expand.
+    """
     if depth > max_depth:
         node.add("[dim]…[/dim]")
         return
@@ -143,7 +181,8 @@ async def _build_tree(
     for folder in folders:
         size_info = f"  [dim]{folder.folder.child_count} item(s)[/dim]" if folder.folder else ""
         branch = node.add(f"[bold cyan]{folder.name}/[/bold cyan]{size_info}")
-        await _build_tree(context, drive_id, folder.id, branch, depth + 1, max_depth)
+        # Graph always returns an id for listed children; the SDK model marks it optional.
+        await _build_tree(context, drive_id, cast(str, folder.id), branch, depth + 1, max_depth)
 
     for f in files:
         size_bytes = f.size or 0
@@ -156,6 +195,16 @@ async def _build_tree(
         node.add(f"{f.name}  [dim]{size_str}[/dim]")
 
 async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
+    """Print the drive's folder structure as a tree.
+
+    Args:
+        context: Shared Graph runtime context.
+        drive_id: ID of the user's personal drive.
+        args: Parsed CLI arguments (`path`, `depth`).
+
+    Returns:
+        0 on success, 1 if `--path` does not resolve to an item.
+    """
     folder_path = (args.path or "").strip("/")
     max_depth = args.depth
 
@@ -183,6 +232,21 @@ async def _run_tree(context: GraphContext, drive_id: str, args: argparse.Namespa
     return 0
 
 async def _run_download(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
+    """Download a file, a folder, or the whole drive to local disk.
+
+    Files go under `--save` (default: the current directory). Existing
+    files are skipped unless `--no-resume` is set.
+
+    Args:
+        context: Shared Graph runtime context.
+        drive_id: ID of the user's personal drive.
+        args: Parsed CLI arguments (`path`, `save`, `no_resume`,
+            `concurrency`).
+
+    Returns:
+        0 if at least one file was downloaded, 1 if none were or `--path`
+        does not resolve to an item.
+    """
     output_dir = Path(args.save if args.save else ".").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     skip_existing = not getattr(args, "no_resume", False)
@@ -214,6 +278,19 @@ async def _run_download(context: GraphContext, drive_id: str, args: argparse.Nam
     return 0 if count > 0 else 1
 
 async def _run_upload(context: GraphContext, drive_id: str, args: argparse.Namespace) -> int:
+    """Upload a local file to the drive.
+
+    Files under 4 MB are sent in a single PUT; larger files use a
+    resumable upload session.
+
+    Args:
+        context: Shared Graph runtime context.
+        drive_id: ID of the user's personal drive.
+        args: Parsed CLI arguments (`file`, `path`).
+
+    Returns:
+        0 on success, 1 if the local file is missing or the upload fails.
+    """
     local = Path(args.file)
     if not local.exists():
         logger.error(f"File not found: {local}")
@@ -263,7 +340,22 @@ async def _chunked_upload(
     item_ref: str,
     local: Path,
     size: int,
-):
+) -> DriveItem | None:
+    """Upload a large file through a resumable upload session.
+
+    A name conflict at the destination is resolved by renaming.
+
+    Args:
+        context: Shared Graph runtime context.
+        drive_id: ID of the destination drive.
+        item_ref: Path-based item reference, e.g. `root:/Desktop/a.zip:`.
+        local: Local file to upload.
+        size: Size of `local` in bytes.
+
+    Returns:
+        The created drive item, or `None` if the session could not be
+        created or the upload produced no item.
+    """
     body = CreateUploadSessionPostRequestBody(
         item=DriveItemUploadableProperties(additional_data={"@microsoft.graph.conflictBehavior": "rename"})
     )

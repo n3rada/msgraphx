@@ -155,10 +155,53 @@ from ...utils.errors import handle_graph_errors
 
 ### 2. Typing and modern Python
 
-- Use modern Python 3.12 union syntax: `X | Y` and `X | None` instead of `Optional[X]` or `Union[X, Y]`.
-- Annotate all function signatures (parameters and return types). Use `None` as the return type for functions that only produce side effects.
-- Prefer concrete types. Avoid `Any` except where the SDK's own types are unresolvable at annotation time.
+Type hints follow the [Google Python Style Guide §3.19](https://google.github.io/styleguide/pyguide.html#319-type-annotations).
+
+- Use modern Python 3.12 union syntax: `X | Y` and `X | None` instead of `Optional[X]` or `Union[X, Y]`. A parameter that defaults to `None` must be annotated `X | None`; never rely on implicit optional (`a: str = None`).
+- Annotate every function signature, parameters and return type. Use `None` as the return type for functions that only produce side effects. Do not annotate `self`/`cls`; use `typing.Self` when the type is needed. Do not annotate `__init__`'s return.
+- Prefer abstract container types from `collections.abc` (`Sequence`, `Mapping`, `Iterable`, `Callable`, `Awaitable`, `AsyncIterator`) for parameters that are only read; return concrete built-in types (`list`, `dict`, `tuple`). Never use `typing.List`/`Dict`/`Tuple`/`Optional`/`Union`/`Text`.
+- Always parameterize generics (`list[str]`, `dict[str, Any]`, `Callable[[], Awaitable[str]]`), never bare `list`/`dict`/`Callable`.
+- Use the SDK's typed models (`User`, `DriveItem`, `GraphServiceClient`, `ODataError`) in signatures. Use `Any` only when a type genuinely cannot be expressed (e.g. SDK request builders with no common base), and make it explicit.
+- Import `typing` and `collections.abc` symbols directly (`from typing import Any`); these are exempt from the module-import rule.
+- Name type variables `_T`/`_P` when private and unconstrained; use descriptive names otherwise. Annotate type aliases with `TypeAlias` and name them `CapWords` (`_CapWords` if module-private).
+- Do not quote annotations; every file starts with `from __future__ import annotations`. Do not add `# type:` comments.
 - Use `frozenset`, `tuple`, and other immutable types where mutation is not intended.
+
+### Docstrings
+
+Docstrings follow the [Google Python Style Guide §3.8](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
+
+- Every public function, method, and class needs a docstring, as does any private function of nontrivial size or non-obvious logic. This includes every module's `add_arguments` and `run_with_arguments`.
+- Use `"""` and start with a one-line summary of at most 80 characters, ending with a period. Use the imperative mood (`"""Return the cached results."""`) throughout the project. Add more detail after one blank line.
+- Document behavior a caller needs, not implementation. Put implementation notes in comments.
+- Use the `Args:`, `Returns:` (or `Yields:` for generators), and `Raises:` sections, with section bodies indented 4 spaces and continuation lines a further 4 spaces. Omit a section when it adds nothing: `Returns:` for `None`, or all sections when the summary and signature already say everything.
+- `Args:` lists each parameter by name, including `*args` and `**kwargs`, without repeating the annotated type.
+- `Returns:` describes what the value means, e.g. `0 on success, 1 on failure.` for `run_with_arguments`. Describe a tuple as one value: `A tuple (context, exit_code), where ...`.
+- `Raises:` lists only the exceptions that belong to the interface (`AuthenticationError`, `ForbiddenGraphError`, `ValueError` for bad input), not ones caused by API misuse.
+- A decorator's docstring says it is a decorator. A decorated function's docstring describes behavior after decoration.
+- A class docstring summarises what an instance represents (`"""Shared runtime state for Graph operations."""`, not `"""Class that ..."""`). List public attributes under `Attributes:`. Exception classes describe what the error represents.
+- A `@property` docstring reads like an attribute (`"""The token's audience claim."""`), not `"""Returns ..."""`.
+- Test functions need no docstring unless they explain an unusual setup.
+
+```python
+async def collect_all(
+    request_builder: RequestBuilder,
+    request_configuration: RequestConfiguration[Any] | None = None,
+    max_pages: int | None = None,
+) -> list[Any]:
+    """Collect every item from a paginated Graph collection.
+
+    Args:
+        request_builder: SDK request builder for the collection, e.g.
+            `client.groups`.
+        request_configuration: Query parameters and headers for the first
+            request. Later pages follow `@odata.nextLink`.
+        max_pages: Stop after this many pages. `None` fetches all pages.
+
+    Returns:
+        All items across the fetched pages, in server order.
+    """
+```
 
 ### 3. JSON output
 
@@ -306,4 +349,5 @@ A change is complete only when all are true:
 3. All `run_with_arguments` entry points are decorated with `@handle_graph_errors`.
 4. Paginated resources go through `GraphPaginator` or `pagination.collect_all`.
 5. Imports follow the three-group convention with module-level references for utilities.
-6. Relevant tests were updated or added.
+6. Docstrings and type annotations follow the Google style rules above.
+7. Relevant tests were updated or added.

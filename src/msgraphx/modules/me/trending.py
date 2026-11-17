@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -28,10 +29,24 @@ async def fetch(
     context: GraphContext,
     top: int = 25,
     type_filter: str | None = None,
-) -> list[dict]:
-    """Return trending documents for the current user as plain dicts.
+) -> list[dict[str, Any]]:
+    """Return documents trending around the current user as plain dicts.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Only the first page of results is read; the type filter is applied
+    client-side after fetching.
+
+    Args:
+        context: Shared Graph runtime context (delegated auth).
+        top: Maximum number of items to request (capped at 100).
+        type_filter: Case-insensitive substring matched against the
+            resource type (e.g. `Excel`). `None` keeps all items.
+
+    Returns:
+        One dict per item with the keys `rank` (1-based), `type`, `title`,
+        `site`, `weight`, `url`, and `id`.
+
+    Raises:
+        ODataError: If the Graph API rejects the request.
     """
     query_params = TrendingRequestBuilder.TrendingRequestBuilderGetQueryParameters(
         top=min(top, 100),
@@ -65,7 +80,12 @@ async def fetch(
         for i, item in enumerate(items, 1)
     ]
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me trending` options on the parser.
+
+    Args:
+        parser: Parser for the `me trending` subcommand.
+    """
     parser.add_argument(
         "--top",
         "-n",
@@ -87,8 +107,23 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("Sites.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List documents trending around the current user.
+
+    Prints a table, or JSON/NDJSON when the matching output flag is set.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments (`top`, `type`).
+
+    Returns:
+        0 on success (including no items), 1 for app-only auth.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects the request.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

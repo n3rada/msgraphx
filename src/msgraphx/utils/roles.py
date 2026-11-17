@@ -15,13 +15,21 @@
 from __future__ import annotations
 
 # Built-in imports
+import argparse
+from collections.abc import Awaitable, Callable
 from functools import wraps
+from typing import TypeAlias
 
 # External library imports
 from loguru import logger
 
 # Local library imports
+from ..core.context import GraphContext
 from .tokens import parse_jwt
+
+_ModuleEntryPoint: TypeAlias = Callable[
+    [GraphContext, argparse.Namespace], Awaitable[int]
+]
 
 # Well-known Entra directory role template IDs.
 # Source: https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/permissions-reference
@@ -41,6 +49,11 @@ _ROLE_TEMPLATE_IDS: dict[str, str] = {
 
 
 def _get_wids_roles(token: str) -> list[str]:
+    """Return the names of well-known directory roles in the `wids` claim.
+
+    Role template IDs missing from `_ROLE_TEMPLATE_IDS` are ignored. A token
+    that cannot be decoded yields an empty list.
+    """
     try:
         _, payload, _ = parse_jwt(token)
         wids: list[str] = payload.get("wids", [])
@@ -50,6 +63,7 @@ def _get_wids_roles(token: str) -> list[str]:
 
 
 def _get_scp_scopes(token: str) -> frozenset[str]:
+    """Return the delegated scopes in the `scp` claim, or an empty set."""
     try:
         _, payload, _ = parse_jwt(token)
         scp: str = payload.get("scp", "")
@@ -58,16 +72,30 @@ def _get_scp_scopes(token: str) -> frozenset[str]:
         return frozenset()
 
 
-def require_roles(*roles: str):
-    """Decorator: hard-fail if the delegated token lacks all of the listed directory roles.
+def require_roles(
+    *roles: str,
+) -> Callable[[_ModuleEntryPoint], _ModuleEntryPoint]:
+    """Build a decorator that requires one of the given directory roles.
 
-    Passes if the token contains at least one of the named roles in its wids claim.
-    App-only tokens are not checked (no wids claim).
-    Stack outside @handle_graph_errors so auth errors still propagate normally.
+    The decorated `run_with_arguments(context, args)` entry point runs only
+    if the delegated token's `wids` claim holds at least one of `roles`.
+    Otherwise it logs the required and held roles and returns 1 without
+    calling the entry point. App-only tokens have no `wids` claim and are
+    not checked. Apply it outside `@handle_graph_errors` so authentication
+    errors still propagate normally.
+
+    Args:
+        *roles: Directory role display names, e.g. `"Global Reader"`, as
+            listed in `_ROLE_TEMPLATE_IDS`.
+
+    Returns:
+        A decorator for module entry points.
     """
-    def decorator(fn):
+    def decorator(fn: _ModuleEntryPoint) -> _ModuleEntryPoint:
         @wraps(fn)
-        async def wrapper(context, args):
+        async def wrapper(
+            context: GraphContext, args: argparse.Namespace
+        ) -> int:
             if context.is_app_only:
                 return await fn(context, args)
             token = await context.get_access_token()
@@ -85,15 +113,27 @@ def require_roles(*roles: str):
     return decorator
 
 
-def require_scopes(*scopes: str):
-    """Decorator: warn if the delegated token is missing any of the listed OAuth scopes.
+def require_scopes(
+    *scopes: str,
+) -> Callable[[_ModuleEntryPoint], _ModuleEntryPoint]:
+    """Build a decorator that warns when delegated scopes are missing.
 
-    Continues execution so the actual API 403 can surface with its own message.
-    Skipped for app-only tokens (they use roles claim, not scp).
+    The decorated `run_with_arguments(context, args)` entry point logs a
+    warning listing any of `scopes` absent from the token's `scp` claim,
+    then always runs, so the Graph API's own 403 can surface. App-only
+    tokens carry roles rather than scopes and are not checked.
+
+    Args:
+        *scopes: OAuth delegated scope names, e.g. `"User.Read.All"`.
+
+    Returns:
+        A decorator for module entry points.
     """
-    def decorator(fn):
+    def decorator(fn: _ModuleEntryPoint) -> _ModuleEntryPoint:
         @wraps(fn)
-        async def wrapper(context, args):
+        async def wrapper(
+            context: GraphContext, args: argparse.Namespace
+        ) -> int:
             if not context.is_app_only:
                 token = await context.get_access_token()
                 if token:

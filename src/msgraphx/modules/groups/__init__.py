@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 
 # Local library imports
 from . import list as list_cmd
@@ -11,8 +12,16 @@ from ...utils.errors import handle_graph_errors
 
 
 def add_arguments(
-    parser: argparse.ArgumentParser, parents: list | None = None
+    parser: argparse.ArgumentParser,
+    parents: Sequence[argparse.ArgumentParser] | None = None,
 ) -> None:
+    """Register the `list`, `members`, and `sites` subcommands.
+
+    Args:
+        parser: Parser for the `groups` command.
+        parents: Parent parsers whose shared options every subcommand
+            inherits.
+    """
     parents = parents or []
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -41,6 +50,18 @@ def add_arguments(
 
 @handle_graph_errors
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """Dispatch to the selected groups subcommand.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.subcommand` selects the handler.
+
+    Returns:
+        The subcommand's exit code, or 1 for an unknown subcommand.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     sub = args.subcommand
 
     if sub in ("list", "ls"):

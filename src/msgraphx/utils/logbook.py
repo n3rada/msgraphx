@@ -18,19 +18,34 @@ Is this message about...
 """
 
 # Built-in imports
+from __future__ import annotations
+
 import json
 import os
 import sys
 import traceback
 from datetime import timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 # Third party library imports
 from loguru import logger
 
+if TYPE_CHECKING:
+    from loguru import Record
 
-def _format_message(record):
-    """Custom formatter with compact symbols and colors."""
+
+def _format_message(record: Record) -> str:
+    """Build the colored stderr format template for a log record.
+
+    Args:
+        record: The Loguru record being formatted.
+
+    Returns:
+        A Loguru markup template with a UTC timestamp, a level symbol, and
+        the message. Loguru fills in its `{time}`, `{message}`, and
+        `{exception}` fields.
+    """
     level_name = record["level"].name
 
     # Modern color palette (hex colors for better terminal support)
@@ -72,8 +87,18 @@ def _format_message(record):
 _JSON_EXTRA_KEY = "_msgraphx_json"
 
 
-def _serialize_record(record: dict) -> str:
-    """Serialize a Loguru record into one compact, flat JSON line."""
+def _serialize_record(record: Record) -> str:
+    """Serialize a Loguru record into one compact JSON line.
+
+    Args:
+        record: The Loguru record to serialize. Extra keys starting with `_`
+            are left out.
+
+    Returns:
+        A JSON object with `ts` (UTC, millisecond precision), `level`, `msg`,
+        `module`, `function`, `line`, `exception` (formatted traceback or
+        null), and `extra` when there is any.
+    """
     exception = record["exception"]
     exception_text = None
     if exception is not None:
@@ -83,7 +108,7 @@ def _serialize_record(record: dict) -> str:
             )
         )
 
-    payload = {
+    payload: dict[str, Any] = {
         "ts": record["time"]
         .astimezone(timezone.utc)
         .isoformat(timespec="milliseconds")
@@ -109,18 +134,37 @@ def _serialize_record(record: dict) -> str:
     )
 
 
-def _format_json(record: dict) -> str:
-    """Loguru format callable emitting one JSON object per line (JSONL).
+def _format_json(record: Record) -> str:
+    """Build the JSONL file-sink format template for a log record.
 
-    Loguru treats the returned value as a ``str.format`` template, so the JSON
-    (which contains braces) is stashed in ``extra`` and referenced from there.
+    Loguru treats the returned value as a `str.format` template, so the
+    serialized JSON, which contains braces, is stored in the record's
+    `extra` and the template only references it.
+
+    Args:
+        record: The Loguru record being formatted. Mutated: the serialized
+            JSON is stored under `extra[_JSON_EXTRA_KEY]`.
+
+    Returns:
+        A template that renders as one JSON object followed by a newline.
     """
     record["extra"][_JSON_EXTRA_KEY] = _serialize_record(record)
     return "{extra[" + _JSON_EXTRA_KEY + "]}\n"
 
 
 def _xdg_state_dir(app_name: str = "msgraphx") -> Path:
-    """Get platform-appropriate log directory following XDG standards."""
+    """Return the platform-appropriate log directory.
+
+    Uses `MSGRAPHX_LOG_DIR` when set, otherwise `%LOCALAPPDATA%` on Windows
+    and `$XDG_STATE_HOME` (default `~/.local/state`) on POSIX. The directory
+    is not created.
+
+    Args:
+        app_name: Subdirectory name under the platform base directory.
+
+    Returns:
+        The log directory path.
+    """
     # Highest priority: explicit override
     override = os.getenv("MSGRAPHX_LOG_DIR")
     if override:
@@ -138,12 +182,18 @@ def _xdg_state_dir(app_name: str = "msgraphx") -> Path:
     return Path.home() / ".local" / "state" / app_name / "logs"
 
 
-def setup_logging(level: str = "INFO"):
-    """
-    Setup logging with compact, visually intuitive output.
+def setup_logging(level: str = "INFO") -> None:
+    """Replace all Loguru handlers with the msgraphx stderr and file sinks.
+
+    Adds a colored, compact stderr sink and a rotating, zip-compressed
+    `msgraphx.jsonl` file sink in the log directory, creating it if needed.
+    Rotation size and retention come from `MSGRAPHX_LOG_MAX_BYTES` (default
+    `10 MB`) and `MSGRAPHX_LOG_RETENTION_DAYS` (default 14).
 
     Args:
-        level: Log level (TRACE, DEBUG, INFO, SUCCESS, WARNING, ERROR, CRITICAL)
+        level: Minimum level for both sinks: TRACE, DEBUG, INFO, SUCCESS,
+            WARNING, ERROR, or CRITICAL, case-insensitive. Any other value
+            falls back to INFO.
     """
     level = level.upper()
 

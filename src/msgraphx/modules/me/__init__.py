@@ -9,7 +9,13 @@ from ...core.context import GraphContext
 from ...utils.errors import handle_graph_errors
 
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me` subcommands and their options on the parser.
+
+    Args:
+        parser: Parser for the `me` command. Subcommands are stored in
+            `args.subcommand`.
+    """
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     groups_parser = subparsers.add_parser(
@@ -60,8 +66,20 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 
 @handle_graph_errors
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Dispatch a `me` subcommand to its module.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments; `args.subcommand` selects the module.
+
+    Returns:
+        The subcommand's exit code, or 1 for an unknown subcommand.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+    """
     sub = args.subcommand
 
     if sub == "groups":

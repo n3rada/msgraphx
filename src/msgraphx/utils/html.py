@@ -17,6 +17,7 @@ import re
 from html import unescape
 
 # External library imports
+from bs4 import Tag
 from markdownify import MarkdownConverter
 from rich.markdown import Markdown
 
@@ -26,7 +27,15 @@ from rich.markdown import Markdown
 
 
 def strip_html(raw: str) -> str:
-    """Strip HTML tags, decode entities, collapse whitespace (inline display)."""
+    """Convert HTML to a single line of plain text for inline display.
+
+    Args:
+        raw: HTML markup.
+
+    Returns:
+        The text with tags removed, entities decoded, and whitespace runs
+        collapsed to single spaces.
+    """
     body = re.sub(r"<[^>]+>", " ", raw).strip()
     body = unescape(body)
     return re.sub(r"\s{2,}", " ", body)
@@ -38,27 +47,48 @@ def strip_html(raw: str) -> str:
 
 
 class _TeamsMarkdownConverter(MarkdownConverter):
-    """Custom markdownify converter for Microsoft Teams HTML."""
+    """A markdownify converter that understands Microsoft Teams HTML tags."""
 
-    def convert_at(self, el, text, convert_as_inline):  # noqa: ARG002
-        """<at> mention tags become bold @mentions."""
+    def convert_at(  # noqa: ARG002
+        self, el: Tag, text: str, convert_as_inline: set[str]
+    ) -> str:
+        """Render an `<at>` mention tag as a bold @mention."""
         return f"**@{text.strip()}**"
 
-    def convert_attachment(self, el, text, convert_as_inline):  # noqa: ARG002
-        """<attachment> tags become a placeholder."""
+    def convert_attachment(  # noqa: ARG002
+        self, el: Tag, text: str, convert_as_inline: set[str]
+    ) -> str:
+        """Render an `<attachment>` tag as a placeholder."""
         return " [attachment] "
 
-    def convert_img(self, el, text, convert_as_inline):  # noqa: ARG002
-        """Images become a placeholder (not useful in terminal)."""
+    def convert_img(  # noqa: ARG002
+        self, el: Tag, text: str, convert_as_inline: set[str]
+    ) -> str:
+        """Render an image as a placeholder showing its alt text."""
         alt = el.get("alt", "image")
         return f" [{alt}] "
 
 
 def html_to_markdown(raw: str) -> str:
-    """Convert HTML to Markdown with Teams-specific tag handling."""
+    """Convert HTML to Markdown, handling Teams-specific tags.
+
+    Args:
+        raw: HTML markup, typically a Teams or Outlook message body.
+
+    Returns:
+        Markdown text with `<span>` tags stripped, mentions in bold, and
+        attachments and images replaced by placeholders.
+    """
     return _TeamsMarkdownConverter(strip=["span"]).convert(raw).strip()
 
 
 def render_html(raw: str) -> Markdown:
-    """Return a Rich Markdown renderable from HTML content."""
+    """Convert HTML into a Rich Markdown renderable for terminal display.
+
+    Args:
+        raw: HTML markup.
+
+    Returns:
+        A Rich `Markdown` object built from `html_to_markdown(raw)`.
+    """
     return Markdown(html_to_markdown(raw))

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -20,7 +21,12 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams meetings` options on a parser.
+
+    Args:
+        parser: Parser for the `teams meetings` subcommand.
+    """
     parser.add_argument(
         "--top",
         "-n",
@@ -36,12 +42,22 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help="Fetch and print transcripts for a specific meeting ID.",
     )
 
-async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
-    """Return online meetings for the current user as plain dicts.
+async def fetch(context: GraphContext, top: int = 25) -> list[dict[str, Any]]:
+    """List the signed-in user's online meetings.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Args:
+        context: Shared Graph runtime context (delegated).
+        top: Maximum number of meetings to return.
+
+    Returns:
+        One dict per meeting with `id`, `subject`, `start`
+        (YYYY-MM-DD HH:MM), `end` (HH:MM) and `organizer` (UPN, else display
+        name).
+
+    Raises:
+        ODataError: A Graph request failed.
     """
-    rows = []
+    rows: list[dict[str, Any]] = []
     async for meeting in GraphPaginator(context.graph_client.me.online_meetings):
         start = ""
         end = ""
@@ -71,10 +87,23 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
 
     return rows
 
-async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict]:
-    """Return transcripts for a meeting as plain dicts with VTT content.
+async def fetch_transcripts(
+    context: GraphContext, meeting_id: str
+) -> list[dict[str, Any]]:
+    """Download every transcript of an online meeting.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Makes one extra request per transcript to fetch its content.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        meeting_id: ID of the online meeting.
+
+    Returns:
+        One dict per transcript with `transcript_id`, `meeting_id`,
+        `created` (YYYY-MM-DD HH:MM) and `content` (WebVTT text).
+
+    Raises:
+        ODataError: A Graph request failed.
     """
     result = await context.graph_client.me.online_meetings.by_online_meeting_id(
         meeting_id
@@ -82,7 +111,7 @@ async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict
 
     transcripts = (result.value or []) if result else []
 
-    items = []
+    items: list[dict[str, Any]] = []
     for transcript in transcripts:
         created = ""
         if transcript.created_date_time:
@@ -110,8 +139,23 @@ async def fetch_transcripts(context: GraphContext, meeting_id: str) -> list[dict
 @handle_graph_errors
 @require_scopes("OnlineMeetings.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List online meetings, or print one meeting's transcripts.
+
+    Warns first if the token lacks `OnlineMeetings.Read`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `top`, and `transcript` (a meeting ID) to
+            print transcripts instead of listing meetings.
+
+    Returns:
+        0 on success, 1 for app-only auth or if listing meetings fails.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -122,6 +166,15 @@ async def run_with_arguments(
     return await _render_meetings(context, args.top)
 
 async def _render_meetings(context: GraphContext, top: int) -> int:
+    """Print online meetings as a table, JSON, or NDJSON.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        top: Maximum number of meetings to list.
+
+    Returns:
+        0 on success (including no meetings), 1 if the listing failed.
+    """
     logger.info("Fetching online meetings")
 
     try:
@@ -169,6 +222,18 @@ async def _render_meetings(context: GraphContext, top: int) -> int:
     return 0
 
 async def _render_transcripts(context: GraphContext, meeting_id: str) -> int:
+    """Print a meeting's transcripts as text, JSON, or NDJSON.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        meeting_id: ID of the online meeting.
+
+    Returns:
+        Always 0, including when the meeting has no transcripts.
+
+    Raises:
+        ODataError: A Graph request failed.
+    """
     logger.info(f"Fetching transcripts for meeting: {meeting_id}")
 
     all_content = await fetch_transcripts(context, meeting_id)

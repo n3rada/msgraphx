@@ -23,7 +23,12 @@ from ...utils import cache
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `outlook download` options on a parser.
+
+    Args:
+        parser: Parser for the `outlook download` subcommand.
+    """
     parser.add_argument(
         "indices",
         nargs="?",
@@ -34,8 +39,26 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 @handle_graph_errors
 @require_scopes("Mail.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Download cached mail search results as `.eml` (MIME) files.
+
+    Messages are picked by 1-based index from the last `outlook search`
+    and written to `args.save` (default: the current directory), named
+    after their sanitised subject. Existing files are skipped and counted
+    as downloaded. Warns first if the token lacks `Mail.Read`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `indices` (e.g. `"1,3-5"`) and `save`.
+
+    Returns:
+        0 if at least one message was downloaded or already present; 1
+        otherwise, or for app-only auth, an empty cache, or invalid indices.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

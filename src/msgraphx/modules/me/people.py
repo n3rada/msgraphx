@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -24,7 +25,12 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me people` options on the parser.
+
+    Args:
+        parser: Parser for the `me people` subcommand.
+    """
     parser.add_argument(
         "--top",
         "-n",
@@ -44,10 +50,25 @@ async def fetch(
     context: GraphContext,
     top: int = 25,
     search: str | None = None,
-) -> list[dict]:
-    """Return the current user's people graph as plain dicts.
+) -> list[dict[str, Any]]:
+    """Return the people most relevant to the current user as plain dicts.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Relevance is ranked by Graph from communication and collaboration
+    patterns. Only the first page of results is read.
+
+    Args:
+        context: Shared Graph runtime context (delegated auth).
+        top: Maximum number of people to request (capped at 1000).
+        search: Name to filter on via server-side `$search`. `None` returns
+            the unfiltered ranking.
+
+    Returns:
+        One dict per person with the keys `id`, `display_name`,
+        `job_title`, `department`, `email` (first scored address),
+        `phone` (first number), `company`, and `office`.
+
+    Raises:
+        ODataError: If the Graph API rejects the request.
     """
     query_params = PeopleRequestBuilder.PeopleRequestBuilderGetQueryParameters(
         top=min(top, 1000),
@@ -58,7 +79,7 @@ async def fetch(
     result = await context.graph_client.me.people.get(request_configuration=config)
     people = (result.value or []) if result else []
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for person in people:
         email = ""
         phones_list = person.phones or []
@@ -84,8 +105,23 @@ async def fetch(
 @handle_graph_errors
 @require_scopes("People.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List the people most relevant to the current user.
+
+    Prints a table, or JSON/NDJSON when the matching output flag is set.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments (`top`, `search`).
+
+    Returns:
+        0 on success (including no results), 1 for app-only auth.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects the request.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

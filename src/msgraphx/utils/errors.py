@@ -8,20 +8,38 @@ import sys
 import functools
 import inspect
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar, cast
 
 # External library imports
 from loguru import logger
 
+_GraphCallable = TypeVar("_GraphCallable", bound=Callable[..., Any])
+
 
 class AuthenticationError(RuntimeError):
-    """Raised when Graph API authentication fails (expired/invalid token)."""
+    """A Graph API authentication failure: the token is invalid or expired."""
 
 
 class ForbiddenGraphError(RuntimeError):
-    """Raised when the Graph API returns 403 Forbidden (insufficient permissions)."""
+    """A 403 Forbidden from the Graph API: the token lacks a permission.
 
-    def __init__(self, required: str | None, granted: str | None, raw_message: str):
+    Attributes:
+        required: Permissions the API said it requires, if it said.
+        granted: Permissions the API said the token has, if it said.
+        raw_message: The API's error message.
+    """
+
+    def __init__(
+        self, required: str | None, granted: str | None, raw_message: str
+    ):
+        """Initialize the error from the parsed 403 details.
+
+        Args:
+            required: Permissions the API requires, or `None` if unknown.
+            granted: Permissions the token has, or `None` if unknown.
+            raw_message: The API's error message, also used as the
+                exception message.
+        """
         super().__init__(raw_message)
         self.required = required
         self.granted = granted
@@ -29,7 +47,18 @@ class ForbiddenGraphError(RuntimeError):
 
 
 def is_graph_auth_error(exc: Exception) -> bool:
-    """Return True if the exception indicates an authentication failure."""
+    """Check whether an exception is a Graph authentication failure.
+
+    Looks at `exc` itself, then at the `ODataError` it was raised from or
+    during, and treats an `InvalidAuthenticationToken` code or a message
+    mentioning "expired" as an authentication failure.
+
+    Args:
+        exc: The exception to inspect.
+
+    Returns:
+        True if the token was rejected as invalid or expired.
+    """
     try:
         # Import here to avoid import cycles at module import time
         from msgraph.generated.models.o_data_errors.o_data_error import ODataError
@@ -65,12 +94,17 @@ def is_graph_auth_error(exc: Exception) -> bool:
 
 
 def check_and_exit_for_auth_error(exc: Exception) -> None:
-    """
-    Inspect an exception for Microsoft Graph authentication errors (401/InvalidAuthenticationToken).
-    If detected, log a clear message and exit the process with a non-zero code.
+    """Exit the process if an exception is a Graph authentication failure.
 
-    This function is safe to call from generic exception handlers; it will exit
-    the process only when the underlying error indicates an invalid/expired token.
+    Uses the same detection as `is_graph_auth_error`. Safe to call from
+    generic exception handlers: other exceptions are ignored.
+
+    Args:
+        exc: The exception to inspect.
+
+    Raises:
+        SystemExit: With code 1, after logging an error, if the token was
+            rejected as invalid or expired.
     """
     try:
         # Import here to avoid import cycles at module import time
@@ -108,8 +142,16 @@ def check_and_exit_for_auth_error(exc: Exception) -> None:
         sys.exit(1)
 
 
-def _odata_error_obj(exc: Exception):
-    """Return the underlying ODataError-like object, or None."""
+def _odata_error_obj(exc: Exception) -> Exception | None:
+    """Return the exception carrying the Graph error payload, if any.
+
+    Args:
+        exc: The exception to inspect.
+
+    Returns:
+        `exc` if it is an `ODataError` or has an `error` attribute, the
+        `ODataError` it was raised from or during, or `None`.
+    """
     try:
         from msgraph.generated.models.o_data_errors.o_data_error import ODataError
     except Exception:
@@ -127,7 +169,15 @@ def _odata_error_obj(exc: Exception):
 
 
 def is_graph_forbidden_error(exc: Exception) -> bool:
-    """Return True if exc represents a 403 Forbidden from the Graph API."""
+    """Check whether an exception is a 403 Forbidden from the Graph API.
+
+    Args:
+        exc: The exception to inspect.
+
+    Returns:
+        True if the Graph error code is `Forbidden` or the HTTP status of
+        `exc` is 403.
+    """
     obj = _odata_error_obj(exc)
     if obj is None:
         return False
@@ -143,7 +193,19 @@ def is_graph_forbidden_error(exc: Exception) -> bool:
 
 
 def raise_if_forbidden(exc: Exception) -> None:
-    """If exc is a 403 Forbidden, raise ForbiddenGraphError with parsed details."""
+    """Re-raise a Graph 403 Forbidden as a `ForbiddenGraphError`.
+
+    Does nothing if `exc` is not a 403, so callers can call it first in an
+    `except` block and then handle or re-raise other errors.
+
+    Args:
+        exc: The caught exception.
+
+    Raises:
+        ForbiddenGraphError: If `exc` is a 403. The required and granted
+            permissions are parsed from the API message when present, and
+            `exc` is chained as the cause.
+    """
     if not is_graph_forbidden_error(exc):
         return
 
@@ -174,14 +236,20 @@ def raise_if_forbidden(exc: Exception) -> None:
     raise ForbiddenGraphError(required=required, granted=granted, raw_message=raw or "") from exc
 
 
-def handle_graph_errors(func: Callable) -> Callable:
-    """
-    Decorator that catches exceptions from functions (sync or async), runs
-    `check_and_exit_for_auth_error`, and re-raises the exception.
+def handle_graph_errors(func: _GraphCallable) -> _GraphCallable:
+    """Decorate a function so Graph authentication failures become typed errors.
 
-    Use on async functions as well; the decorator preserves coroutine behaviour.
-    """
+    Works on sync and async functions; an async function stays a coroutine
+    function. Exceptions that `is_graph_auth_error` recognizes are re-raised
+    as `AuthenticationError`, with the original chained as the cause. All
+    other exceptions propagate unchanged.
 
+    Args:
+        func: The function to wrap.
+
+    Returns:
+        The wrapped function, with the same signature.
+    """
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
@@ -193,7 +261,7 @@ def handle_graph_errors(func: Callable) -> Callable:
                     raise AuthenticationError("Graph authentication failed") from e
                 raise
 
-        return async_wrapper
+        return cast(_GraphCallable, async_wrapper)
 
     @functools.wraps(func)
     def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -204,5 +272,5 @@ def handle_graph_errors(func: Callable) -> Callable:
                 raise AuthenticationError("Graph authentication failed") from e
             raise
 
-    return sync_wrapper
+    return cast(_GraphCallable, sync_wrapper)
 

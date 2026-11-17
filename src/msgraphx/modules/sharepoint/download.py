@@ -29,19 +29,27 @@ async def download_drive_item(
     semaphore: asyncio.Semaphore | None = None,
     skip_existing: bool = True,
 ) -> int:
-    """
-    Download a single drive item (file or folder).
+    """Download a drive item, recursing into folders.
+
+    Folder children are downloaded concurrently. Per-item failures are logged
+    and do not stop the rest of the download.
 
     Args:
-        graph_client: Authenticated Graph client
-        drive_id: The drive ID
-        item: The DriveItem to download
-        output_dir: Base output directory
-        base_path: Current path relative to drive root
-        semaphore: Semaphore to limit concurrent downloads
+        graph_client: Authenticated Graph client.
+        drive_id: ID of the drive that holds the item.
+        item: The file or folder to download.
+        output_dir: Local directory that mirrors the drive root.
+        base_path: Path of the item's parent relative to the drive root; ""
+            for root-level items.
+        semaphore: Limits concurrent file downloads. None means no limit.
+        skip_existing: Skip local files whose size already matches the
+            remote size (resume mode).
 
     Returns:
-        Number of files downloaded
+        The number of files downloaded or skipped as already present.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
     """
     downloaded_count = 0
 
@@ -53,7 +61,7 @@ async def download_drive_item(
         logger.debug(f"Entering folder: {current_path}")
         try:
             # Get all children of this folder (with pagination)
-            children = await pagination.collect_all(
+            children: list[DriveItem] = await pagination.collect_all(
                 graph_client.drives.by_drive_id(drive_id)
                 .items.by_drive_item_id(item.id)
                 .children
@@ -113,19 +121,25 @@ async def _download_file(
     current_path: str,
     skip_existing: bool = True,
 ) -> int:
-    """
-    Helper function to download a single file.
+    """Download one file to `output_dir / current_path`.
+
+    Errors are logged rather than raised.
 
     Args:
-        graph_client: Authenticated Graph client
-        drive_id: The drive ID
-        item: The DriveItem to download
-        output_dir: Base output directory
-        current_path: Full path for the file
-        skip_existing: Skip files that already exist with matching size
+        graph_client: Authenticated Graph client.
+        drive_id: ID of the drive that holds the file.
+        item: The file to download.
+        output_dir: Local directory that mirrors the drive root.
+        current_path: File path relative to the drive root.
+        skip_existing: Skip the download if a local file of the same size
+            already exists.
 
     Returns:
-        1 if downloaded successfully, 0 otherwise
+        1 if the file was downloaded or skipped as already present, 0 if it
+        had no content or the download failed.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
     """
     try:
         # Create the directory structure
@@ -174,18 +188,21 @@ async def download_drive(
     max_concurrent: int = 20,
     skip_existing: bool = True,
 ) -> int:
-    """
-    Download all files from a drive.
+    """Download every file in a drive into a folder named after the drive.
+
+    Errors are logged rather than raised.
 
     Args:
-        graph_client: Authenticated Graph client
-        drive_id: The drive ID to download
-        output_dir: Directory to save files
-        max_concurrent: Maximum number of concurrent downloads
-        skip_existing: Skip files that already exist with matching size
+        graph_client: Authenticated Graph client.
+        drive_id: ID of the drive to download.
+        output_dir: Directory in which the drive folder is created.
+        max_concurrent: Maximum number of concurrent file downloads.
+        skip_existing: Skip local files whose size already matches the
+            remote size (resume mode).
 
     Returns:
-        Total number of files downloaded
+        The number of files downloaded or skipped as already present; 0 if
+        the drive is empty or could not be read.
     """
     logger.info(f"Starting drive dump: {drive_id}")
     logger.info(f"Output directory: {output_dir}")
@@ -206,7 +223,7 @@ async def download_drive(
         logger.info(f"Files will be saved to: {drive_folder}")
 
         # Start from root - use items with "root" as the item ID (with pagination)
-        root_children = await pagination.collect_all(
+        root_children: list[DriveItem] = await pagination.collect_all(
             graph_client.drives.by_drive_id(drive_id)
             .items.by_drive_item_id("root")
             .children
@@ -244,7 +261,12 @@ async def download_drive(
         return 0
 
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `sharepoint download` arguments on a parser.
+
+    Args:
+        parser: Parser for the `download` subcommand.
+    """
     parser.add_argument(
         "indices",
         nargs="?",
@@ -271,7 +293,23 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 @handle_graph_errors
 @require_scopes("Files.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """Download cached search results by index, or a whole drive.
 
+    With `indices`, downloads those items from the last `sharepoint search`.
+    Otherwise downloads the drive given by the global `--drive-id` into
+    `--save` (default: the current directory).
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments (`indices`, `concurrency`, `no_resume`, and
+            the global `drive_id` and `save`).
+
+    Returns:
+        0 if at least one file was downloaded, 1 otherwise.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     # If indices provided, download from cached search results
     if args.indices:
         return await _download_from_cache(context, args)
@@ -303,7 +341,18 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
 
 
 async def _download_from_cache(context: GraphContext, args: argparse.Namespace) -> int:
-    """Download specific items from the last cached search results."""
+    """Download items from the last cached SharePoint search by index.
+
+    Files are written flat into `--save` (default: the current directory);
+    existing files are skipped and counted as downloaded.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments (`indices` such as "1,3-5", and `save`).
+
+    Returns:
+        0 if at least one file was downloaded, 1 otherwise.
+    """
     cached = cache.load_results(key="sharepoint", identity=context.identity_hash)
     if not cached:
         logger.error("No cached search results. Run a search first.")

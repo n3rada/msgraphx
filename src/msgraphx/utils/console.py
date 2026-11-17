@@ -2,6 +2,8 @@
 
 """Shared Rich console configured to always use full terminal width."""
 
+from __future__ import annotations
+
 import shutil
 
 from rich.console import Console

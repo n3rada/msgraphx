@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 # Standard library imports
+from __future__ import annotations
+
 import asyncio
 import sys
 

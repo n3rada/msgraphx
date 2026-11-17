@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 
 # Local library imports
 from . import download, search, sites
@@ -10,8 +11,16 @@ from ...utils.errors import handle_graph_errors
 
 
 def add_arguments(
-    parser: "argparse.ArgumentParser", parents: "list | None" = None
+    parser: argparse.ArgumentParser,
+    parents: Sequence[argparse.ArgumentParser] | None = None,
 ) -> None:
+    """Register the `search`, `sites`, and `download` subcommands.
+
+    Args:
+        parser: Parser for the `sharepoint` command.
+        parents: Parent parsers whose shared options every subcommand
+            inherits.
+    """
     parents = parents or []
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -40,8 +49,20 @@ def add_arguments(
 
 @handle_graph_errors
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Dispatch to the selected SharePoint subcommand.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.subcommand` selects the handler.
+
+    Returns:
+        The subcommand's exit code, or 1 for an unknown subcommand.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     subcommand = args.subcommand
 
     if subcommand == "search":

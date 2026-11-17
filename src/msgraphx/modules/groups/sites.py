@@ -19,6 +19,21 @@ from ...utils.roles import require_scopes
 @handle_graph_errors
 @require_scopes("Sites.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """List the SharePoint root site owned by a group and cache it.
+
+    Results are cached under the `group_sites` key and printed as a table,
+    JSON, or NDJSON depending on the output mode.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments (`group_id`).
+
+    Returns:
+        0 on success, including when the group has no site.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     group_id = args.group_id
     logger.info(f"Fetching sites for group {group_id}")
 
@@ -78,6 +93,11 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
     return 0
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `groups sites` arguments on a parser.
+
+    Args:
+        parser: Parser for the `sites` subcommand.
+    """
     parser.add_argument(
         "group_id",
         help="Group ID (GUID) to list sites for.",

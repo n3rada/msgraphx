@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -22,14 +24,20 @@ APP_NAME = "msgraphx"
 
 
 def _get_data_dir(identity: str = "unknown") -> Path:
-    """Return the XDG data directory for msgraphx, partitioned by operator identity.
+    """Return the cache directory for one operator identity.
 
-    On POSIX: $XDG_DATA_HOME/msgraphx/{identity}/ (defaults to ~/.local/share/msgraphx/{identity}/)
-    On Windows: %APPDATA%/msgraphx/{identity}/
+    The base is `%APPDATA%` on Windows and `$XDG_DATA_HOME` (default
+    `~/.local/share`) on POSIX. Partitioning by identity keeps several tokens
+    on the same machine from overwriting each other's cached results. The
+    directory is not created.
 
-    The identity is a 16-char hex hash derived from the operator's OID (delegated)
-    or "{tenant_id}:{client_id}" (app-only), preventing multiple tokens on the
-    same machine from overwriting each other's cached results.
+    Args:
+        identity: The operator's `GraphContext.identity_hash`, a 16-character
+            hex hash of the user OID (delegated) or `{tenant_id}:{client_id}`
+            (app-only).
+
+    Returns:
+        The path `<base>/msgraphx/<identity>`.
     """
     if os.name == "nt":
         base = Path(os.environ.get("APPDATA") or Path.home())
@@ -40,8 +48,19 @@ def _get_data_dir(identity: str = "unknown") -> Path:
     return base / APP_NAME / identity
 
 
-def save_results(items: list[dict], key: str, identity: str = "unknown") -> None:
-    """Cache the latest results for *key* under the operator identity subdirectory."""
+def save_results(
+    items: Sequence[dict[str, Any]], key: str, identity: str = "unknown"
+) -> None:
+    """Replace the cached results for a search domain.
+
+    Writes `last_<key>.json`, readable only by the owner on POSIX. A write
+    failure is logged as a warning, not raised.
+
+    Args:
+        items: JSON-serializable result records.
+        key: Search domain name, e.g. `sharepoint` or `mail`.
+        identity: The operator's identity hash, see `_get_data_dir`.
+    """
     data_dir = _get_data_dir(identity)
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -55,10 +74,16 @@ def save_results(items: list[dict], key: str, identity: str = "unknown") -> None
         logger.warning(f"Failed to cache results: {exc}")
 
 
-def load_results(key: str, identity: str = "unknown") -> list[dict]:
-    """Load cached results for *key* from the operator identity subdirectory.
+def load_results(key: str, identity: str = "unknown") -> list[dict[str, Any]]:
+    """Load the cached results for a search domain.
 
-    Returns an empty list if no cache exists or the file is corrupt.
+    Args:
+        key: Search domain name, e.g. `sharepoint` or `mail`.
+        identity: The operator's identity hash, see `_get_data_dir`.
+
+    Returns:
+        The cached records, or an empty list if there is no cache or it
+        cannot be read or parsed.
     """
     cache_file = _get_data_dir(identity) / f"last_{key}.json"
     if not cache_file.is_file():
@@ -72,15 +97,17 @@ def load_results(key: str, identity: str = "unknown") -> list[dict]:
 
 
 def parse_indices(spec: str, total: int) -> list[int]:
-    """Parse a user index spec like '1,3,5-7' into 0-based indices.
+    """Convert a 1-based index spec such as `1,3-5,8` into 0-based indices.
 
-    Supports:
-        - Single: '3'
-        - Comma-separated: '1,3,5'
-        - Ranges: '2-5'
-        - Mixed: '1,3-5,8'
+    Args:
+        spec: Comma-separated single indices (`3`) and inclusive ranges
+            (`2-5`). Tokens that are not integers or ranges are skipped.
+        total: Number of available items. Indices outside `1..total` are
+            skipped.
 
-    Out-of-range indices are silently skipped.
+    Returns:
+        The valid indices, converted to 0-based, in spec order. Duplicates
+        are kept.
     """
     indices: list[int] = []
     for part in spec.split(","):

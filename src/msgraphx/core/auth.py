@@ -24,15 +24,38 @@ async def create_context(
     ndjson_output: bool = False,
     region: str = "EMEA",
 ) -> GraphContext:
-    """Build an authenticated GraphContext.
+    """Build an authenticated GraphContext for library use.
 
-    Delegated (user token):
+    App-only (client credentials) authentication is used when `tenant_id`
+    and a client ID or secret are given; otherwise a delegated access token
+    is required. A delegated-looking token that carries `roles` but no
+    `scp` claim is treated as app-only. No Graph request is sent.
+
+    Example:
         ctx = await create_context(access_token="eyJ...")
-
-    App-only (client credentials):
         ctx = await create_context(
             tenant_id="...", client_id="...", client_secret="..."
         )
+
+    Args:
+        access_token: Delegated JWT access token for Graph.
+        refresh_token: Refresh token stored with the access token. It is not
+            used for automatic renewal here.
+        tenant_id: Tenant ID for app-only authentication.
+        client_id: Application (client) ID for app-only authentication.
+        client_secret: Client secret for app-only authentication.
+        json_output: Value for `GraphContext.json_output`.
+        ndjson_output: Value for `GraphContext.ndjson_output`.
+        region: Search region for the Graph Search API.
+
+    Returns:
+        A context with a configured `GraphServiceClient` and token getter.
+        `cached_user` and `raw_identity` are left unset.
+
+    Raises:
+        ValueError: If app-only credentials are incomplete, no access token
+            is given for delegated auth, or the access token is malformed or
+            expired.
     """
     if tenant_id and (client_id or client_secret):
         if not all((tenant_id, client_id, client_secret)):

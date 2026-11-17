@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from loguru import logger
+from msgraph.generated.models.notebook import Notebook
+from msgraph.generated.models.onenote_page import OnenotePage
 from rich.table import Table
 
 # Local library imports
@@ -21,7 +24,12 @@ from ...utils.html import strip_html
 from ...utils.pagination import collect_all
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me onenote` options on the parser.
+
+    Args:
+        parser: Parser for the `me onenote` subcommand.
+    """
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--pages",
@@ -38,8 +46,24 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("Notes.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List OneNote notebooks or pages, or show one page's content.
+
+    With no option, lists notebooks. `--pages` lists every page and caches
+    the results; `--content PAGE_ID` prints a page as plain text.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments (`pages`, `content`).
+
+    Returns:
+        0 on success, 1 for app-only auth.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects a request.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -52,10 +76,18 @@ async def run_with_arguments(
 
     return await _list_notebooks(context)
 
-async def _list_notebooks(context: "GraphContext") -> int:
+async def _list_notebooks(context: GraphContext) -> int:
+    """Print the current user's OneNote notebooks.
+
+    Args:
+        context: Shared Graph runtime context.
+
+    Returns:
+        0, including when no notebooks are found.
+    """
     logger.info("Fetching OneNote notebooks")
 
-    notebooks = await collect_all(context.graph_client.me.onenote.notebooks)
+    notebooks: list[Notebook] = await collect_all(context.graph_client.me.onenote.notebooks)
 
     if not notebooks:
         logger.info("No notebooks found.")
@@ -63,7 +95,7 @@ async def _list_notebooks(context: "GraphContext") -> int:
             output.print_json([])
         return 0
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for nb in notebooks:
         modified = (
             nb.last_modified_date_time.strftime("%Y-%m-%d")
@@ -101,10 +133,18 @@ async def _list_notebooks(context: "GraphContext") -> int:
     logger.success(f"{len(rows)} notebook(s) found. Use --pages to list all pages.")
     return 0
 
-async def _list_pages(context: "GraphContext") -> int:
+async def _list_pages(context: GraphContext) -> int:
+    """Print every OneNote page and cache the list under the `onenote` key.
+
+    Args:
+        context: Shared Graph runtime context.
+
+    Returns:
+        0, including when no pages are found.
+    """
     logger.info("Fetching all OneNote pages")
 
-    pages = await collect_all(context.graph_client.me.onenote.pages)
+    pages: list[OnenotePage] = await collect_all(context.graph_client.me.onenote.pages)
 
     if not pages:
         logger.info("No pages found.")
@@ -112,7 +152,7 @@ async def _list_pages(context: "GraphContext") -> int:
             output.print_json([])
         return 0
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for page in pages:
         modified = (
             page.last_modified_date_time.strftime("%Y-%m-%d")
@@ -161,7 +201,16 @@ async def _list_pages(context: "GraphContext") -> int:
     logger.success(f"{len(rows)} page(s) found. Use --content PAGE_ID to read a page.")
     return 0
 
-async def _fetch_page_content(context: "GraphContext", page_id: str) -> int:
+async def _fetch_page_content(context: GraphContext, page_id: str) -> int:
+    """Print a OneNote page as plain text, or its HTML and text as JSON.
+
+    Args:
+        context: Shared Graph runtime context.
+        page_id: ID of the OneNote page.
+
+    Returns:
+        0, including when the page has no content.
+    """
     logger.info(f"Fetching page content: {page_id}")
 
     content_bytes = await context.graph_client.me.onenote.pages.by_onenote_page_id(

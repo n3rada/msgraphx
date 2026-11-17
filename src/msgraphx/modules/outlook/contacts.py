@@ -10,9 +10,20 @@ import contextlib
 import importlib.resources
 import json
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 def _load_config(filename: str) -> frozenset[str]:
+    """Load a packaged `config/` list file, skipping blanks and `#` comments.
+
+    Args:
+        filename: Name of the file under the `msgraphx/config/` package
+            directory.
+
+    Returns:
+        The stripped, non-comment lines of the file.
+    """
     return frozenset(
         line.strip()
         for line in importlib.resources.files("msgraphx")
@@ -50,12 +61,28 @@ async def fetch(
     before: str | None = None,
     only: str | None = None,
     top: int | None = None,
-) -> dict:
-    """Analyse mail to build a communication graph. Returns sent/received contact counts.
+) -> dict[str, list[dict[str, Any]]]:
+    """Rank the people the signed-in user exchanges mail with most.
 
-    `after` / `before` are ISO 8601 strings. `only` is 'sent', 'received', or None (both).
-    Returns {'sent': [...], 'received': [...]}.
-    Raises on API error. Callers are responsible for handling exceptions.
+    Sent mail is read from SentItems. Received mail is read from the Inbox,
+    skipping no-reply and known noise senders. Received analysis is skipped
+    when the context has no cached user email.
+
+    Args:
+        context: Shared Graph runtime context (delegated).
+        after: Only include mail at or after this ISO 8601 timestamp.
+        before: Only include mail at or before this ISO 8601 timestamp.
+        only: `"sent"` or `"received"` to analyse one direction; `None`
+            analyses both.
+        top: Keep at most this many contacts per direction; `None` keeps all.
+
+    Returns:
+        A dict with `"sent"` and `"received"` lists. Each entry has `rank`,
+        `email`, `name`, `to_count` and `cc_count`, ordered by `to_count`
+        descending.
+
+    Raises:
+        ODataError: A Graph request failed.
     """
     select_fields = ["toRecipients", "ccRecipients", "sentDateTime"]
 
@@ -200,7 +227,12 @@ async def fetch(
         ][:top],
     }
 
-def add_arguments(parser: "argparse.ArgumentParser"):
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `outlook contacts` options on a parser.
+
+    Args:
+        parser: Parser for the `outlook contacts` subcommand.
+    """
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "--top",
@@ -222,8 +254,24 @@ def add_arguments(parser: "argparse.ArgumentParser"):
 @handle_graph_errors
 @require_scopes("Mail.ReadBasic")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Show the user's top mail correspondents, sent and received.
+
+    Renders live tables while paging through mail, then optionally writes
+    the full ranking to `args.save` and/or prints it as JSON. Warns first if
+    the token lacks `Mail.ReadBasic`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `after`, `before`, `top`, `only`, `save`.
+
+    Returns:
+        0 on success, 1 for app-only auth or an invalid date bound.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -255,7 +303,9 @@ async def run_with_arguments(
 
     top_n = args.top if args.top > 0 else None
 
-    def _build_table(counter: Counter, names_dict: dict, title: str) -> Table:
+    def _build_table(
+        counter: Counter[str], names_dict: Mapping[str, str], title: str
+    ) -> Table:
         table = Table(title=title, show_header=True, header_style="bold")
         table.add_column("#", justify="right", style="dim")
         table.add_column("Emails", justify="right")

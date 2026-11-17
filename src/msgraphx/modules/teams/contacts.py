@@ -18,6 +18,7 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -36,7 +37,12 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `teams contacts` options on a parser.
+
+    Args:
+        parser: Parser for the `teams contacts` subcommand.
+    """
     parser.set_defaults(uses_time_bounds=True)
     parser.add_argument(
         "--top",
@@ -56,8 +62,27 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("Chat.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Rank the user's Teams contacts by number of shared chats.
+
+    Pages through the user's chats, newest activity first, stopping at the
+    `--after` bound, and counts 1:1 partners and group chat participants
+    separately with live tables. Optionally writes the full ranking to
+    `args.save` and/or prints it as JSON.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `top`, `after`, `save` (and `count`, which
+            is currently unused).
+
+    Returns:
+        0 on success, 1 for app-only auth, a missing `Chat.Read`/
+        `Chat.ReadBasic` scope, or an invalid `--after` date.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1
@@ -94,13 +119,13 @@ async def run_with_arguments(
     group_counter: Counter[str] = Counter()
     names: dict[str, str] = {}
 
-    one_on_one: list[dict] = []
-    groups: list[dict] = []
+    one_on_one: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
     total = 0
 
     top_n = args.top if args.top > 0 else None
 
-    def _build_table(counter: Counter, title: str) -> Table:
+    def _build_table(counter: Counter[str], title: str) -> Table:
         table = Table(title=title, show_header=True, header_style="bold")
         table.add_column("#", justify="right", style="dim")
         table.add_column("Chats", justify="right")

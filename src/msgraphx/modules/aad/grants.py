@@ -21,7 +21,12 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad grants`.
+
+    Args:
+        parser: Parser for the `grants` subcommand.
+    """
     parser.add_argument(
         "--filter",
         dest="odata_filter",
@@ -38,8 +43,26 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("DelegatedPermissionGrant.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List OAuth2 delegated permission grants and cache them as `grants`.
+
+    `--filter` is not sent to Graph: it is matched as a case-insensitive
+    substring against each grant's fields. Prints JSON under `--json`,
+    NDJSON under `--ndjson`, otherwise a Rich table. Warns if the token
+    lacks `DelegatedPermissionGrant.Read.All`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments. `args.odata_filter` is the substring filter
+            and `args.tenant_wide` keeps only `AllPrincipals` grants.
+
+    Returns:
+        0 on success, including when no grants are found.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     logger.info("Fetching OAuth2 permission grants")
 
     rows = []

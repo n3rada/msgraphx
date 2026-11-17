@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import argparse
-from typing import ClassVar
+from collections.abc import Sequence
+from typing import Any, ClassVar
 
 from loguru import logger
 from msgraph.generated.models.drive_item import DriveItem
@@ -22,8 +23,19 @@ from ..utils.dates import parse_date_string
 from ..utils.errors import handle_graph_errors
 
 
-def drive_item_to_dict(item: DriveItem) -> dict:
-    """Convert a DriveItem SDK object to a plain dict."""
+def drive_item_to_dict(item: DriveItem) -> dict[str, Any]:
+    """Flatten a DriveItem into a JSON-serializable record.
+
+    Args:
+        item: A drive item returned by the SDK, typically a search hit.
+
+    Returns:
+        A dict with the item's IDs, name, sizes (raw and human-readable
+        `size_str`), URLs, ISO and `YYYY-MM-DD` timestamps, creator and
+        last modifier, parent reference fields, MIME type, folder details,
+        and pre-authenticated `download_url` when present. Missing values
+        are `None`, except `author` (`?`) and `created` (empty string).
+    """
     author = (
         item.created_by.user.display_name
         if item.created_by and item.created_by.user
@@ -120,14 +132,17 @@ def drive_item_to_dict(item: DriveItem) -> dict:
 
 
 class DriveSearchBase:
-    """Base for SharePoint and OneDrive search modules.
+    """A DriveItem search command, specialized by SharePoint and OneDrive.
 
-    Subclasses set:
-      CACHE_KEY   -- key used with utils.cache (e.g. "sharepoint", "onedrive")
-      SCOPE       -- SharePointOneDriveOptions applied for app-only tokens;
-                     None means no restriction (search all drives).
-      HUNT_QUERIES -- dict[str, str] of predefined KQL hunt queries.
-      LABEL       -- human-readable name for console output.
+    Subclasses override the class attributes; the base class provides
+    argument wiring, query building, result shaping, caching, and output.
+
+    Attributes:
+        CACHE_KEY: Key for `utils.cache`, e.g. `sharepoint` or `onedrive`.
+        SCOPE: Search scope applied for app-only tokens; `None` searches all
+            drives.
+        HUNT_QUERIES: Predefined KQL queries offered by `--hunt`, by name.
+        LABEL: Human-readable name used in console output.
     """
 
     CACHE_KEY: ClassVar[str] = "drives"
@@ -147,10 +162,29 @@ class DriveSearchBase:
         after: str | None = None,
         before: str | None = None,
         drive_id: str | None = None,
-        group_ids: list[str] | None = None,
+        group_ids: Sequence[str] | None = None,
         scope: SharePointOneDriveOptions | None = None,
         site_path: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
+        """Search drive items and return them as flat records.
+
+        Args:
+            context: The shared Graph context.
+            query: KQL query string.
+            after: Keep items created at or after this ISO 8601 timestamp.
+            before: Keep items created at or before this ISO 8601 timestamp.
+            drive_id: Restrict results to this drive.
+            group_ids: Restrict results to these Microsoft 365 group IDs.
+            scope: Search scope for app-only tokens, overriding `SCOPE`.
+                Ignored for delegated tokens.
+            site_path: Restrict results to this site URL.
+
+        Returns:
+            One `drive_item_to_dict` record per matching drive item.
+
+        Raises:
+            ForbiddenGraphError: If the search API returns 403 Forbidden.
+        """
         search_query = query
 
         filters = []
@@ -195,6 +229,15 @@ class DriveSearchBase:
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        """Register the search command's arguments.
+
+        Adds the positional KQL `query`, `--filetype`, and `--hunt` when
+        `HUNT_QUERIES` is non-empty, and marks the command as honoring the
+        global `--before`/`--after` bounds.
+
+        Args:
+            parser: The subcommand parser to configure.
+        """
         parser.set_defaults(uses_time_bounds=True)
         parser.add_argument(
             "query",
@@ -229,6 +272,27 @@ class DriveSearchBase:
         scope: SharePointOneDriveOptions | None = None,
         label: str | None = None,
     ) -> int:
+        """Run the search from parsed arguments and print or cache the results.
+
+        `--filetype` takes precedence over `--hunt`. Results are cached under
+        `CACHE_KEY` for later download by index, then written as JSON, as
+        NDJSON, or as a console table depending on the output mode.
+
+        Args:
+            context: The shared Graph context.
+            args: Parsed arguments: `query`, `filetype`, `hunt`, `before`,
+                `after`, and optionally `drive_id`, `_group_ids`, and
+                `_site_path` set by calling modules.
+            scope: Search scope for app-only tokens, overriding `SCOPE`.
+            label: Console heading, overriding `LABEL`.
+
+        Returns:
+            0 on success, including no results; 1 if a date bound is invalid.
+
+        Raises:
+            AuthenticationError: If the token is invalid or expired.
+            ForbiddenGraphError: If the search API returns 403 Forbidden.
+        """
         search_query = args.query
 
         hunt = getattr(args, "hunt", None)

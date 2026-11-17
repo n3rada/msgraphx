@@ -7,10 +7,15 @@ from __future__ import annotations
 # Built-in imports
 import argparse
 import asyncio
+from datetime import datetime
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.models.unified_role_schedule_instance_base import (
+    UnifiedRoleScheduleInstanceBase,
+)
 from msgraph.generated.role_management.directory.role_assignment_schedule_instances.role_assignment_schedule_instances_request_builder import (
     RoleAssignmentScheduleInstancesRequestBuilder,
 )
@@ -26,7 +31,16 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors, raise_if_forbidden
 from ...utils.roles import require_scopes
 
-def _principal_label(item) -> str:
+def _principal_label(item: UnifiedRoleScheduleInstanceBase) -> str:
+    """Return a display label for the principal of a PIM schedule instance.
+
+    Args:
+        item: Active or eligible schedule instance, with `principal`
+            expanded when available.
+
+    Returns:
+        The principal's UPN, else its display name, else its ID, else `""`.
+    """
     principal = getattr(item, "principal", None)
     if principal:
         ad = getattr(principal, "additional_data", {}) or {}
@@ -38,18 +52,34 @@ def _principal_label(item) -> str:
             return name
     return getattr(item, "principal_id", None) or ""
 
-def _role_label(item) -> str:
+def _role_label(item: UnifiedRoleScheduleInstanceBase) -> str:
+    """Return the role's display name, falling back to its definition ID."""
     rd = getattr(item, "role_definition", None)
     if rd:
         return getattr(rd, "display_name", None) or getattr(item, "role_definition_id", None) or ""
     return getattr(item, "role_definition_id", None) or ""
 
-def _fmt_dt(dt) -> str:
+def _fmt_dt(dt: datetime | None) -> str:
     if not dt:
         return ""
     return dt.strftime("%Y-%m-%d")
 
-async def _safe_collect(builder, config) -> list:
+async def _safe_collect(
+    builder: Any, config: RequestConfiguration[Any]
+) -> list[UnifiedRoleScheduleInstanceBase]:
+    """Collect every PIM schedule instance, degrading to empty on error.
+
+    Args:
+        builder: Request builder for a schedule-instance collection.
+        config: Request configuration expanding `principal` and
+            `roleDefinition`.
+
+    Returns:
+        All instances, or an empty list if a non-403 error occurs.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission for the collection.
+    """
     try:
         return await pagination.collect_all(builder, request_configuration=config)
     except Exception as exc:
@@ -57,8 +87,22 @@ async def _safe_collect(builder, config) -> list:
         logger.warning(f"Could not fetch PIM assignments: {exc}")
         return []
 
-async def fetch(context: GraphContext, state: str) -> list[dict]:
-    """Return active and/or eligible PIM role assignments as plain dicts."""
+async def fetch(context: GraphContext, state: str) -> list[dict[str, Any]]:
+    """Return active and/or eligible PIM role assignments as plain dicts.
+
+    Args:
+        context: Shared Graph runtime context.
+        state: `"active"` or `"eligible"` to fetch one kind; any other value
+            (e.g. `"all"`) fetches both concurrently.
+
+    Returns:
+        One dict per assignment, active first, with the assignment state,
+        role, principal, member type, and start/end dates. A collection
+        that fails with a non-403 error contributes no rows.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission for a collection.
+    """
     ActiveParams = RoleAssignmentScheduleInstancesRequestBuilder.RoleAssignmentScheduleInstancesRequestBuilderGetQueryParameters
     EligibleParams = RoleEligibilityScheduleInstancesRequestBuilder.RoleEligibilityScheduleInstancesRequestBuilderGetQueryParameters
 
@@ -112,6 +156,11 @@ async def fetch(context: GraphContext, state: str) -> list[dict]:
     return rows
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad pim`.
+
+    Args:
+        parser: Parser for the `pim` subcommand.
+    """
     parser.add_argument(
         "--state",
         choices=["active", "eligible", "all"],
@@ -122,6 +171,23 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("RoleManagement.Read.Directory")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """List PIM active and eligible directory role assignments.
+
+    Prints JSON under `--json`, NDJSON under `--ndjson`, otherwise a Rich
+    table. Warns if the token lacks `RoleManagement.Read.Directory`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.state` is `"active"`, `"eligible"`, or
+            `"all"`.
+
+    Returns:
+        0 on success, including when no assignments are found.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token cannot read PIM schedule instances.
+    """
     logger.info("Fetching PIM role assignments")
     rows = await fetch(context, args.state)
 

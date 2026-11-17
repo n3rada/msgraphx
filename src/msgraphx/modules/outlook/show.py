@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import email as _email_lib
+from collections.abc import Mapping
 from email.header import decode_header as _decode_header
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -32,6 +34,15 @@ from ...utils.roles import require_scopes
 # ---------------------------------------------------------------------------
 
 def _decode_value(value: str) -> str:
+    """Decode an RFC 2047 encoded MIME header value to plain text.
+
+    Args:
+        value: Raw header value, possibly containing `=?charset?...?=`
+            encoded words.
+
+    Returns:
+        The decoded text; undecodable bytes are replaced.
+    """
     parts = _decode_header(value or "")
     out: list[str] = []
     for data, charset in parts:
@@ -41,7 +52,18 @@ def _decode_value(value: str) -> str:
             out.append(data)
     return "".join(out)
 
-def _extract_mime(raw: bytes) -> dict:
+def _extract_mime(raw: bytes) -> dict[str, Any]:
+    """Parse a raw RFC 2822 message into display fields.
+
+    Args:
+        raw: The MIME message bytes, as returned by `/messages/{id}/$value`.
+
+    Returns:
+        A dict with decoded `subject`, `from`, `to`, `cc` and `date`
+        strings, `body` (the first text/plain part, else the first
+        text/html part, else empty), and `attachments` (a list of
+        filenames).
+    """
     msg = _email_lib.message_from_bytes(raw)
 
     body_plain = ""
@@ -94,7 +116,14 @@ def _extract_mime(raw: bytes) -> dict:
 # Rich rendering
 # ---------------------------------------------------------------------------
 
-def _render(parsed: dict) -> None:
+def _render(parsed: Mapping[str, Any]) -> None:
+    """Print a parsed message as a Rich panel on the shared console.
+
+    HTML bodies are converted to Markdown for display.
+
+    Args:
+        parsed: Fields produced by `_extract_mime`.
+    """
     subject = parsed["subject"] or "(no subject)"
 
     # Header grid
@@ -142,7 +171,12 @@ def _render(parsed: dict) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `outlook show` options on a parser.
+
+    Args:
+        parser: Parser for the `outlook show` subcommand.
+    """
     parser.add_argument(
         "index",
         type=str,
@@ -152,8 +186,25 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 @handle_graph_errors
 @require_scopes("Mail.Read")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Fetch cached mail search results and render them in the terminal.
+
+    Messages are picked by 1-based index (e.g. `"3"` or `"1,3-5"`) from the
+    last `outlook search`. A message that fails to fetch is logged and
+    skipped. Warns first if the token lacks `Mail.Read`.
+
+    Args:
+        context: Shared Graph runtime context; must be delegated.
+        args: Parsed arguments: `index`.
+
+    Returns:
+        0 after rendering the selected messages, 1 for app-only auth, an
+        empty cache, or an invalid index.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

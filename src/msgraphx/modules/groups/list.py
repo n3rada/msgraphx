@@ -14,11 +14,13 @@ from __future__ import annotations
 
 # Built-in imports
 import argparse
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
+from msgraph.generated.models.group import Group
 from rich.table import Table
 
 # Local library imports
@@ -30,7 +32,17 @@ from ...utils.pagination import GraphPaginator, collect_all
 from ..sharepoint.groups import get_user_m365_groups
 from ...utils.roles import require_scopes
 
-def _to_dict(g) -> dict:
+def _to_dict(g: Group) -> dict[str, Any]:
+    """Convert a group into the JSON-serializable row used for output and cache.
+
+    Args:
+        g: The group to convert.
+
+    Returns:
+        A dict with `id`, `display_name`, `mail`, `visibility`,
+        `teams_provisioned`, `description`, and `created_datetime` (ISO 8601
+        string or None). Missing string fields become "".
+    """
     return {
         "id": g.id,
         "display_name": g.display_name or "",
@@ -43,7 +55,7 @@ def _to_dict(g) -> dict:
         "description": getattr(g, "description", None) or "",
         "created_datetime": (
             g.created_date_time.isoformat()
-            if getattr(g, "created_date_time", None)
+            if g.created_date_time
             else None
         ),
     }
@@ -52,7 +64,20 @@ async def fetch_mine(
     context: GraphContext,
     visibility: str | None = None,
     teams_only: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
+    """Return the signed-in user's M365 Unified groups, including nested ones.
+
+    Requires a delegated token.
+
+    Args:
+        context: Shared Graph runtime context.
+        visibility: "Private" or "Public" to keep only that visibility. None
+            returns both.
+        teams_only: When True, keep only groups with a Teams workspace.
+
+    Returns:
+        One row per group, as built by `_to_dict`.
+    """
     groups = await get_user_m365_groups(
         context.graph_client,
         visibility=visibility,
@@ -64,7 +89,21 @@ async def fetch_all(
     context: GraphContext,
     visibility: str | None = None,
     teams_only: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
+    """Return every M365 Unified group the token can read.
+
+    App-only tokens see the whole tenant; delegated tokens see the groups the
+    user is allowed to read.
+
+    Args:
+        context: Shared Graph runtime context.
+        visibility: "Private" or "Public" to keep only that visibility. None
+            returns both.
+        teams_only: When True, keep only groups with a Teams workspace.
+
+    Returns:
+        One row per group, as built by `_to_dict`.
+    """
     query_params = GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
         filter="groupTypes/any(c:c eq 'Unified')",
         select=[
@@ -74,7 +113,7 @@ async def fetch_all(
         top=999,
     )
     config = RequestConfiguration(query_parameters=query_params)
-    all_groups = await collect_all(context.graph_client.groups, config)
+    all_groups: list[Group] = await collect_all(context.graph_client.groups, config)
 
     if teams_only:
         all_groups = [
@@ -88,6 +127,11 @@ async def fetch_all(
     return [_to_dict(g) for g in all_groups]
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `groups list` arguments on a parser.
+
+    Args:
+        parser: Parser for the `list` subcommand.
+    """
     parser.add_argument(
         "--mine",
         action="store_true",
@@ -108,6 +152,23 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("Group.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """List M365 Unified groups and cache them.
+
+    With `--mine`, lists the user's transitive memberships; otherwise lists
+    every readable Unified group. Results are cached under the `groups` key
+    and printed as a table, JSON, or NDJSON depending on the output mode.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments (`mine`, `teams_only`, `visibility`).
+
+    Returns:
+        0 on success (including no groups found), 1 when `--mine` is used
+        with an app-only token.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     mine = getattr(args, "mine", False)
     teams_only = getattr(args, "teams_only", False)
     visibility = getattr(args, "visibility", None)

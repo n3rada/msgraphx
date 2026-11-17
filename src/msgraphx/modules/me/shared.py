@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import warnings
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -27,7 +28,12 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `me shared` options on the parser.
+
+    Args:
+        parser: Parser for the `me shared` subcommand.
+    """
     parser.add_argument(
         "--top",
         "-n",
@@ -37,10 +43,22 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
         help="Number of items to display (default: 25).",
     )
 
-async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
+async def fetch(context: GraphContext, top: int = 25) -> list[dict[str, Any]]:
     """Return documents shared with the current user as plain dicts.
 
-    Raises on API error. Callers are responsible for handling exceptions.
+    Uses the deprecated `/me/insights/shared` API; the SDK's deprecation
+    warning is suppressed. Only the first page of results is read.
+
+    Args:
+        context: Shared Graph runtime context (delegated auth).
+        top: Maximum number of items to request (capped at 100).
+
+    Returns:
+        One dict per item with the keys `type`, `title`, `site`,
+        `shared_by`, `shared_date` (`YYYY-MM-DD`), `url`, and `id`.
+
+    Raises:
+        ODataError: If the Graph API rejects the request.
     """
     query_params = SharedRequestBuilder.SharedRequestBuilderGetQueryParameters(
         top=min(top, 100),
@@ -55,7 +73,7 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
 
     items = (result.value or []) if result else []
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for item in items:
         viz = item.resource_visualization
         ref = item.resource_reference
@@ -82,8 +100,23 @@ async def fetch(context: GraphContext, top: int = 25) -> list[dict]:
 @handle_graph_errors
 @require_scopes("Sites.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List documents shared with the current user.
+
+    Prints a table, or JSON/NDJSON when the matching output flag is set.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed CLI arguments (`top`).
+
+    Returns:
+        0 on success (including no items), 1 for app-only auth.
+
+    Raises:
+        AuthenticationError: If the Graph token is invalid or expired.
+        ODataError: If the Graph API rejects the request.
+    """
     if context.is_app_only:
         logger.error("This module requires delegated authentication (user context).")
         return 1

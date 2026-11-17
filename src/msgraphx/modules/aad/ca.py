@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 # External library imports
 from loguru import logger
@@ -21,11 +22,22 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
 from ...utils.roles import require_roles, require_scopes
 
-async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
-    """Return conditional access policies as plain dicts.
+async def fetch(
+    context: GraphContext, state: str | None = None
+) -> list[dict[str, Any]]:
+    """Return the tenant's conditional access policies as plain dicts.
 
-    `state` accepts 'enabled', 'disabled', or 'report'.
-    Raises on API error. Callers are responsible for handling exceptions.
+    Args:
+        context: Shared Graph runtime context.
+        state: Keep only policies in this state: `"enabled"`, `"disabled"`,
+            or `"report"` (report-only). `None` keeps every policy.
+
+    Returns:
+        One dict per policy with its ID, name, state, targeted users and
+        apps, grant controls, and created/modified dates.
+
+    Raises:
+        ODataError: The Graph request fails. Callers handle API errors.
     """
     policies = await collect_all(context.graph_client.policies.conditional_access_policies)
 
@@ -82,7 +94,12 @@ async def fetch(context: GraphContext, state: str | None = None) -> list[dict]:
 
     return rows
 
-def add_arguments(parser: "argparse.ArgumentParser") -> None:
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad ca`.
+
+    Args:
+        parser: Parser for the `ca` subcommand.
+    """
     parser.add_argument(
         "--state",
         choices=["enabled", "disabled", "report"],
@@ -102,8 +119,25 @@ def add_arguments(parser: "argparse.ArgumentParser") -> None:
 )
 @require_scopes("Policy.Read.All")
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """List conditional access policies and cache them under the `ca` key.
+
+    Delegated tokens must hold one of the directory roles listed on the
+    decorator, or the command fails before calling Graph. Prints JSON under
+    `--json`, NDJSON under `--ndjson`, otherwise a Rich table.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.state` optionally filters by state.
+
+    Returns:
+        0 on success, including when no policies are found. 1 if the token
+        lacks a required directory role.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     logger.info("Fetching conditional access policies")
 
     rows = await fetch(context, state=args.state)

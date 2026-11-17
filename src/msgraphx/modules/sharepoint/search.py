@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -26,12 +27,22 @@ from ...utils.roles import require_scopes
 
 
 async def _resolve_site(context: GraphContext, site_ref: str) -> str | None:
-    """Resolve a site name or Graph site ID to its SharePoint web URL.
+    """Resolve a site reference to the SharePoint web URL used as a KQL path.
 
-    Accepts:
-      - A SharePoint URL (https://tenant.sharepoint.com/sites/Name) — used as-is
-      - A site name/slug — resolved via GET /sites?$search=<name>
-      - A full Graph site ID (contains commas) — resolved via GET /sites/{id}
+    Errors are logged rather than raised. When a name matches several sites,
+    the first match is used and a warning lists the others.
+
+    Args:
+        context: Shared Graph runtime context.
+        site_ref: One of:
+            - a SharePoint URL (`https://tenant.sharepoint.com/sites/Name`),
+              returned as-is;
+            - a Graph site ID (`hostname,siteId,webId`), resolved with
+              `GET /sites/{id}`;
+            - a site name or slug, resolved with `GET /sites?$search=`.
+
+    Returns:
+        The site's web URL, or None if it could not be resolved.
     """
     SitesRequestBuilderGetQueryParameters = SitesRequestBuilder.SitesRequestBuilderGetQueryParameters
 
@@ -120,7 +131,14 @@ HUNT_QUERIES: dict[str, str] = {
 
 
 class SharePointSearch(DriveSearchBase):
-    """Search SharePoint team sites (SharedContent for app-only tokens)."""
+    """Drive search over SharePoint team sites.
+
+    Attributes:
+        CACHE_KEY: Cache key under which results are saved.
+        LABEL: Display name used in output.
+        HUNT_QUERIES: Preset KQL queries selectable with `--hunt`.
+        SCOPE: Content scope for app-only tokens (shared content only).
+    """
 
     CACHE_KEY = "sharepoint"
     LABEL = "SharePoint"
@@ -139,7 +157,22 @@ async def fetch(
     group_ids: list[str] | None = None,
     after: str | None = None,
     before: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
+    """Search SharePoint and OneDrive files with the Graph Search API.
+
+    Args:
+        context: Shared Graph runtime context.
+        query: KQL query string. "*" matches everything.
+        region: Unused; accepted for API compatibility.
+        drive_id: Restrict results to this drive.
+        group_ids: Restrict results to sites owned by these M365 group IDs.
+        after: Only return items modified after this ISO 8601 date.
+        before: Only return items modified before this ISO 8601 date.
+
+    Returns:
+        One row per matching drive item, as built by
+        `core.drive_search.drive_item_to_dict`.
+    """
     return await SharePointSearch.fetch(
         context,
         query=query,
@@ -151,6 +184,14 @@ async def fetch(
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `sharepoint search` arguments on a parser.
+
+    Adds the shared drive-search arguments plus `--site`, `--my-groups`,
+    `--visibility`, and `--scope`.
+
+    Args:
+        parser: Parser for the `search` subcommand.
+    """
     SharePointSearch.add_arguments(parser)
 
     parser.add_argument(
@@ -192,6 +233,24 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 async def run_with_arguments(
     context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Search SharePoint files, optionally scoped, and print or save results.
+
+    Scoping options (`--my-groups`, `--site`, `--scope`) are resolved first
+    and stored on `args` for the shared search runner. With `--save`, every
+    result is downloaded into that directory instead of being displayed.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed `sharepoint search` arguments.
+
+    Returns:
+        0 on success (including no results or no groups found), 1 when
+        `--scope` is used with a delegated token, a site cannot be resolved,
+        or a date filter is invalid.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     scope = getattr(args, "scope", None)
     if scope and not context.is_app_only:
         logger.error(
@@ -220,7 +279,7 @@ async def run_with_arguments(
         if not groups:
             logger.warning("No M365 Unified groups found.")
             return 0
-        group_ids = [g.id for g in groups]
+        group_ids = [g.id for g in groups if g.id]
         logger.info(f"Scoping search to {len(group_ids)} M365 Unified groups")
 
     args._group_ids = group_ids
@@ -250,7 +309,21 @@ async def run_with_arguments(
 async def _run_with_save(
     context: GraphContext, args: argparse.Namespace, save_dir: Path
 ) -> int:
-    """Run search and download every result directly to save_dir."""
+    """Run the search and download every result into `save_dir`.
+
+    Each file is written next to a `<name>_info.json` file holding its search
+    metadata; files whose data and metadata both exist are skipped. Results
+    are cached under the `sharepoint` key and printed as JSON in `--json`
+    mode.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed `sharepoint search` arguments.
+        save_dir: Existing directory to download into.
+
+    Returns:
+        0 on success (including no results), 1 if a date filter is invalid.
+    """
     search_query = args.query
     hunt = getattr(args, "hunt", None)
     if args.filetype:

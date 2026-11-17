@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 
 # Local library imports
 from . import channel, chat, contacts, meetings, send, show
@@ -10,8 +11,16 @@ from ...utils.errors import handle_graph_errors
 
 
 def add_arguments(
-    parser: "argparse.ArgumentParser", parents: "list | None" = None
+    parser: argparse.ArgumentParser,
+    parents: Sequence[argparse.ArgumentParser] | None = None,
 ) -> None:
+    """Register the `teams` subcommands on a parser.
+
+    Args:
+        parser: Parser for the `teams` command.
+        parents: Parent parsers whose shared options every subcommand
+            inherits.
+    """
     parents = parents or []
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -54,8 +63,20 @@ def add_arguments(
 
 @handle_graph_errors
 async def run_with_arguments(
-    context: "GraphContext", args: "argparse.Namespace"
+    context: GraphContext, args: argparse.Namespace
 ) -> int:
+    """Dispatch to the selected `teams` subcommand.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.subcommand` selects the handler.
+
+    Returns:
+        The subcommand's exit code, or 1 for an unknown subcommand.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     subcommand = args.subcommand
 
     if subcommand in ("channel", "channels"):

@@ -8,12 +8,17 @@ from __future__ import annotations
 # Built-in imports
 import argparse
 import asyncio
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
+from msgraph.generated.models.application import Application
+from msgraph.generated.models.directory_object import DirectoryObject
+from msgraph.generated.models.service_principal import ServicePrincipal
 from msgraph.generated.service_principals.service_principals_request_builder import (
     ServicePrincipalsRequestBuilder,
 )
@@ -31,6 +36,15 @@ def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 def _cred_status(end_dt: datetime | None) -> str:
+    """Classify a credential by its expiry time.
+
+    Args:
+        end_dt: The credential's `endDateTime`. `None` means it never expires.
+
+    Returns:
+        One of `"never-expires"`, `"expired"`, `"expiring-soon"` (within 30
+        days), or `"valid"`.
+    """
     if end_dt is None:
         return "never-expires"
     now = _now()
@@ -56,7 +70,16 @@ def _status_badge_short(status: str) -> str:
         "valid": "[green]✓[/green]",
     }.get(status, "?")
 
-def _owner_name(obj) -> str:
+def _owner_name(obj: DirectoryObject) -> str:
+    """Return a display label for an app owner.
+
+    Args:
+        obj: Owner returned by the `owners` navigation. Its display name may
+            live on the typed model or in `additional_data`.
+
+    Returns:
+        The display name, else the UPN, else the object ID, else `"?"`.
+    """
     if hasattr(obj, "display_name") and obj.display_name:
         return obj.display_name
     ad = getattr(obj, "additional_data", {}) or {}
@@ -67,12 +90,29 @@ def _owner_name(obj) -> str:
 # ---------------------------------------------------------------------------
 
 def add_arguments_single(parser: argparse.ArgumentParser) -> None:
+    """Register the arguments for `aad app`.
+
+    Args:
+        parser: Parser for the `app` subcommand.
+    """
     parser.add_argument(
         "app_id",
         help="Application client ID (appId) or object ID.",
     )
 
-async def _resolve_app(context: GraphContext, app_ref: str):
+async def _resolve_app(context: GraphContext, app_ref: str) -> Application | None:
+    """Look up an app registration by object ID, then by client ID.
+
+    Args:
+        context: Shared Graph runtime context.
+        app_ref: Application object ID or client ID (`appId`).
+
+    Returns:
+        The matching application, or `None` if neither lookup finds one.
+
+    Raises:
+        ForbiddenGraphError: The token cannot read applications.
+    """
     # Try object ID directly
     try:
         app = await context.graph_client.applications.by_application_id(app_ref).get()
@@ -99,13 +139,33 @@ async def _resolve_app(context: GraphContext, app_ref: str):
 @handle_graph_errors
 @require_scopes("Application.Read.All")
 async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
+    """Show one app registration with its owners, credentials, and permissions.
+
+    Also looks up the app's service principal in this tenant and its app role
+    assignments and OAuth2 delegated grants. Prints JSON under `--json`,
+    otherwise a Rich report. Warns if the token lacks
+    `Application.Read.All`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments; `args.app_id` is an object ID or client ID.
+
+    Returns:
+        0 on success, 1 if the application is not found.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token cannot read the application or its
+            service principal.
+    """
     logger.info(f"Resolving application: {args.app_id}")
     app = await _resolve_app(context, args.app_id)
     if not app:
         logger.error(f"Application not found: {args.app_id}")
         return 1
 
-    obj_id = app.id
+    # Graph always returns `id` for an application fetched without $select.
+    obj_id = cast(str, app.id)
     app_client_id = app.app_id
 
     # Owners + SP lookup in parallel
@@ -146,7 +206,18 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
     _print_app(app, owners, sp)
     return 0
 
-async def _safe_collect(builder) -> list:
+async def _safe_collect(builder: Any) -> list[Any]:
+    """Collect every page of a collection, degrading to empty on error.
+
+    Args:
+        builder: SDK request builder for the collection.
+
+    Returns:
+        All items, or an empty list if a non-403 error occurs.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission for the collection.
+    """
     try:
         return await pagination.collect_all(builder)
     except Exception as exc:
@@ -154,7 +225,19 @@ async def _safe_collect(builder) -> list:
         logger.warning(f"Could not fetch collection: {exc}")
         return []
 
-async def _safe_get(builder, config):
+async def _safe_get(builder: Any, config: RequestConfiguration[Any] | None) -> Any:
+    """Issue a single GET, degrading to `None` on error.
+
+    Args:
+        builder: SDK request builder to call `get` on.
+        config: Request configuration for the GET.
+
+    Returns:
+        The builder's response, or `None` if a non-403 error occurs.
+
+    Raises:
+        ForbiddenGraphError: The token lacks permission for the resource.
+    """
     try:
         return await builder.get(request_configuration=config)
     except Exception as exc:
@@ -167,7 +250,24 @@ def _fmt_dt(dt: datetime | None) -> str:
         return "[dim]—[/dim]"
     return dt.strftime("%Y-%m-%d %H:%M") + " UTC"
 
-def _app_to_dict(app, owners: list, sp) -> dict:
+def _app_to_dict(
+    app: Application,
+    owners: Sequence[DirectoryObject],
+    sp: ServicePrincipal | None,
+) -> dict[str, Any]:
+    """Build the `--json` representation of a single app.
+
+    Args:
+        app: The app registration.
+        owners: The app's owners.
+        sp: The app's service principal in this tenant, if any. Its role
+            assignments and grants are read from the private attributes set
+            by `run_single`.
+
+    Returns:
+        A camelCase dict with the app's properties, credential status, owners
+        and, when `sp` is given, a `servicePrincipal` entry.
+    """
     pw = [
         {
             "keyId": str(c.key_id) if c.key_id else None,
@@ -187,7 +287,7 @@ def _app_to_dict(app, owners: list, sp) -> dict:
         }
         for c in (app.key_credentials or [])
     ]
-    result = {
+    result: dict[str, Any] = {
         "displayName": app.display_name,
         "appId": app.app_id,
         "id": app.id,
@@ -220,7 +320,18 @@ def _app_to_dict(app, owners: list, sp) -> dict:
         }
     return result
 
-def _print_app(app, owners: list, sp) -> None:
+def _print_app(
+    app: Application,
+    owners: Sequence[DirectoryObject],
+    sp: ServicePrincipal | None,
+) -> None:
+    """Print a single app as a Rich report.
+
+    Args:
+        app: The app registration.
+        owners: The app's owners.
+        sp: The app's service principal in this tenant, if any.
+    """
     console.print(f"\n[bold]App: {app.display_name or '?'}[/bold]")
     console.rule()
     console.print(f"  [bold]App ID (client)[/bold] : {app.app_id}")
@@ -245,11 +356,11 @@ def _print_app(app, owners: list, sp) -> None:
     kc = app.key_credentials or []
     console.print(f"\n[bold]Key Credentials / Certs[/bold] ({len(kc)})")
     if kc:
-        for c in kc:
-            status = _cred_status(c.end_date_time)
-            label = c.display_name or str(c.key_id or "?")
-            end_str = _fmt_dt(c.end_date_time) if c.end_date_time else "never"
-            console.print(f"  {_status_badge(status)}  {label}  type: {c.type}  expires: {end_str}")
+        for cert in kc:
+            status = _cred_status(cert.end_date_time)
+            label = cert.display_name or str(cert.key_id or "?")
+            end_str = _fmt_dt(cert.end_date_time) if cert.end_date_time else "never"
+            console.print(f"  {_status_badge(status)}  {label}  type: {cert.type}  expires: {end_str}")
     else:
         console.print("  [dim]none[/dim]")
 
@@ -285,6 +396,11 @@ def _print_app(app, owners: list, sp) -> None:
 # ---------------------------------------------------------------------------
 
 def add_arguments_bulk(parser: argparse.ArgumentParser) -> None:
+    """Register the filter arguments for `aad apps`.
+
+    Args:
+        parser: Parser for the `apps` subcommand.
+    """
     parser.add_argument(
         "--with-secrets",
         action="store_true",
@@ -306,6 +422,23 @@ def add_arguments_bulk(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("Application.Read.All")
 async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
+    """List every app registration with the status of its credentials.
+
+    Prints JSON under `--json`, otherwise a Rich table. Warns if the token
+    lacks `Application.Read.All`.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments. `args.with_secrets`, `args.expired`, and
+            `args.expiring_soon` (days, or `None`) filter the apps.
+
+    Returns:
+        0 on success.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+        ForbiddenGraphError: The token cannot list applications.
+    """
     logger.info("Enumerating app registrations...")
 
     QueryParams = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters
@@ -327,7 +460,9 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
 
     now = _now()
 
-    def _annotate_creds(creds: list, is_pw: bool) -> list[dict]:
+    # `creds` holds PasswordCredential items when is_pw, else KeyCredential;
+    # only the former has `hint`, which the type checker cannot see.
+    def _annotate_creds(creds: Sequence[Any], is_pw: bool) -> list[dict[str, Any]]:
         out = []
         for c in creds:
             status = _cred_status(c.end_date_time)
@@ -384,12 +519,18 @@ async def run_bulk(context: GraphContext, args: argparse.Namespace) -> int:
     _print_bulk_table(apps)
     return 0
 
-def _badges_for(creds: list[dict]) -> str:
+def _badges_for(creds: Sequence[Mapping[str, Any]]) -> str:
     if not creds:
         return "[dim]-[/dim]"
     return " ".join(_status_badge_short(c["status"]) for c in creds)
 
-def _print_bulk_table(apps: list[dict]) -> None:
+def _print_bulk_table(apps: Sequence[Mapping[str, Any]]) -> None:
+    """Print the app list as a Rich table sorted by display name.
+
+    Args:
+        apps: App rows built by `run_bulk`, including the private `_pw` and
+            `_kc` credential lists.
+    """
     table = Table(show_header=True, header_style="bold", show_lines=False)
     table.add_column("Display Name", style="bold")
     table.add_column("App ID (client)", style="cyan", no_wrap=True)

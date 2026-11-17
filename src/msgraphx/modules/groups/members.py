@@ -13,11 +13,13 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 from loguru import logger
 from msgraph.generated.models.user import User
 from msgraph.generated.models.group import Group
 from msgraph.generated.models.device import Device
+from msgraph.generated.models.directory_object import DirectoryObject
 from msgraph.generated.models.service_principal import ServicePrincipal
 from rich.table import Table
 
@@ -28,7 +30,19 @@ from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
 
-def _member_to_dict(m) -> dict:
+def _member_to_dict(m: DirectoryObject) -> dict[str, Any]:
+    """Normalize a group member into a flat row with a `type` discriminator.
+
+    Args:
+        m: A member returned by `/members` or `/transitiveMembers`: a user,
+            group, service principal, device, or other directory object.
+
+    Returns:
+        A dict with `type` ("user", "group", "service_principal", "device",
+        or "unknown"), `id`, `display_name`, `identifier` (UPN/mail, mail,
+        appId, or deviceId), `account_enabled`, `job_title`, and
+        `department`.
+    """
     if isinstance(m, User):
         return {
             "type": "user",
@@ -80,6 +94,11 @@ def _member_to_dict(m) -> dict:
     }
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the `groups members` arguments on a parser.
+
+    Args:
+        parser: Parser for the `members` subcommand.
+    """
     parser.add_argument(
         "group_id",
         help="Group ID (GUID) or mail address to look up members for.",
@@ -98,6 +117,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 @handle_graph_errors
 @require_scopes("GroupMember.Read.All")
 async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
+    """List a group's direct or transitive members and cache them.
+
+    Results are cached under the `group_members` key and printed as a table,
+    JSON, or NDJSON depending on the output mode.
+
+    Args:
+        context: Shared Graph runtime context.
+        args: Parsed arguments (`group_id`, `transitive`, `users_only`).
+
+    Returns:
+        0 on success, including when the group has no members.
+
+    Raises:
+        AuthenticationError: The Graph token is invalid or expired.
+    """
     group_id = args.group_id
     transitive = getattr(args, "transitive", False)
     users_only = getattr(args, "users_only", False)
@@ -111,7 +145,7 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         else context.graph_client.groups.by_group_id(group_id).members
     )
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     async for member in GraphPaginator(builder):
         rows.append(_member_to_dict(member))
 
@@ -135,7 +169,7 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
             output.print_ndjson_item(row)
         return 0
 
-    type_counts = {}
+    type_counts: dict[str, int] = {}
     for r in rows:
         type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
     summary = ", ".join(f"{v} {k}(s)" for k, v in sorted(type_counts.items()))
