@@ -79,7 +79,13 @@ def _read_pid() -> int | None:
 
 
 def _is_alive(pid: int) -> bool:
-    """Return True if a process with the given PID exists."""
+    """Return True if a process with the given PID exists.
+
+    Always False on Windows: daemon mode is unavailable there, and
+    `os.kill(pid, 0)` would terminate the process instead of probing it.
+    """
+    if sys.platform == "win32":
+        return False
     try:
         os.kill(pid, 0)
         return True
@@ -163,7 +169,12 @@ def _daemonize() -> None:
 
     The calling (parent) processes exit; only the grandchild returns, with
     stdin, stdout, and stderr redirected to the null device.
+
+    Raises:
+        NotImplementedError: On Windows, which has no `fork`/`setsid`.
     """
+    if sys.platform == "win32":
+        raise NotImplementedError("Daemon mode requires a POSIX system.")
     if os.fork() > 0:
         sys.exit(0)
     os.setsid()
@@ -232,7 +243,7 @@ def run_command(args: argparse.Namespace) -> int:
 
     Returns:
         0 on success or when there is nothing to stop, 1 when no access or
-        refresh token is available.
+        refresh token is available or `--daemon` is used on Windows.
     """
     if args.stop:
         pid = _read_pid()
@@ -300,6 +311,9 @@ def run_command(args: argparse.Namespace) -> int:
         return 1
 
     if args.daemon:
+        if sys.platform == "win32":
+            logger.error("--daemon is not supported on Windows. Run 'refresh' without --daemon instead.")
+            return 1
         pid = _read_pid()
         if pid and _is_alive(pid):
             print(f"Refresh daemon already running (PID {pid}).")
