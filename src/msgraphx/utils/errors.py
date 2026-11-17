@@ -12,6 +12,7 @@ from typing import Any, TypeVar, cast
 
 # External library imports
 from loguru import logger
+from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 _GraphCallable = TypeVar("_GraphCallable", bound=Callable[..., Any])
 
@@ -49,7 +50,9 @@ class ForbiddenGraphError(RuntimeError):
 def is_graph_auth_error(exc: Exception) -> bool:
     """Check whether an exception is a Graph authentication failure.
 
-    Looks at `exc` itself, then at the `ODataError` it was raised from or
+    An `AuthenticationError` counts as one, so errors already translated by
+    `handle_graph_errors` stay recognizable through nested calls. Otherwise
+    looks at `exc` itself, then at the `ODataError` it was raised from or
     during, and treats an `InvalidAuthenticationToken` code or a message
     mentioning "expired" as an authentication failure.
 
@@ -59,27 +62,25 @@ def is_graph_auth_error(exc: Exception) -> bool:
     Returns:
         True if the token was rejected as invalid or expired.
     """
-    try:
-        # Import here to avoid import cycles at module import time
-        from msgraph.generated.models.o_data_errors.o_data_error import ODataError
-    except Exception:
-        ODataError = None
+    if isinstance(exc, AuthenticationError):
+        return True
 
-    # Direct ODataError instance
-    if ODataError is not None and isinstance(exc, ODataError):
+    err_obj: object | None
+    if isinstance(exc, ODataError):
         err_obj = exc
     else:
-        # Try to find nested ODataError in common attributes
         err_obj = None
         for attr in ("__cause__", "__context__"):
             inner = getattr(exc, attr, None)
-            if ODataError is not None and isinstance(inner, ODataError):
+            if isinstance(inner, (ODataError, AuthenticationError)):
                 err_obj = inner
                 break
 
         if err_obj is None and hasattr(exc, "error"):
             err_obj = getattr(exc, "error")
 
+    if isinstance(err_obj, AuthenticationError):
+        return True
     if not err_obj:
         return False
 
@@ -106,38 +107,7 @@ def check_and_exit_for_auth_error(exc: Exception) -> None:
         SystemExit: With code 1, after logging an error, if the token was
             rejected as invalid or expired.
     """
-    try:
-        # Import here to avoid import cycles at module import time
-        from msgraph.generated.models.o_data_errors.o_data_error import ODataError
-    except Exception:
-        ODataError = None
-
-    # Direct ODataError instance
-    if ODataError is not None and isinstance(exc, ODataError):
-        err_obj = exc
-    else:
-        # Try to find nested ODataError in common attributes
-        err_obj = None
-        for attr in ("__cause__", "__context__"):
-            inner = getattr(exc, attr, None)
-            if ODataError is not None and isinstance(inner, ODataError):
-                err_obj = inner
-                break
-
-        if err_obj is None and hasattr(exc, "error"):
-            err_obj = getattr(exc, "error")
-
-    if not err_obj:
-        return
-
-    # ODataError carries code/message on its MainError payload (`.error`), not on itself
-    err_obj = getattr(err_obj, "error", None) or err_obj
-    code = getattr(err_obj, "code", None)
-    message = getattr(err_obj, "message", "")
-
-    if code == "InvalidAuthenticationToken" or (
-        isinstance(message, str) and "expired" in message.lower()
-    ):
+    if is_graph_auth_error(exc):
         logger.error("Authentication failed: token invalid or expired. Stopping.")
         sys.exit(1)
 
@@ -152,16 +122,11 @@ def _odata_error_obj(exc: Exception) -> Exception | None:
         `exc` if it is an `ODataError` or has an `error` attribute, the
         `ODataError` it was raised from or during, or `None`.
     """
-    try:
-        from msgraph.generated.models.o_data_errors.o_data_error import ODataError
-    except Exception:
-        ODataError = None
-
-    if ODataError is not None and isinstance(exc, ODataError):
+    if isinstance(exc, ODataError):
         return exc
     for attr in ("__cause__", "__context__"):
         inner = getattr(exc, attr, None)
-        if ODataError is not None and isinstance(inner, ODataError):
+        if isinstance(inner, ODataError):
             return inner
     if hasattr(exc, "error"):
         return exc
@@ -241,7 +206,8 @@ def handle_graph_errors(func: _GraphCallable) -> _GraphCallable:
 
     Works on sync and async functions; an async function stays a coroutine
     function. Exceptions that `is_graph_auth_error` recognizes are re-raised
-    as `AuthenticationError`, with the original chained as the cause. All
+    as `AuthenticationError`, with the original chained as the cause; an
+    `AuthenticationError` from a nested decorated call propagates as is. All
     other exceptions propagate unchanged.
 
     Args:
@@ -256,6 +222,8 @@ def handle_graph_errors(func: _GraphCallable) -> _GraphCallable:
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return await func(*args, **kwargs)
+            except AuthenticationError:
+                raise
             except Exception as e:
                 if is_graph_auth_error(e):
                     raise AuthenticationError("Graph authentication failed") from e
@@ -267,6 +235,8 @@ def handle_graph_errors(func: _GraphCallable) -> _GraphCallable:
     def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
+        except AuthenticationError:
+            raise
         except Exception as e:
             if is_graph_auth_error(e):
                 raise AuthenticationError("Graph authentication failed") from e

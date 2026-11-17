@@ -46,6 +46,35 @@ async def test_handle_graph_errors_translates_auth_error():
         await boom()
 
 
+async def test_nested_decorated_calls_keep_original_auth_error():
+    @handle_graph_errors
+    async def inner() -> None:
+        raise _odata("InvalidAuthenticationToken", "Access token validation failure.", 401)
+
+    @handle_graph_errors
+    async def outer() -> None:
+        await inner()
+
+    with pytest.raises(AuthenticationError) as info:
+        await outer()
+    assert isinstance(info.value.__cause__, ODataError)
+
+
+def test_translated_auth_error_is_still_recognized():
+    try:
+        try:
+            raise _odata("InvalidAuthenticationToken", "Access token validation failure.", 401)
+        except ODataError as inner:
+            raise AuthenticationError("Graph authentication failed") from inner
+    except AuthenticationError as translated:
+        assert is_graph_auth_error(translated)
+        assert is_graph_auth_error(RuntimeError("wrapped").with_traceback(None)) is False
+        try:
+            raise RuntimeError("wrapped") from translated
+        except RuntimeError as outer:
+            assert is_graph_auth_error(outer)
+
+
 def test_raise_if_forbidden_parses_permissions():
     exc = _odata(
         "Forbidden",
