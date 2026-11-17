@@ -72,19 +72,36 @@ class TokenManager:
                 variables).
 
         Raises:
-            ValueError: If `access_token` is not a decodable JWT.
+            ValueError: If `access_token` is not a decodable JWT or has no
+                numeric `exp` claim.
+        """
+        self._source = source
+        self._load(access_token, refresh_token)
+
+    def _load(self, access_token: str, refresh_token: str | None) -> None:
+        """Adopt a token pair, decoding the access token's claims.
+
+        Args:
+            access_token: The JWT access token.
+            refresh_token: Refresh token for renewal, or `None`.
+
+        Raises:
+            ValueError: If `access_token` is not a decodable JWT or has no
+                numeric `exp` claim.
         """
         self._access_token = access_token
         self._refresh_token = refresh_token
-        self._source = source
 
         try:
             self._header, self._payload, self._signature = parse_jwt(access_token)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to parse JWT")
             raise
 
-        self._expires_on = self._payload.get("exp")
+        exp = self._payload.get("exp")
+        if isinstance(exp, bool) or not isinstance(exp, (int, float)):
+            raise ValueError("JWT has no numeric 'exp' claim.")
+        self._expires_on: float = exp
 
         self._tenant_id = self._payload.get("iss")
 
@@ -184,8 +201,9 @@ class TokenManager:
         """Exchange a refresh token for new tokens and adopt them.
 
         Uses the Graph Explorer public client against the `common` endpoint.
-        On success this manager is re-initialized with the new access and
-        refresh tokens, keeping its source. Tokens are not persisted; call
+        On success this manager adopts the new access token, and the new
+        refresh token when one is returned (otherwise it keeps
+        `refresh_token`). Tokens are not persisted; call
         `update_output_file` for that.
 
         Args:
@@ -195,6 +213,9 @@ class TokenManager:
         Returns:
             True if new tokens were obtained, False if there was no refresh
             token or the identity platform rejected the request.
+
+        Raises:
+            ValueError: If the returned access token cannot be decoded.
         """
         if not refresh_token:
             logger.warning(
@@ -202,29 +223,26 @@ class TokenManager:
             )
             return False
 
-        response = httpx.post(
-            url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
-            data={
-                "client_id": "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
-                "scope": "openid https://graph.microsoft.com/.default offline_access",
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            },
-            headers={"Origin": "https://developer.microsoft.com"},
-            verify=False,
-        )
+        async with httpx.AsyncClient(verify=False) as client:
+            response = await client.post(
+                url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                data={
+                    "client_id": "de8bc8b5-d9f9-48b1-a8ad-b748da725064",
+                    "scope": "openid https://graph.microsoft.com/.default offline_access",
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                },
+                headers={"Origin": "https://developer.microsoft.com"},
+            )
 
         if response.status_code != 200:
             logger.error(f"Failed to refresh token: {response.text}.")
             return False
 
         new_tokens = response.json()
-        source = self._source  # preserve source across re-init
-
-        self.__init__(
-            access_token=new_tokens.get("access_token"),
-            refresh_token=new_tokens.get("refresh_token"),
-            source=source,
+        self._load(
+            access_token=new_tokens.get("access_token", ""),
+            refresh_token=new_tokens.get("refresh_token") or refresh_token,
         )
         logger.success("Access token refreshed successfully.")
         return True
@@ -286,7 +304,7 @@ class TokenManager:
         Returns:
             The current access token and its expiry timestamp.
         """
-        return AccessToken(self._access_token, self._expires_on)
+        return AccessToken(self._access_token, int(self._expires_on))
 
     def __str__(self) -> str:
         """Return the decoded header and payload as indented JSON."""

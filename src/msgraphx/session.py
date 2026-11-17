@@ -282,13 +282,17 @@ class _AadNamespace:
         """
         return await _aad_enrich.fetch_group_details(self._ctx, group_id)
 
-    async def pim_roles(self) -> list[dict[str, Any]]:
-        """Return PIM role assignments.
+    async def pim_roles(self, state: str = "all") -> list[dict[str, Any]]:
+        """Return PIM directory role assignments.
+
+        Args:
+            state: `active` or `eligible` for one kind, or `all` for both,
+                as with `aad pim --state`.
 
         Returns:
-            One record per assignment.
+            One record per assignment, active ones first.
         """
-        return await _aad_pim.fetch(self._ctx)
+        return await _aad_pim.fetch(self._ctx, state=state)
 
 
 
@@ -400,16 +404,35 @@ class _SharePointNamespace:
             drive_id=drive_id,
         )
 
-    async def sites(self, show_public: bool = False) -> dict:
+    async def sites(
+        self, from_groups: bool = False, enrich: bool = False
+    ) -> list[dict[str, Any]]:
         """Return the SharePoint sites accessible to the caller.
 
+        Mirrors `sharepoint sites`: by default every site in the search
+        index the caller can reach, public ones included. Results are not
+        cached.
+
         Args:
-            show_public: Include public sites.
+            from_groups: Return only the root sites of the user's M365
+                groups, without a tenant-wide search. Delegated only.
+            enrich: Tag each site with `access_via` (`group` or `direct`)
+                and its owning group. Delegated only.
 
         Returns:
-            The accessible sites.
+            One record per site.
+
+        Raises:
+            ValueError: If both `from_groups` and `enrich` are set.
         """
-        return await _sp_sites.fetch(self._ctx, show_public=show_public)
+        if from_groups and enrich:
+            raise ValueError("from_groups and enrich are mutually exclusive")
+        if from_groups:
+            return await _sp_sites.fetch_from_groups(self._ctx)
+        sites = await _sp_sites.fetch(self._ctx)
+        if enrich:
+            return await _sp_sites.enrich_with_groups(self._ctx, sites)
+        return sites
 
 
 class _TeamsNamespace:
@@ -614,11 +637,10 @@ class Session:
             region=region,
         )
 
+        # create_context already decoded and validated this token, so this
+        # cannot fail here.
         token_manager = None
         if access_token and not tenant_id:
-            try:
-                token_manager = TokenManager(access_token, refresh_token)
-            except Exception:
-                pass
+            token_manager = TokenManager(access_token, refresh_token)
 
         return cls(ctx, token_manager=token_manager)

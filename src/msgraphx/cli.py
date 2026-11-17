@@ -30,9 +30,9 @@ from msgraph.generated.models.user import User
 # Local library imports
 from . import __version__
 from .core.context import GraphContext
-from .modules import aad, graph, groups, me, outlook, sharepoint, teams
+from .modules import aad, groups, me, outlook, sharepoint, teams
 from .modules.graph import refresh
-from .utils import logbook, tokens
+from .utils import logbook, odata, tokens
 from .utils.errors import AuthenticationError, ForbiddenGraphError
 
 
@@ -439,7 +439,7 @@ def _build_app_client(
             scopes=["https://graph.microsoft.com/.default"],
         )
         return client, credentials
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to create Graph client with client credentials")
         return None, None
 
@@ -521,9 +521,17 @@ async def _authenticate(
         if client_id:
             logger.info(f"Client ID: {client_id}")
 
+        if not (tenant_id and client_id and client_secret):
+            logger.error(
+                "Client credentials need a tenant ID, client ID, and client "
+                "secret (--tenant-id/--client-id/--client-secret or "
+                "TENANT_ID/CLIENT_ID/CLIENT_SECRET)."
+            )
+            return None, True, frozenset(), None, 1
+
         logger.info("Using client credentials authentication")
         client, credentials = _build_app_client(tenant_id, client_id, client_secret)
-        if not client:
+        if client is None or credentials is None:
             return None, True, frozenset(), None, 1
 
         async def _app_token_getter() -> str:
@@ -602,6 +610,9 @@ async def _verify_connection(
 
     try:
         user = await graph_client.me.get()
+        if user is None:
+            logger.error("Microsoft Graph returned an empty response for /me.")
+            return None, 1
         logger.info(
             f"Authenticated as: {user.display_name} ({user.user_principal_name})"
         )
@@ -618,7 +629,7 @@ async def _verify_connection(
     except TimeoutError:
         logger.error("Connection timeout. Check your network connection.")
         return None, 1
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected error while connecting to Graph API")
         return None, 1
 
@@ -636,7 +647,7 @@ async def _log_service_principal(
     """
     try:
         query_params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
-            filter=f"appId eq '{client_id}'", select=["displayName", "appId"]
+            filter=f"appId eq {odata.quote(client_id)}", select=["displayName", "appId"]
         )
         request_config = RequestConfiguration(query_parameters=query_params)
         sps = await graph_client.service_principals.get(
@@ -644,7 +655,7 @@ async def _log_service_principal(
         )
         if sps and sps.value:
             logger.info(f"Application: {sps.value[0].display_name}")
-    except Exception as exc:
+    except Exception:
         logger.error("Failed to log service principal details")
 
 
@@ -749,7 +760,7 @@ def _pre_parse_globals(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return ns
 
 
-@logger.catch
+@logger.catch(default=1)
 async def _main(argv: Sequence[str]) -> int:
     """Run the msgraphx command line.
 
@@ -757,7 +768,8 @@ async def _main(argv: Sequence[str]) -> int:
     IP, authenticates, verifies the connection, and dispatches the
     subcommand. Commands that use time bounds default to `--after 1y`
     unless `--all` is given. Because of `logger.catch`, an unexpected
-    exception is logged and the call returns `None` instead of raising.
+    exception is logged and the call returns 1 instead of raising.
+    `SystemExit` (e.g. from `--help`) still propagates.
 
     Args:
         argv: Command-line arguments without the program name.
@@ -812,6 +824,9 @@ async def _main(argv: Sequence[str]) -> int:
     graph_client, is_app_only, token_scopes, token_getter, err = await _authenticate(args)
     if err:
         return err
+    if graph_client is None:
+        logger.error("Authentication did not produce a Graph client.")
+        return 1
 
     args.is_app_only = is_app_only
 

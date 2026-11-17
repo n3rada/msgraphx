@@ -58,7 +58,7 @@ async def create_context(
             expired.
     """
     if tenant_id and (client_id or client_secret):
-        if not all((tenant_id, client_id, client_secret)):
+        if not (client_id and client_secret):
             raise ValueError("App-only auth requires tenant_id, client_id, and client_secret.")
 
         credentials = ClientSecretCredential(

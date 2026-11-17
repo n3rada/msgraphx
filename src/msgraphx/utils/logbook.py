@@ -175,9 +175,9 @@ def _xdg_state_dir(app_name: str = "msgraphx") -> Path:
         return (base / app_name / "logs").resolve()
 
     # POSIX: follow XDG
-    base = os.getenv("XDG_STATE_HOME")
-    if base:
-        return Path(base).expanduser().resolve() / app_name / "logs"
+    xdg_state = os.getenv("XDG_STATE_HOME")
+    if xdg_state:
+        return Path(xdg_state).expanduser().resolve() / app_name / "logs"
 
     return Path.home() / ".local" / "state" / app_name / "logs"
 

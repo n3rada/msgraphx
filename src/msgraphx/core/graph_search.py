@@ -77,8 +77,9 @@ async def search_entities(
         options: Query, sort, field, paging, and scope settings.
 
     Yields:
-        Each hit's typed resource, e.g. a `DriveItem` or `Message`. When the
-        API leaves the resource ID empty, it is filled from the hit ID.
+        Each hit's typed resource, e.g. a `DriveItem` or `Message`. Hits
+        without a resource are skipped. When the API leaves the resource ID
+        empty, it is filled from the hit ID.
 
     Raises:
         ForbiddenGraphError: If the API returns 403 Forbidden.
@@ -132,9 +133,11 @@ async def search_entities(
                 body=QueryPostRequestBody(requests=[search_request])
             )
 
+            # An empty response body or response list means no hits, not an error.
+            responses = result.value if result and result.value else []
             hits_container = (
-                result.value[0].hits_containers[0]
-                if result.value[0].hits_containers
+                responses[0].hits_containers[0]
+                if responses and responses[0].hits_containers
                 else None
             )
             hits = hits_container.hits or [] if hits_container else []
@@ -145,9 +148,11 @@ async def search_entities(
 
             for hit in hits:
                 resource = hit.resource
+                if resource is None:
+                    continue
                 # Graph Search does not populate resource.id for Message (and some
                 # other entity types); hit.hit_id is the canonical source.
-                if resource is not None and not resource.id and hit.hit_id:
+                if not resource.id and hit.hit_id:
                     resource.id = hit.hit_id
                 yield resource
 

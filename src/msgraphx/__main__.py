@@ -15,11 +15,11 @@ from .utils.errors import AuthenticationError
 
 if __name__ == "__main__":
     try:
-        sys.exit(asyncio.run(cli._main()))
+        sys.exit(asyncio.run(cli._main(sys.argv[1:])))
     except KeyboardInterrupt:
         logger.debug("User interrupted the process.")
         sys.exit(130)
-    except AuthenticationError as e:
+    except AuthenticationError:
         logger.error(
             "Authentication failed: token invalid or expired. Re-authenticate."
         )
