@@ -28,7 +28,7 @@ from ...core.context import GraphContext
 from ...utils import cache, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
-from ...utils.pagination import GraphPaginator, collect_all
+from ...utils.pagination import collect_all
 from ..sharepoint.groups import get_user_m365_groups
 from ...utils.roles import require_scopes
 

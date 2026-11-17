@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.groups.groups_request_builder import GroupsRequestBuilder
 from msgraph.generated.models.user import User
 from msgraph.generated.models.group import Group
 from msgraph.generated.models.device import Device
@@ -24,11 +26,14 @@ from msgraph.generated.models.service_principal import ServicePrincipal
 from rich.table import Table
 
 from ...core.context import GraphContext
-from ...utils import cache, output
+from ...utils import cache, odata, output
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
+
+# Two results are enough to detect an ambiguous mail address.
+_MAIL_LOOKUP_TOP = 2
 
 def _member_to_dict(m: DirectoryObject) -> dict[str, Any]:
     """Normalize a group member into a flat row with a `type` discriminator.
@@ -93,6 +98,46 @@ def _member_to_dict(m: DirectoryObject) -> dict[str, Any]:
         "department": "",
     }
 
+async def _resolve_group_id(context: GraphContext, group_ref: str) -> str | None:
+    """Resolve a group object ID or mail address to the group's object ID.
+
+    A reference without "@" is taken as an object ID and returned unchanged.
+    A mail address is looked up with `GET /groups?$filter=mail eq '<mail>'`.
+
+    Args:
+        context: Shared Graph runtime context.
+        group_ref: Group object ID (GUID) or the group's mail address.
+
+    Returns:
+        The group's object ID, or None (after logging an error) when the
+        mail address matches no group or more than one.
+    """
+    if "@" not in group_ref:
+        return group_ref
+
+    config = RequestConfiguration(
+        query_parameters=GroupsRequestBuilder.GroupsRequestBuilderGetQueryParameters(
+            filter=f"mail eq {odata.quote(group_ref)}",
+            select=["id", "displayName", "mail"],
+            top=_MAIL_LOOKUP_TOP,
+        )
+    )
+    response = await context.graph_client.groups.get(request_configuration=config)
+    matches = [g for g in (response.value if response and response.value else []) if g.id]
+
+    if not matches:
+        logger.error(f"No group found with mail address {group_ref!r}.")
+        return None
+    if len(matches) > 1:
+        names = ", ".join(f"{g.display_name} ({g.id})" for g in matches)
+        logger.error(f"Mail address {group_ref!r} matches several groups: {names}. Pass a group ID.")
+        return None
+
+    group = matches[0]
+    logger.debug(f"Resolved {group_ref} to group {group.display_name} ({group.id})")
+    return group.id
+
+
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the `groups members` arguments on a parser.
 
@@ -127,14 +172,18 @@ async def run_with_arguments(context: GraphContext, args: argparse.Namespace) ->
         args: Parsed arguments (`group_id`, `transitive`, `users_only`).
 
     Returns:
-        0 on success, including when the group has no members.
+        0 on success, including when the group has no members; 1 when a
+        mail address matches no group or more than one.
 
     Raises:
         AuthenticationError: The Graph token is invalid or expired.
     """
-    group_id = args.group_id
     transitive = getattr(args, "transitive", False)
     users_only = getattr(args, "users_only", False)
+
+    group_id = await _resolve_group_id(context, args.group_id)
+    if group_id is None:
+        return 1
 
     endpoint = "transitiveMembers" if transitive else "members"
     logger.info(f"Fetching {endpoint} for group {group_id}")
