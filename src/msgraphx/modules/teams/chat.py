@@ -163,7 +163,7 @@ async def fetch_search(
             "body": body,
             "body_preview": preview,
             "web_url": msg.web_url,
-            "importance": str(msg.importance).split(".")[-1].lower() if msg.importance else None,
+            "importance": msg.importance.value if msg.importance else None,
             "sent_datetime": created.isoformat() if created else None,
             "sent": sent,
             "sender": sender,
@@ -191,7 +191,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         dest="from_addr",
         type=str,
         default=None,
-        help="Filter by sender display name (client-side).",
+        help="Filter by sender display name or UPN (server-side KQL from:).",
     )
 
 async def _list_chats(context: GraphContext) -> int:
@@ -314,7 +314,7 @@ async def run_with_arguments(
         if cached_items:
             cache.save_results(cached_items, key="teams", identity=context.identity_hash)
 
-    if not context.json_output:
+    if not context.json_output and not context.ndjson_output:
         console.rule()
 
     if not cached_items:

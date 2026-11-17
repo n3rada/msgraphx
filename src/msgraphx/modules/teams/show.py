@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import re
 from collections.abc import Sequence
+from typing import Any
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
@@ -25,10 +26,10 @@ from rich.text import Text
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import cache, pagination
+from ...utils import cache, output, pagination
 from ...utils.console import console
 from ...utils.errors import handle_graph_errors
-from ...utils.html import render_html, strip_html
+from ...utils.html import strip_html
 from ...utils.roles import require_scopes
 
 _DEFAULT_CONTEXT = 4
@@ -103,6 +104,37 @@ def _render_window(
         else:
             console.print(f"     [dim]{body}  {sender}  {sent}[/dim]")
 
+def _message_record(
+    msg: ChatMessage,
+    context: GraphContext,
+    chat_id: str,
+    chat_label: str,
+) -> dict[str, Any]:
+    """Convert a chat message to a plain dict for JSON/NDJSON output.
+
+    Args:
+        msg: The chat message.
+        context: Shared Graph runtime context, used to flag own messages.
+        chat_id: ID of the chat the message belongs to.
+        chat_label: Display label of the chat.
+
+    Returns:
+        A dict with `chat_id`, `chat_label`, `message_id`, `sender`,
+        `sender_id`, `sent_datetime` (ISO 8601 or `None`), `body` (HTML
+        stripped) and `is_me`.
+    """
+    created = msg.created_date_time
+    return {
+        "chat_id": chat_id,
+        "chat_label": chat_label,
+        "message_id": msg.id,
+        "sender": _sender(msg),
+        "sender_id": msg.from_.user.id if msg.from_ and msg.from_.user else None,
+        "sent_datetime": created.isoformat() if created else None,
+        "body": strip_html(msg.body.content) if msg.body and msg.body.content else "",
+        "is_me": _is_me(msg, context),
+    }
+
 @handle_graph_errors
 @require_scopes("Chat.Read")
 async def run_with_arguments(
@@ -113,8 +145,11 @@ async def run_with_arguments(
     A numeric target (e.g. `"3"` or `"1-3"`) selects cached results from the
     last `teams chat`/`teams channel` search and prints each with
     surrounding messages. Any other target is matched against chat members
-    and topics, and the best match's latest messages are printed. Warns
-    first if the token lacks `Chat.Read`.
+    and topics, and the best match's latest messages are printed. Under
+    `--json` or `--ndjson` the messages are printed as records (see
+    `_message_record`; cached mode adds `index` and `is_target`), oldest
+    first, instead of Rich output. Warns first if the token lacks
+    `Chat.Read`.
 
     Args:
         context: Shared Graph runtime context; must be delegated.
@@ -253,6 +288,18 @@ async def _show_chat(context: GraphContext, name: str, last: int) -> int:
         logger.error(f"Failed to fetch messages: {exc}")
         return 1
 
+    if context.json_output or context.ndjson_output:
+        records = [
+            _message_record(msg, context, chat_id, chat_label)
+            for msg in reversed(collected)
+        ]
+        if context.json_output:
+            output.print_json(records)
+        else:
+            for record in records:
+                output.print_ndjson_item(record)
+        return 0
+
     console.rule(f"[dim]{chat_label}[/dim]", style="dim")
     for msg in reversed(collected):
         body = strip_html(msg.body.content) if msg.body and msg.body.content else ""
@@ -303,6 +350,7 @@ async def _show_cached(context: GraphContext, index: str, ctx_n: int) -> int:
         logger.error(f"Invalid index: {index} (cached: 1-{len(cached)})")
         return 1
 
+    results: list[dict[str, Any]] = []
     for idx in indices:
         item = cached[idx]
         chat_id = item.get("chat_id") or ""
@@ -346,6 +394,21 @@ async def _show_cached(context: GraphContext, index: str, ctx_n: int) -> int:
         win_end = min(len(collected), target_idx + ctx_n + 1)
         segment = list(reversed(collected[win_start:win_end]))
 
-        _render_window(segment, message_id, chat_label)
+        if context.json_output or context.ndjson_output:
+            for msg in segment:
+                record = {
+                    "index": idx + 1,
+                    "is_target": msg.id == message_id,
+                    **_message_record(msg, context, chat_id, chat_label),
+                }
+                if context.json_output:
+                    results.append(record)
+                else:
+                    output.print_ndjson_item(record)
+        else:
+            _render_window(segment, message_id, chat_label)
+
+    if context.json_output:
+        output.print_json(results)
 
     return 0

@@ -3,7 +3,7 @@
 # Send a Teams message to a user (1:1 chat) or a channel.
 #
 # Usage:
-#   teams send alice@corp.com "Hey, lunch today?"
+#   teams send --to alice@corp.com "Hey, lunch today?"
 #   teams send --team <teamId> --channel <channelId> "Announcement text"
 #
 # Tip: prototype in Graph Explorer
@@ -25,10 +25,12 @@ from msgraph.generated.models.chat import Chat
 from msgraph.generated.models.chat_message import ChatMessage
 from msgraph.generated.models.chat_type import ChatType
 from msgraph.generated.models.item_body import ItemBody
+from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 
 # Local library imports
 from ...core.context import GraphContext
+from ...utils import odata
 from ...utils.errors import handle_graph_errors
 from ...utils.roles import require_scopes
 
@@ -127,7 +129,9 @@ async def _send_dm(
         resolved, the recipient is the sender, or a POST returned nothing.
 
     Raises:
-        ODataError: Creating the chat or posting the message failed.
+        ODataError: Looking up the recipient by UPN/ID failed with a status
+            other than 400 or 404, or creating the chat or posting the
+            message failed.
     """
     me = await context.graph_client.me.get()
     if not me or not me.id:
@@ -141,14 +145,17 @@ async def _send_dm(
     target_user = None
     try:
         target_user = await context.graph_client.users.by_user_id(recipient).get()
-    except Exception:
-        pass
+    except ODataError as exc:
+        # 404 (no such UPN/ID) or 400 (not a valid ID) means "try mail" below.
+        if exc.response_status_code not in (400, 404):
+            raise
+        logger.debug(f"No user with UPN/ID {recipient!r}; trying mail: {exc}")
 
     if not target_user or not target_user.id:
         try:
             config = RequestConfiguration(
                 query_parameters=UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
-                    filter=f"mail eq '{recipient}'",
+                    filter=f"mail eq {odata.quote(recipient)}",
                     top=1,
                 )
             )

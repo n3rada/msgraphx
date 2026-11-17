@@ -113,6 +113,9 @@ async def fetch_transcripts(
 
     items: list[dict[str, Any]] = []
     for transcript in transcripts:
+        if not transcript.id:
+            logger.warning("Skipping a transcript with no ID.")
+            continue
         created = ""
         if transcript.created_date_time:
             created = transcript.created_date_time.strftime("%Y-%m-%d %H:%M")
@@ -240,6 +243,8 @@ async def _render_transcripts(context: GraphContext, meeting_id: str) -> int:
 
     if not all_content:
         logger.info("No transcripts found for this meeting.")
+        if context.json_output:
+            output.print_json([])
         return 0
 
     if context.json_output:
