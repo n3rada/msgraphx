@@ -295,7 +295,6 @@ async def run_with_arguments(
 
     args._group_ids = group_ids
     args._resolved_scope = resolved_scope
-    args._resolved_label = resolved_label
 
     site_path: str | None = None
     site_ref = getattr(args, "site", None)

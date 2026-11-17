@@ -79,8 +79,3 @@ class GraphContext:
         if self.token_getter is None:
             return None
         return await self.token_getter()
-
-    @property
-    def is_delegated(self) -> bool:
-        """Whether authentication uses a delegated user token."""
-        return not self.is_app_only

@@ -1,6 +1,7 @@
 # msgraphx/modules/sharepoint/groups.py
 #
-# Helper and CLI subcommand for fetching the current user's M365 Unified groups.
+# Helper for fetching the current user's M365 Unified groups. Used to scope
+# SharePoint search and site enumeration, and by `groups list --mine`.
 #
 # Background: Microsoft 365 group types
 # --------------------------------------
@@ -25,19 +26,11 @@
 
 from __future__ import annotations
 
-import argparse
-
 from loguru import logger
 from msgraph.generated.models.group import Group
 from msgraph.graph_service_client import GraphServiceClient
-from rich.table import Table
 
-from ...core.context import GraphContext
-from ...utils import cache, output
-from ...utils.console import console
-from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
-from ...utils.roles import require_scopes
 
 async def get_user_m365_groups(
     graph_client: GraphServiceClient,
@@ -94,103 +87,3 @@ async def get_user_m365_groups(
     )
 
     return m365_groups
-
-def add_arguments(parser: argparse.ArgumentParser) -> None:
-    """Register the group listing arguments on a parser.
-
-    Args:
-        parser: Parser for the subcommand.
-    """
-    parser.add_argument(
-        "--visibility",
-        choices=["Private", "Public"],
-        default=None,
-        help="Filter by visibility.",
-    )
-    parser.add_argument(
-        "--teams-only",
-        action="store_true",
-        help="Only show groups that have a Microsoft Teams workspace provisioned.",
-    )
-
-@handle_graph_errors
-@require_scopes("Group.Read.All")
-async def run_with_arguments(context: GraphContext, args: argparse.Namespace) -> int:
-    """List the signed-in user's M365 Unified groups and cache them.
-
-    Results are cached under the `sp_groups` key and printed as a table,
-    JSON, or NDJSON depending on the output mode.
-
-    Args:
-        context: Shared Graph runtime context. Must be delegated.
-        args: Parsed arguments (`visibility`, `teams_only`).
-
-    Returns:
-        0 on success (including no groups found), 1 for app-only tokens.
-
-    Raises:
-        AuthenticationError: The Graph token is invalid or expired.
-    """
-    if context.is_app_only:
-        logger.error("This module requires delegated authentication (user context).")
-        return 1
-
-    groups = await get_user_m365_groups(
-        context.graph_client,
-        visibility=getattr(args, "visibility", None),
-        teams_only=getattr(args, "teams_only", False),
-    )
-
-    if not groups:
-        logger.warning("No M365 Unified groups found.")
-        return 0
-
-    rows = [
-        {
-            "id": g.id,
-            "display_name": g.display_name,
-            "mail": g.mail,
-            "visibility": g.visibility,
-            "teams_provisioned": bool(
-                g.resource_provisioning_options
-                and "Team" in g.resource_provisioning_options
-            ),
-        }
-        for g in groups
-    ]
-
-    cache.save_results(rows, key="sp_groups", identity=context.identity_hash)
-
-    if context.json_output:
-        output.print_json(rows)
-        return 0
-
-    if context.ndjson_output:
-        for row in rows:
-            output.print_ndjson_item(row)
-        return 0
-
-    table = Table(
-        title=f"Your M365 Unified Groups ({len(groups)})",
-        show_header=True,
-        header_style="bold",
-        box=None,
-        padding=(0, 1),
-    )
-    table.add_column("#", justify="right", style="dim")
-    table.add_column("Group")
-    table.add_column("Email")
-    table.add_column("Visibility")
-    table.add_column("Teams")
-
-    for idx, (group, row) in enumerate(zip(groups, rows), 1):
-        table.add_row(
-            str(idx),
-            group.display_name or "(unnamed)",
-            group.mail or "",
-            group.visibility or "",
-            "yes" if row["teams_provisioned"] else "",
-        )
-
-    console.print(table)
-    return 0

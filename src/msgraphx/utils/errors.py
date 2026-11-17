@@ -4,14 +4,12 @@
 from __future__ import annotations
 
 import re
-import sys
 import functools
 import inspect
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
 # External library imports
-from loguru import logger
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 _GraphCallable = TypeVar("_GraphCallable", bound=Callable[..., Any])
@@ -92,24 +90,6 @@ def is_graph_auth_error(exc: Exception) -> bool:
     return code == "InvalidAuthenticationToken" or (
         isinstance(message, str) and "expired" in message.lower()
     )
-
-
-def check_and_exit_for_auth_error(exc: Exception) -> None:
-    """Exit the process if an exception is a Graph authentication failure.
-
-    Uses the same detection as `is_graph_auth_error`. Safe to call from
-    generic exception handlers: other exceptions are ignored.
-
-    Args:
-        exc: The exception to inspect.
-
-    Raises:
-        SystemExit: With code 1, after logging an error, if the token was
-            rejected as invalid or expired.
-    """
-    if is_graph_auth_error(exc):
-        logger.error("Authentication failed: token invalid or expired. Stopping.")
-        sys.exit(1)
 
 
 def _odata_error_obj(exc: Exception) -> Exception | None:

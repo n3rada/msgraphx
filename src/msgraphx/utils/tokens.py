@@ -93,7 +93,7 @@ class TokenManager:
         self._refresh_token = refresh_token
 
         try:
-            self._header, self._payload, self._signature = parse_jwt(access_token)
+            self._header, self._payload, _ = parse_jwt(access_token)
         except Exception:
             logger.exception("Failed to parse JWT")
             raise
