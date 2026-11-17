@@ -43,6 +43,16 @@ HUNT_GROUPS = {
     "azure-admins": ["Global Admin", "Privileged", "User Admin", "Security Admin"],
 }
 
+_ENABLED_FILTER = "accountEnabled eq true"
+
+# Object types whose Graph entity has an accountEnabled property.
+_ENABLEABLE_TYPES: frozenset[str] = frozenset({"users", "devices", "service-principals"})
+
+_USER_SELECT: list[str] = [
+    "id", "displayName", "userPrincipalName", "mail",
+    "accountEnabled", "jobTitle", "department",
+]
+
 
 def matches_query(text: str | None, query: str, exact: bool = False) -> bool:
     """Return whether text matches a query, ignoring case.
@@ -155,6 +165,25 @@ def _add_consistency(config: RequestConfiguration[Any]) -> None:
     config.headers.add("ConsistencyLevel", "eventual")
 
 
+def _build_filter(odata_filter: str | None, enabled_only: bool) -> str | None:
+    """Combine a caller's OData filter with the enabled-account filter.
+
+    Args:
+        odata_filter: Caller-supplied `$filter` expression, if any.
+        enabled_only: Also require `accountEnabled eq true`. Only valid for
+            entities with an `accountEnabled` property (users, devices,
+            service principals).
+
+    Returns:
+        The `$filter` expression to send, or `None` for no filter.
+    """
+    if not enabled_only:
+        return odata_filter
+    if not odata_filter:
+        return _ENABLED_FILTER
+    return f"({odata_filter}) and {_ENABLED_FILTER}"
+
+
 async def fetch_groups(
     context: GraphContext,
     query: str,
@@ -230,6 +259,7 @@ async def fetch_users(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
+    enabled_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Return users matching a query as plain dicts.
 
@@ -238,24 +268,29 @@ async def fetch_users(
         query: Text searched with Graph `$search` across display name, UPN,
             and mail.
         odata_filter: Raw OData `$filter` expression that replaces the query.
+        enabled_only: Keep only enabled accounts, filtered server-side.
 
     Returns:
         One dict per user with its ID, display name, UPN, mail, enabled
         flag, job title, and department.
     """
+    query_filter = _build_filter(odata_filter, enabled_only)
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
-            filter=odata_filter, top=999,
+            filter=query_filter,
+            # accountEnabled is only returned when explicitly selected.
+            select=_USER_SELECT,
+            top=999,
         )
         config = RequestConfiguration(query_parameters=params)
     else:
         params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
             search=f'"displayName:{query} OR userPrincipalName:{query} OR mail:{query}"',
+            filter=query_filter,
             count=True,
             orderby=["displayName"],
-            select=["id", "displayName", "userPrincipalName", "mail",
-                    "accountEnabled", "jobTitle", "department"],
+            select=_USER_SELECT,
             top=999,
         )
         config = RequestConfiguration(query_parameters=params)
@@ -281,6 +316,7 @@ async def fetch_devices(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
+    enabled_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Return devices matching a query as plain dicts.
 
@@ -288,20 +324,23 @@ async def fetch_devices(
         context: Shared Graph runtime context.
         query: Text searched with Graph `$search` on `displayName`.
         odata_filter: Raw OData `$filter` expression that replaces the query.
+        enabled_only: Keep only enabled devices, filtered server-side.
 
     Returns:
         One dict per device with its ID, name, enabled flag, OS and version,
         trust type, and sync status.
     """
+    query_filter = _build_filter(odata_filter, enabled_only)
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
-            filter=odata_filter, top=999,
+            filter=query_filter, top=999,
         )
         config = RequestConfiguration(query_parameters=params)
     else:
         params = DevicesRequestBuilder.DevicesRequestBuilderGetQueryParameters(
             search=f'"displayName:{query}"',
+            filter=query_filter,
             count=True,
             orderby=["displayName"],
             top=999,
@@ -328,6 +367,7 @@ async def fetch_service_principals(
     context: GraphContext,
     query: str,
     odata_filter: str | None = None,
+    enabled_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Return service principals matching a query as plain dicts.
 
@@ -335,20 +375,24 @@ async def fetch_service_principals(
         context: Shared Graph runtime context.
         query: Text searched with Graph `$search` on `displayName`.
         odata_filter: Raw OData `$filter` expression that replaces the query.
+        enabled_only: Keep only enabled service principals, filtered
+            server-side.
 
     Returns:
         One dict per service principal with its ID, name, app ID, enabled
         flag, and type.
     """
+    query_filter = _build_filter(odata_filter, enabled_only)
     if odata_filter:
         logger.debug(f"Using custom OData filter: {odata_filter}")
         params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
-            filter=odata_filter, top=999,
+            filter=query_filter, top=999,
         )
         config = RequestConfiguration(query_parameters=params)
     else:
         params = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters(
             search=f'"displayName:{query}"',
+            filter=query_filter,
             count=True,
             orderby=["displayName"],
             top=999,
@@ -453,7 +497,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--enabled-only",
         action="store_true",
-        help="Only show enabled objects (excludes disabled accounts/groups).",
+        help=(
+            "Only show enabled users, devices, and service principals "
+            "(server-side accountEnabled filter). Groups and applications "
+            "have no enabled state and are not filtered."
+        ),
     )
 
     parser.add_argument(
@@ -553,7 +601,7 @@ async def run_with_arguments(
     Args:
         context: Shared Graph runtime context.
         args: Parsed arguments: `query`, `hunt`, `type`, `contains`,
-            `synced_only`, `odata_filter`, and `save_dir`. `tenant_id` names
+            `synced_only`, `enabled_only`, `odata_filter`, and `save_dir`. `tenant_id` names
             the save subdirectory when present.
 
     Returns:
@@ -580,6 +628,14 @@ async def run_with_arguments(
     else:
         search_types = [args.type]
 
+    enabled_only: bool = getattr(args, "enabled_only", False)
+    unfilterable = [t for t in search_types if t not in _ENABLEABLE_TYPES]
+    if enabled_only and unfilterable:
+        logger.warning(
+            f"--enabled-only does not apply to {', '.join(unfilterable)} "
+            "(no accountEnabled property); they are not filtered."
+        )
+
     tenant_id = getattr(args, "tenant_id", None)
     save_dir = getattr(args, "save_dir", None)
     save_json = save_dir is not None
@@ -605,13 +661,19 @@ async def run_with_arguments(
                     )
                     _log_groups(results)
                 elif search_type == "users":
-                    results = await fetch_users(context, query, odata_filter=odata_filter)
+                    results = await fetch_users(
+                        context, query, odata_filter=odata_filter, enabled_only=enabled_only,
+                    )
                     _log_users(results)
                 elif search_type in ("devices", "computers"):
-                    results = await fetch_devices(context, query, odata_filter=odata_filter)
+                    results = await fetch_devices(
+                        context, query, odata_filter=odata_filter, enabled_only=enabled_only,
+                    )
                     _log_devices(results)
                 elif search_type == "service-principals":
-                    results = await fetch_service_principals(context, query, odata_filter=odata_filter)
+                    results = await fetch_service_principals(
+                        context, query, odata_filter=odata_filter, enabled_only=enabled_only,
+                    )
                     _log_service_principals(results)
                 elif search_type == "applications":
                     results = await fetch_applications(context, query, odata_filter=odata_filter)

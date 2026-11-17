@@ -8,9 +8,14 @@
 from __future__ import annotations
 
 import argparse
+from typing import TypeAlias
 
 # External library imports
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
+from msgraph.generated.oauth2_permission_grants.oauth2_permission_grants_request_builder import (
+    Oauth2PermissionGrantsRequestBuilder,
+)
 from rich.table import Table
 
 # Local library imports
@@ -20,6 +25,10 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import GraphPaginator
 from ...utils.roles import require_scopes
+
+_GrantsQueryParams: TypeAlias = (
+    Oauth2PermissionGrantsRequestBuilder.Oauth2PermissionGrantsRequestBuilderGetQueryParameters
+)
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the arguments for `aad grants`.
@@ -32,7 +41,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         dest="odata_filter",
         metavar="EXPR",
         default=None,
-        help="OData $filter expression (e.g. \"clientId eq 'GUID'\").",
+        help=(
+            "OData $filter expression sent to Graph; clientId, consentType, "
+            "principalId, and resourceId support 'eq' "
+            "(e.g. \"clientId eq 'GUID'\")."
+        ),
     )
     parser.add_argument(
         "--tenant-wide",
@@ -47,15 +60,14 @@ async def run_with_arguments(
 ) -> int:
     """List OAuth2 delegated permission grants and cache them as `grants`.
 
-    `--filter` is not sent to Graph: it is matched as a case-insensitive
-    substring against each grant's fields. Prints JSON under `--json`,
-    NDJSON under `--ndjson`, otherwise a Rich table. Warns if the token
-    lacks `DelegatedPermissionGrant.Read.All`.
+    Prints JSON under `--json`, NDJSON under `--ndjson`, otherwise a Rich
+    table. Warns if the token lacks `DelegatedPermissionGrant.Read.All`.
 
     Args:
         context: Shared Graph runtime context.
-        args: Parsed arguments. `args.odata_filter` is the substring filter
-            and `args.tenant_wide` keeps only `AllPrincipals` grants.
+        args: Parsed arguments. `args.odata_filter` is an OData `$filter`
+            expression sent to Graph, and `args.tenant_wide` keeps only
+            `AllPrincipals` grants.
 
     Returns:
         0 on success, including when no grants are found.
@@ -65,13 +77,15 @@ async def run_with_arguments(
     """
     logger.info("Fetching OAuth2 permission grants")
 
-    rows = []
-    async for grant in GraphPaginator(context.graph_client.oauth2_permission_grants):
-        if args.odata_filter:
-            # OData filter applied server-side via query params when paginator supports it;
-            # fall back to client-side for now since we use bare paginator
-            pass
+    config: RequestConfiguration[_GrantsQueryParams] | None = None
+    if args.odata_filter:
+        logger.debug(f"Using OData filter: {args.odata_filter}")
+        config = RequestConfiguration(
+            query_parameters=_GrantsQueryParams(filter=args.odata_filter)
+        )
 
+    rows = []
+    async for grant in GraphPaginator(context.graph_client.oauth2_permission_grants, config):
         if args.tenant_wide and grant.consent_type != "AllPrincipals":
             continue
 
@@ -89,12 +103,6 @@ async def run_with_arguments(
         if context.json_output:
             output.print_json([])
         return 0
-
-    # Apply client-side filter if provided
-    if args.odata_filter:
-        logger.warning("Client-side filter applied. OData syntax is not evaluated; filtering by simple substring match on scope.")
-        q = args.odata_filter.lower()
-        rows = [r for r in rows if q in str(r).lower()]
 
     cache.save_results(rows, key="grants", identity=context.identity_hash)
 

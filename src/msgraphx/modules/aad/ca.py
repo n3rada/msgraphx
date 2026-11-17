@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from enum import Enum
 from typing import Any
 
 # External library imports
@@ -21,6 +22,28 @@ from ...utils.console import console
 from ...utils.errors import handle_graph_errors
 from ...utils.pagination import collect_all
 from ...utils.roles import require_roles, require_scopes
+
+_STATE_FILTERS: dict[str, str] = {
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "report": "enabledForReportingButNotEnforced",
+}
+
+
+def _wire_value(member: Enum | str) -> str:
+    """Return the Graph wire value of an SDK enum member.
+
+    `str()` on the SDK's `(str, Enum)` members yields `"Class.Member"`, so
+    read `.value` instead. Plain strings are returned unchanged.
+
+    Args:
+        member: SDK enum member, or a raw string.
+
+    Returns:
+        The camelCase value Graph uses, e.g. `"enabledForReportingButNotEnforced"`.
+    """
+    return member.value if isinstance(member, Enum) else member
+
 
 async def fetch(
     context: GraphContext, state: str | None = None
@@ -41,25 +64,20 @@ async def fetch(
     """
     policies = await collect_all(context.graph_client.policies.conditional_access_policies)
 
-    state_map = {
-        "enabled": "enabled",
-        "disabled": "disabled",
-        "report": "enabledForReportingButNotEnforced",
-    }
     if state:
-        target_state = state_map.get(state, state)
+        target_state = _STATE_FILTERS.get(state, state)
         policies = [
             p for p in policies
-            if str(p.state).split(".")[-1].lower() == target_state.lower()
+            if p.state is not None and _wire_value(p.state) == target_state
         ]
 
     rows = []
     for p in policies:
-        state_str = str(p.state).split(".")[-1] if p.state else "unknown"
+        state_str = _wire_value(p.state) if p.state else "unknown"
 
-        included_users = []
-        excluded_users = []
-        included_apps = []
+        included_users: list[str] = []
+        excluded_users: list[str] = []
+        included_apps: list[str] = []
         if p.conditions:
             if p.conditions.users:
                 included_users = p.conditions.users.include_users or []
@@ -73,7 +91,7 @@ async def fetch(
         grant_controls: list[str] = []
         if p.grant_controls and p.grant_controls.built_in_controls:
             grant_controls = [
-                str(c).split(".")[-1] for c in p.grant_controls.built_in_controls
+                _wire_value(c) for c in p.grant_controls.built_in_controls
             ]
 
         rows.append({
@@ -174,7 +192,9 @@ async def run_with_arguments(
 
     for i, row in enumerate(rows, 1):
         state_display = state_colors.get(row["state"], row["state"])
-        controls = ", ".join(row["grant_controls"]) if row["grant_controls"] else "block"
+        # A blocking policy lists "block" itself; an empty list means no grant
+        # controls (e.g. a session-controls-only policy).
+        controls = ", ".join(row["grant_controls"]) if row["grant_controls"] else "[dim]none[/dim]"
         table.add_row(str(i), row["display_name"] or "", state_display, controls, row["modified"])
 
     console.print("[bold]Conditional access policies[/bold]")

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from enum import Enum
 
 # External library imports
 from loguru import logger
@@ -92,7 +93,9 @@ async def run_with_arguments(
             detail = getattr(m, "phone_number", "") or ""
             phone_type = getattr(m, "phone_type", None)
             if phone_type:
-                detail += f" ({str(phone_type).split('.')[-1]})"
+                # str() on the SDK enum yields "AuthenticationPhoneType.Mobile".
+                phone_label = phone_type.value if isinstance(phone_type, Enum) else phone_type
+                detail += f" ({phone_label})"
         elif t == "#microsoft.graph.microsoftAuthenticatorAuthenticationMethod":
             detail = getattr(m, "display_name", "") or ""
             version = getattr(m, "phone_app_version", None)

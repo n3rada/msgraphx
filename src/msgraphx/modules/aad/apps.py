@@ -10,14 +10,16 @@ import argparse
 import asyncio
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 # External library imports
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 from loguru import logger
 from msgraph.generated.applications.applications_request_builder import ApplicationsRequestBuilder
+from msgraph.generated.models.app_role_assignment import AppRoleAssignment
 from msgraph.generated.models.application import Application
 from msgraph.generated.models.directory_object import DirectoryObject
+from msgraph.generated.models.o_auth2_permission_grant import OAuth2PermissionGrant
 from msgraph.generated.models.service_principal import ServicePrincipal
 from msgraph.generated.service_principals.service_principals_request_builder import (
     ServicePrincipalsRequestBuilder,
@@ -26,10 +28,12 @@ from rich.table import Table
 
 # Local library imports
 from ...core.context import GraphContext
-from ...utils import output, pagination
+from ...utils import odata, output, pagination
 from ...utils.console import console
-from ...utils.errors import ForbiddenGraphError, handle_graph_errors, raise_if_forbidden
+from ...utils.errors import handle_graph_errors, raise_if_forbidden
 from ...utils.roles import require_scopes
+
+_T = TypeVar("_T")
 
 
 def _now() -> datetime:
@@ -125,7 +129,7 @@ async def _resolve_app(context: GraphContext, app_ref: str) -> Application | Non
     try:
         QueryParams = ApplicationsRequestBuilder.ApplicationsRequestBuilderGetQueryParameters
         config = RequestConfiguration(
-            query_parameters=QueryParams(filter=f"appId eq '{app_ref}'", top=1)
+            query_parameters=QueryParams(filter=f"appId eq {odata.quote(app_ref)}", top=1)
         )
         resp = await context.graph_client.applications.get(request_configuration=config)
         if resp and resp.value:
@@ -142,9 +146,10 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
     """Show one app registration with its owners, credentials, and permissions.
 
     Also looks up the app's service principal in this tenant and its app role
-    assignments and OAuth2 delegated grants. Prints JSON under `--json`,
-    otherwise a Rich report. Warns if the token lacks
-    `Application.Read.All`.
+    assignments and OAuth2 delegated grants. Those follow-up lookups degrade
+    to empty sections with a warning when they fail, including on 403.
+    Prints JSON under `--json`, otherwise a Rich report. Warns if the token
+    lacks `Application.Read.All`.
 
     Args:
         context: Shared Graph runtime context.
@@ -155,8 +160,7 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
 
     Raises:
         AuthenticationError: The Graph token is invalid or expired.
-        ForbiddenGraphError: The token cannot read the application or its
-            service principal.
+        ForbiddenGraphError: The token cannot read the application.
     """
     logger.info(f"Resolving application: {args.app_id}")
     app = await _resolve_app(context, args.app_id)
@@ -171,7 +175,7 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
     # Owners + SP lookup in parallel
     SpQueryParams = ServicePrincipalsRequestBuilder.ServicePrincipalsRequestBuilderGetQueryParameters
     sp_config = RequestConfiguration(
-        query_parameters=SpQueryParams(filter=f"appId eq '{app_client_id}'", top=1)
+        query_parameters=SpQueryParams(filter=f"appId eq {odata.quote(app_client_id or '')}", top=1)
     )
 
     owners_result, sp_result = await asyncio.gather(
@@ -180,31 +184,55 @@ async def run_single(context: GraphContext, args: argparse.Namespace) -> int:
         return_exceptions=True,
     )
 
-    owners = owners_result if isinstance(owners_result, list) else []
-    sp_resp = sp_result if not isinstance(sp_result, BaseException) else None
+    owners: list[DirectoryObject] = _settled(owners_result, "app owners") or []
+    sp_resp = _settled(sp_result, "service principal")
     sp_items = (sp_resp.value if sp_resp and sp_resp.value else [])
     sp = sp_items[0] if sp_items else None
 
+    role_assignments: list[AppRoleAssignment] = []
+    grants: list[OAuth2PermissionGrant] = []
     if sp:
-        sp_id = sp.id
+        sp_builder = context.graph_client.service_principals.by_service_principal_id(sp.id)
+        roles_result: list[AppRoleAssignment] | BaseException
+        grants_result: list[OAuth2PermissionGrant] | BaseException
         roles_result, grants_result = await asyncio.gather(
-            _safe_collect(
-                context.graph_client.service_principals.by_service_principal_id(sp_id).app_role_assignments
-            ),
-            _safe_collect(
-                context.graph_client.service_principals.by_service_principal_id(sp_id).oauth2_permission_grants
-            ),
+            _safe_collect(sp_builder.app_role_assignments),
+            _safe_collect(sp_builder.oauth2_permission_grants),
             return_exceptions=True,
         )
-        sp._app_role_assignments = roles_result if isinstance(roles_result, list) else []
-        sp._oauth2_grants = grants_result if isinstance(grants_result, list) else []
+        role_assignments = _settled(roles_result, "app role assignments") or []
+        grants = _settled(grants_result, "OAuth2 permission grants") or []
 
     if context.json_output:
-        output.print_json(_app_to_dict(app, owners, sp))
+        output.print_json(_app_to_dict(app, owners, sp, role_assignments, grants))
         return 0
 
-    _print_app(app, owners, sp)
+    _print_app(app, owners, sp, role_assignments, grants)
     return 0
+
+def _settled(result: _T | BaseException, what: str) -> _T | None:
+    """Unwrap one `asyncio.gather(..., return_exceptions=True)` result.
+
+    A failed lookup (including a 403 surfaced as `ForbiddenGraphError`) is
+    logged as a warning so the rest of the report can still be printed.
+
+    Args:
+        result: The gathered value or the exception it raised.
+        what: Human-readable name of the lookup, used in the warning.
+
+    Returns:
+        The value, or `None` if the lookup raised an `Exception`.
+
+    Raises:
+        BaseException: The lookup raised a non-`Exception` such as
+            cancellation, which is re-raised.
+    """
+    if isinstance(result, Exception):
+        logger.warning(f"Could not fetch {what}: {result}")
+        return None
+    if isinstance(result, BaseException):
+        raise result
+    return result
 
 async def _safe_collect(builder: Any) -> list[Any]:
     """Collect every page of a collection, degrading to empty on error.
@@ -254,15 +282,17 @@ def _app_to_dict(
     app: Application,
     owners: Sequence[DirectoryObject],
     sp: ServicePrincipal | None,
+    role_assignments: Sequence[AppRoleAssignment],
+    grants: Sequence[OAuth2PermissionGrant],
 ) -> dict[str, Any]:
     """Build the `--json` representation of a single app.
 
     Args:
         app: The app registration.
         owners: The app's owners.
-        sp: The app's service principal in this tenant, if any. Its role
-            assignments and grants are read from the private attributes set
-            by `run_single`.
+        sp: The app's service principal in this tenant, if any.
+        role_assignments: App role assignments granted to `sp`.
+        grants: OAuth2 delegated permission grants held by `sp`.
 
     Returns:
         A camelCase dict with the app's properties, credential status, owners
@@ -307,7 +337,7 @@ def _app_to_dict(
                     "resourceDisplayName": r.resource_display_name,
                     "appRoleId": str(r.app_role_id) if r.app_role_id else None,
                 }
-                for r in getattr(sp, "_app_role_assignments", [])
+                for r in role_assignments
             ],
             "oauth2PermissionGrants": [
                 {
@@ -315,7 +345,7 @@ def _app_to_dict(
                     "resourceId": g.resource_id,
                     "consentType": g.consent_type,
                 }
-                for g in getattr(sp, "_oauth2_grants", [])
+                for g in grants
             ],
         }
     return result
@@ -324,6 +354,8 @@ def _print_app(
     app: Application,
     owners: Sequence[DirectoryObject],
     sp: ServicePrincipal | None,
+    role_assignments: Sequence[AppRoleAssignment],
+    grants: Sequence[OAuth2PermissionGrant],
 ) -> None:
     """Print a single app as a Rich report.
 
@@ -331,6 +363,8 @@ def _print_app(
         app: The app registration.
         owners: The app's owners.
         sp: The app's service principal in this tenant, if any.
+        role_assignments: App role assignments granted to `sp`.
+        grants: OAuth2 delegated permission grants held by `sp`.
     """
     console.print(f"\n[bold]App: {app.display_name or '?'}[/bold]")
     console.rule()
@@ -368,20 +402,20 @@ def _print_app(
         console.print("\n[dim]No service principal found in this tenant.[/dim]")
         return
 
-    console.print(f"\n[bold]Service Principal[/bold]")
+    console.print("\n[bold]Service Principal[/bold]")
     console.print(f"  SP Object ID : {sp.id}")
     console.print(f"  Type         : {sp.service_principal_type or '?'}")
     console.print(f"  Enabled      : {sp.account_enabled}")
 
-    roles = getattr(sp, "_app_role_assignments", [])
-    console.print(f"\n[bold]App Role Assignments (API permissions granted)[/bold] ({len(roles)})")
-    if roles:
-        for r in roles:
+    console.print(
+        f"\n[bold]App Role Assignments (API permissions granted)[/bold] ({len(role_assignments)})"
+    )
+    if role_assignments:
+        for r in role_assignments:
             console.print(f"  resource: {r.resource_display_name or '?'}  role: {r.app_role_id}")
     else:
         console.print("  [dim]none[/dim]")
 
-    grants = getattr(sp, "_oauth2_grants", [])
     console.print(f"\n[bold]OAuth2 Delegated Grants[/bold] ({len(grants)})")
     if grants:
         for g in grants:
